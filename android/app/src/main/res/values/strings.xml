@@ -44,6 +44,8 @@
     <string name="perm_photos_why">Browse your gallery and save photos across.</string>
     <string name="perm_camera">Camera</string>
     <string name="perm_camera_why">Use this phone as a webcam.</string>
+    <string name="perm_projection">Audio without asking</string>
+    <string name="perm_projection_why">Let your computer start the audio on its own, instead of Android asking on this phone every time. Needs Shizuku; granted once, and reversible.</string>
     <string name="perm_audio">Microphone</string>
     <string name="perm_audio_why">Play this phone\'s audio on your computer. The microphone itself is never opened — Android requires the permission to capture what is playing.</string>
 

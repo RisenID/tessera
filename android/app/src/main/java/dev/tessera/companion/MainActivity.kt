@@ -3,7 +3,6 @@ package dev.tessera.companion
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -11,7 +10,6 @@ import android.provider.Settings
 import android.text.format.Formatter
 import android.view.View
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -23,6 +21,7 @@ import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NotificationBridge
 import dev.tessera.companion.features.PrivilegedShell
+import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.features.SmsRepository
 import dev.tessera.companion.net.TlsServer
 
@@ -50,31 +49,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var rows: List<Row>
 
-    /** True when the activity was opened only to ask about audio, from the
-     *  notification the service posts. It closes again once answered, rather
-     *  than leaving the user in a settings screen they did not go looking for. */
-    private var audioRequestOnly = false
-
-    /**
-     * The screen-capture dialog's answer.
-     *
-     * Playback capture is gated behind the same permission as screen sharing,
-     * so this is the dialog the user sees -- and only an activity may raise it,
-     * which is the whole reason this class is involved in audio at all.
-     */
-    private val projectionRequest = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val granted = result.resultCode == RESULT_OK && result.data != null
-        TesseraService.running_instance?.onAudioConsent(
-            result.resultCode,
-            if (granted) result.data else null,
-        )
-        if (audioRequestOnly) {
-            audioRequestOnly = false
-            finish()
-        }
-    }
+    /** Set while the projection grant is being made, so the row can say so. */
+    private var grantingProjection = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Wallpaper-derived colour on Android 12+; the baseline M3 palette
@@ -109,34 +85,32 @@ class MainActivity : AppCompatActivity() {
         }
 
         TesseraService.start(this)
-        handleIntent(intent)
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleIntent(intent)
-    }
-
-    /** The service asks for audio consent by sending the user here. */
-    private fun handleIntent(intent: Intent?) {
-        if (intent?.action != ACTION_REQUEST_AUDIO) return
-        // Do not ask twice if the notification is tapped again mid-dialog.
-        intent.action = null
-        audioRequestOnly = true
-        askForProjection()
-    }
-
-    private fun askForProjection() {
-        val manager = getSystemService(MediaProjectionManager::class.java)
-        if (manager == null) {
-            TesseraService.running_instance?.onAudioConsent(RESULT_CANCELED, null)
+    /**
+     * Stops Android asking before every audio stream.
+     *
+     * The row is not a permission the app needs to work -- it is the
+     * difference between the computer being able to play this phone's music on
+     * its own and the phone having to be picked up each time.
+     */
+    private fun grantProjection() {
+        if (!PrivilegedShell.hasPermission()) {
+            PrivilegedShell.requestPermission(SHIZUKU_REQUEST)
             return
         }
-        runCatching { projectionRequest.launch(manager.createScreenCaptureIntent()) }
-            .onFailure {
-                TesseraService.running_instance?.onAudioConsent(RESULT_CANCELED, null)
+        grantingProjection = true
+        refresh()
+        Thread {
+            val problem = ProjectionGrant.grant(this)
+            runOnUiThread {
+                grantingProjection = false
+                if (problem != null) {
+                    binding.shizukuState.text = problem
+                }
+                refresh()
             }
+        }.start()
     }
 
     /**
@@ -208,6 +182,14 @@ class MainActivity : AppCompatActivity() {
                         PackageManager.PERMISSION_GRANTED
                 },
                 grant = { requestRuntimePermissions() },
+            ),
+            Row(
+                binding.rowProjection,
+                R.string.perm_projection,
+                R.string.perm_projection_why,
+                R.drawable.ic_audio,
+                granted = { ProjectionGrant.allowed(this) },
+                grant = { grantProjection() },
             ),
         )
 
@@ -338,8 +320,5 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val RUNTIME_REQUEST = 100
         private const val SHIZUKU_REQUEST = 101
-
-        /** Sent by the service's notification when the desktop wants audio. */
-        const val ACTION_REQUEST_AUDIO = "dev.tessera.companion.REQUEST_AUDIO"
     }
 }

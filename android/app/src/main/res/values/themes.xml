@@ -14,6 +14,17 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <!-- The consent activity draws nothing at all: where the projection app
+         op has been granted, Android approves without any dialog, and the user
+         should see no flicker of an app opening for something they asked for
+         from their computer. -->
+    <style name="Theme.Tessera.Invisible" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- Circular icon chip. Defined here rather than relying on a library
          style name, which differs between Material releases. -->
     <style name="ShapeAppearance.Tessera.Circle" parent="">

@@ -260,6 +260,33 @@ def connect(host_port: str) -> str:
     return text
 
 
+#: One line per service: "name  _adb-tls-connect._tcp  192.168.1.5:37589".
+_MDNS_ROW = re.compile(r"^(\S+)\s+(\S+)\s+(\S+:\d+)\s*$")
+
+#: What a phone advertises once wireless debugging is on. The -pairing- one is
+#: for the pairing step, which needs a code and is not something to guess at.
+MDNS_CONNECT = "_adb-tls-connect._tcp"
+
+
+def mdns_targets() -> list[str]:
+    """Phones advertising wireless debugging on this network, as host:port.
+
+    Android advertises the port over mDNS and picks a new one every time
+    wireless debugging is switched on, so a remembered address goes stale --
+    this is how to find the current one without asking the user to read it off
+    the phone.
+    """
+    result = _adb(["mdns", "services"], timeout=12.0)
+    if not result.ok:
+        return []
+    found = []
+    for line in result.stdout.splitlines():
+        match = _MDNS_ROW.match(line.strip())
+        if match and match.group(2) == MDNS_CONNECT:
+            found.append(match.group(3))
+    return found
+
+
 def pair(host_port: str, code: str) -> str:
     """Pair with Android 11+ wireless debugging using a 6-digit code."""
     result = run([ADB, "pair", host_port], timeout=40.0, stdin=f"{code}\n")

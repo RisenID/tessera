@@ -23,6 +23,7 @@ import dev.tessera.companion.features.NotificationBridge
 import dev.tessera.companion.features.NowPlaying
 import dev.tessera.companion.features.PhoneStatus
 import dev.tessera.companion.features.PrivilegedShell
+import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.features.TetheringController
 import dev.tessera.companion.features.SmsRepository
 import org.json.JSONObject
@@ -152,6 +153,10 @@ class Session(
         // Playback capture: what the phone is playing, sent to the desktop.
         // Android 10 and later; the permission is asked for when it starts.
         if (AudioStreamer.supported()) add("phone_audio")
+        // Whether it can start without the phone being touched, and whether
+        // that can be arranged from the desktop if it cannot.
+        if (ProjectionGrant.allowed(context)) add("phone_audio_silent")
+        if (ProjectionGrant.grantable()) add("phone_audio_grant")
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
@@ -263,6 +268,28 @@ class Session(
 
             "audio_start" -> startAudio(id)
             "audio_stop" -> stopAudio(notify = true)
+
+            // One-time: stop Android asking before every stream. Runs through
+            // the same Shizuku shell the hotspot uses, so it needs nothing on
+            // the phone -- which is the point.
+            "audio_grant" -> {
+                val service = TesseraService.running_instance
+                if (service == null) {
+                    fail(id, "The companion service is not running on the phone.")
+                } else {
+                    // null means it worked; anything else is why it did not.
+                    val problem = service.grantProjection()
+                    if (problem == null) {
+                        reply(id, JSONObject().put("granted", true))
+                        send(
+                            JSONObject().put("t", "caps")
+                                .put("caps", org.json.JSONArray(capabilities()))
+                        )
+                    } else {
+                        fail(id, problem)
+                    }
+                }
+            }
 
             "hotspot_start" -> {
                 val error = Hotspot.start(
@@ -491,15 +518,17 @@ class Session(
         stopAudio()
         val projection = service.audioProjection()
         if (projection == null) {
-            service.askForAudioConsent { if (open.get()) beginAudio(service) }
+            val quiet = service.askForAudioConsent { if (open.get()) beginAudio(service) }
             send(
                 JSONObject()
                     .put("t", "audio_consent")
+                    .put("silent", quiet)
                     .put(
                         "message",
-                        "Tap the notification on the phone to allow it to send " +
-                            "its audio. Android asks every time, with the same " +
-                            "dialog screen sharing uses."
+                        if (quiet) "Asking the phone; this takes a moment."
+                        else "Tap the notification on the phone to allow it to " +
+                            "send its audio. Android asks every time until the " +
+                            "one-time permission is granted."
                     )
             )
             return

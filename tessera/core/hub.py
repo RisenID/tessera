@@ -12,6 +12,7 @@ paired yet.
 from __future__ import annotations
 
 import logging
+from time import monotonic, sleep
 from typing import Any
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -66,6 +67,12 @@ class Hub(QObject):
     phoneAudioWaiting = Signal(str)
     hotspotChanged = Signal(bool)            # joined the phone's hotspot
     errorOccurred = Signal(str)
+    #: Whether a phone is reachable over adb, which mirroring and apps need.
+    adbChanged = Signal(bool)
+
+    #: How often to try bringing adb back. A failed connect costs seconds, and
+    #: the phone is usually simply not listening, so this is deliberately slow.
+    ADB_RETRY_SECONDS = 60.0
 
     def __init__(self, config: Config, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -104,6 +111,9 @@ class Hub(QObject):
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
+        #: Not before this, so a phone that is simply off does not cost a
+        #: round of connection attempts every fifteen seconds.
+        self._adb_next_try = 0.0
         self._phone_dnd = "off"
 
         self._wire_companion()
@@ -286,18 +296,101 @@ class Hub(QObject):
         return self._serial
 
     def refresh_adb(self) -> None:
-        def resolve() -> str:
+        def resolve() -> tuple[str, str]:
             try:
-                return adb.resolve_serial(self.config.adb_serial)
+                return adb.resolve_serial(self.config.adb_serial), ""
             except adb.AdbError:
-                return ""
+                pass
+            return self._reconnect_adb()
 
-        submit(resolve, on_done=self._set_serial, on_error=lambda _m: self._set_serial(""))
+        submit(
+            resolve,
+            on_done=self._set_serial,
+            on_error=lambda _m: self._set_serial(("", "")),
+        )
 
-    def _set_serial(self, serial: str) -> None:
+    def _reconnect_adb(self) -> tuple[str, str]:
+        """Bring the wireless link back after it has dropped.
+
+        adb over Wi-Fi does not survive a reboot, a network change or a long
+        idle, and nothing used to notice: mirroring and the app launcher simply
+        stopped working until the user ran `adb connect` by hand. The phone is
+        plainly reachable -- the companion app is talking to it -- so the
+        address is already known.
+
+        Runs on a worker thread. Returns the serial it recovered and the
+        endpoint that worked, for remembering.
+        """
+        now = monotonic()
+        if now < self._adb_next_try:
+            return "", ""
+        self._adb_next_try = now + self.ADB_RETRY_SECONDS
+
+        for target in self._adb_targets():
+            try:
+                adb.connect(target)
+            except adb.AdbError as exc:
+                log.debug("adb connect %s: %s", target, exc)
+                continue
+            try:
+                serial = adb.resolve_serial(self.config.adb_serial)
+            except adb.AdbError:
+                continue
+            log.info("adb reconnected over Wi-Fi at %s", target)
+            return serial, target
+        return "", ""
+
+    def _adb_targets(self) -> list[str]:
+        """Where the phone might be listening for adb, best guess first."""
+        targets: list[str] = []
+        remembered = self.config.adb_wireless_host.strip()
+        if remembered:
+            targets.append(remembered)
+        # Wireless debugging picks a new port every time it is switched on, so
+        # the advertised one beats anything remembered.
+        for found in adb.mdns_targets():
+            if found not in targets:
+                targets.append(found)
+        # Failing that, the address the companion app is connected on, with the
+        # default port -- which is where `adb tcpip` puts it.
+        host = self.companion.phone.host.strip()
+        if host:
+            guess = f"{host}:5555"
+            if guess not in targets:
+                targets.append(guess)
+        return targets
+
+    def enable_wireless_adb(self) -> str:
+        """Arm adb over Wi-Fi while the cable is in, so it survives unplugging.
+
+        Blocks; callers dispatch through core.proc.submit. This does change the
+        phone's debugging state, so it happens only when asked for.
+        """
+        serial = self._serial or adb.resolve_serial(self.config.adb_serial)
+        host = adb.wifi_ip(serial)
+        if not host:
+            raise adb.AdbError(
+                "The phone is not on Wi-Fi, so there is no address to reach it on."
+            )
+        adb.enable_tcpip(serial)
+        endpoint = f"{host}:5555"
+        # adbd restarts, so it is not listening the instant tcpip returns.
+        sleep(1.5)
+        adb.connect(endpoint)
+        return endpoint
+
+    def remember_wireless_adb(self, endpoint: str) -> None:
+        if endpoint and endpoint != self.config.adb_wireless_host:
+            self.config.adb_wireless_host = endpoint
+            self.config.save()
+
+    def _set_serial(self, found: tuple[str, str]) -> None:
+        serial, endpoint = found
+        self.remember_wireless_adb(endpoint)
         if serial != self._serial:
             self._serial = serial
             self.dnd.set_serial(serial)
+            self.adbChanged.emit(bool(serial))
 
     # -- webcam ---------------------------------------------------------------
 

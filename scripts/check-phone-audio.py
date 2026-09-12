@@ -238,6 +238,15 @@ def interface() -> None:
         TILES["audio"][4],
     )
 
+    # Both routes stay available; the setting only decides what one click does.
+    from tessera.core.config import PhoneAudioConfig
+
+    check(
+        "the one-click route defaults to whichever works",
+        PhoneAudioConfig().route,
+        "auto",
+    )
+
     hub = Hub(Config())
     palette = detect_palette(QApplication.instance())
     page = AudioPage(hub, palette)
@@ -257,7 +266,14 @@ def interface() -> None:
         page.stream_pill.text(),
     )
 
+    # Opening a sink can fail while an earlier one is still being destroyed,
+    # which only happens here: the app has exactly one player. Let Qt catch up
+    # and try once more rather than reporting a failure the app cannot have.
     hub._on_phone_audio_started(HEADER)
+    if not hub.phone_audio_active:
+        for _ in range(10):
+            QApplication.instance().processEvents()
+        hub._on_phone_audio_started(HEADER)
     page._apply_stream_state()
     check(
         "playing is visible on the page",

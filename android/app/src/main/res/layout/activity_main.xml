@@ -237,6 +237,7 @@
                     <include android:id="@+id/rowPhotos" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowCamera" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowAudio" layout="@layout/view_setup_row" />
+                    <include android:id="@+id/rowProjection" layout="@layout/view_setup_row" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

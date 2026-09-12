@@ -283,6 +283,47 @@ class SettingsPage(QWidget):
         clip_note.setWordWrap(True)
         screen.add(clip_note)
 
+        # -- which way the phone's audio comes ---------------------------------
+        #
+        # Both routes stay; this is only what the sidebar's switch does. They
+        # are not equivalent: the link route cannot disturb the phone's own
+        # headphones, Bluetooth carries a call's microphone. Neither is right
+        # for everyone, so neither is imposed.
+        self.route_card = Card(self)
+        route_title = QLabel("The phone's audio")
+        route_title.setObjectName("SectionTitle")
+        self.route_card.add(route_title)
+
+        self.audio_route = QComboBox()
+        self.audio_route.addItem("Whichever works (prefers the link)", "auto")
+        self.audio_route.addItem("Over the link", "link")
+        self.audio_route.addItem("Over Bluetooth", "bluetooth")
+        index = self.audio_route.findData(hub.config.phone_audio.route)
+        self.audio_route.setCurrentIndex(max(index, 0))
+        self.route_card.add(self._labelled("One-click route", self.audio_route))
+
+        route_note = QLabel(
+            "Over the link the phone sends a copy of what it is playing, so it "
+            "keeps playing there too and its own headphones are untouched. "
+            "Bluetooth moves the audio here instead, and is the only route that "
+            "can carry a call. Both are on the Audio page whatever is chosen."
+        )
+        route_note.setObjectName("Muted")
+        route_note.setWordWrap(True)
+        self.route_card.add(route_note)
+
+        grant_row = QHBoxLayout()
+        self.grant_button = QPushButton("Stop the phone asking")
+        self.grant_button.clicked.connect(self._grant_projection)
+        grant_row.addWidget(self.grant_button)
+        grant_row.addStretch(1)
+        self.grant_state = QLabel()
+        self.grant_state.setObjectName("Muted")
+        self.grant_state.setWordWrap(True)
+        grant_row.addWidget(self.grant_state, 1)
+        self.route_card.add(self._bar(grant_row))
+        outer.addWidget(self.route_card)
+
         # Bluetooth audio and the LDAC decoder are PipeWire and BlueZ
         # machinery, so the whole card belongs to the platforms that have them.
         self.audio_card = Card(self)
@@ -357,6 +398,8 @@ class SettingsPage(QWidget):
 
         self.toast = Toast(self)
         hub.companion.connectedChanged.connect(self._refresh)
+        # The phone re-sends its capability list after the grant is made.
+        hub.companion.capabilitiesChanged.connect(lambda _c: self._refresh_grant())
         hub.companion.errorOccurred.connect(self._show_error)
         self._refresh()
         self.discover()
@@ -383,13 +426,70 @@ class SettingsPage(QWidget):
         for spin in (self.max_size, self.mirror_fps, self.panel_width,
                      self.panel_width_full):
             spin.valueChanged.connect(self._touch)
-        for combo in (self.clipboard_mode, self.codec_choice):
+        for combo in (self.clipboard_mode, self.codec_choice, self.audio_route):
             combo.currentIndexChanged.connect(self._touch)
         self.window_size.textEdited.connect(self._touch)
 
     def _touch(self, *_args) -> None:
         if not self._loading:
             self._commit_timer.start()
+
+    # -- the phone's audio ---------------------------------------------------
+
+    def _grant_projection(self) -> None:
+        """Ask the phone to stop asking, through Shizuku.
+
+        Android makes consent single-use, so without this the phone has to be
+        picked up before every stream -- which defeats the point of the feature.
+        The grant is made once and can be undone in the companion app.
+        """
+        self.grant_state.setText("Asking the phone...")
+        self.grant_button.setEnabled(False)
+
+        def replied(message: dict) -> None:
+            self.grant_button.setEnabled(True)
+            if message.get("t") == "error":
+                self.grant_state.setText(message.get("message", "It was refused."))
+                return
+            self.grant_state.setText("Done. Audio now starts without the phone.")
+            self.toast.show_message(
+                "The phone will not ask again", self.palette_tokens, "success"
+            )
+            self._refresh_grant()
+
+        self.hub.companion.request({"t": "audio_grant"}, replied)
+
+    def _refresh_grant(self) -> None:
+        """Say where the one-time permission stands, in plain words."""
+        caps = self.hub.companion.capabilities
+        if not self.hub.connected:
+            self.grant_button.setVisible(False)
+            self.grant_state.setText("")
+            return
+        if "phone_audio" not in caps:
+            self.grant_button.setVisible(False)
+            self.grant_state.setText(
+                "This phone's companion app cannot send audio."
+            )
+            return
+        if "phone_audio_silent" in caps:
+            self.grant_button.setVisible(False)
+            self.grant_state.setText(
+                "The phone starts audio without asking."
+            )
+            return
+        if "phone_audio_grant" in caps:
+            self.grant_button.setVisible(True)
+            self.grant_state.setText(
+                "Android asks on the phone before every stream. This grants the "
+                "one-time permission that stops it, through Shizuku."
+            )
+            return
+        self.grant_button.setVisible(False)
+        self.grant_state.setText(
+            "Android asks on the phone before every stream. Shizuku is needed "
+            "to stop that; start it on the phone and this will offer to."
+        )
 
     @staticmethod
     def _bar(layout) -> QWidget:
@@ -628,6 +728,10 @@ class SettingsPage(QWidget):
                 )
                 self.autostart_box.setChecked(autostart.enabled())
 
+        self.hub.config.phone_audio.route = (
+            self.audio_route.currentData() or "auto"
+        )
+
         codec = self.codec_choice.currentData()
         self.hub.config.bluetooth.codec = codec
         # The phone's own list matters here: "best the phone offers" narrows
@@ -663,6 +767,7 @@ class SettingsPage(QWidget):
             box.blockSignals(False)
 
     def _refresh(self) -> None:
+        self._refresh_grant()
         if self.hub.companion.connected:
             self.link_pill.set_state(self.hub.companion.phone.name or "Connected", "success")
             self.code.clear()

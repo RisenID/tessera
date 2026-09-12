@@ -792,6 +792,16 @@ class CompanionClient(QObject):
     def _recv_camera_stopped(self, _message: dict[str, Any]) -> None:
         self.cameraStopped.emit()
 
+    def _recv_caps(self, message: dict[str, Any]) -> None:
+        """The phone's list changed mid-session.
+
+        Sent when something is granted on the phone -- the projection
+        permission, so far -- rather than making the interface wait for the
+        next connection to notice.
+        """
+        self._capabilities = list(message.get("caps", []))
+        self.capabilitiesChanged.emit(self._capabilities)
+
     def _recv_audio_started(self, message: dict[str, Any]) -> None:
         self.phoneAudioStarted.emit(message)
 

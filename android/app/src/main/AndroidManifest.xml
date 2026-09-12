@@ -95,6 +95,20 @@
             </intent-filter>
         </activity>
 
+        <!-- No launcher entry, no history, never in Recents: it exists only to
+             hold the projection request for a moment. -->
+        <!-- Exported only so the shell can start it, which is what makes the
+             audio start without the phone being touched. It answers nothing
+             without the single-use token the service issues, so an app that
+             starts it achieves exactly nothing. -->
+        <activity
+            android:name=".ConsentActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Tessera.Invisible" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true"

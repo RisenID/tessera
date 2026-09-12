@@ -306,10 +306,16 @@ class AudioPage(QWidget):
             return "Switched off in Settings."
         if not self.hub.connected:
             return "The companion app is not connected."
-        if "phone_audio" not in self.hub.companion.capabilities:
+        caps = self.hub.companion.capabilities
+        if "phone_audio" not in caps:
             return (
                 "This phone is not offering audio: the companion app needs "
                 "Android 10 or later, and may be older than this feature."
+            )
+        if "phone_audio_silent" not in caps:
+            return (
+                "Android will ask on the phone before it starts. Settings can "
+                "grant the one-time permission that stops it asking."
             )
         return ""
 
@@ -359,9 +365,10 @@ class AudioPage(QWidget):
         """Play the phone's audio here, or stop.
 
         The panel's switch calls this. Either route only ever starts on a
-        click, and this is that click -- but the link route is tried first,
-        because it takes nothing away from the phone. Bluetooth is the
-        fallback for a phone without the companion app.
+        click, and this is that click; which route is the user's choice, in
+        Settings. "Whichever works" prefers the link, because it takes nothing
+        away from the phone -- and falls back to Bluetooth for a phone whose
+        companion app cannot send audio.
         """
         if self.hub.phone_audio_active or self.hub.phone_audio_pending:
             self.hub.stop_phone_audio()
@@ -369,15 +376,29 @@ class AudioPage(QWidget):
         if self.hub.bluetooth_streaming or self._stream_node:
             self._park()
             return
-        if (
+
+        route = self.hub.config.phone_audio.route
+        if route != "bluetooth" and self._link_usable():
+            self.hub.start_phone_audio()
+            return
+        if route == "link":
+            # Asked for explicitly, so say why it cannot rather than quietly
+            # doing something else to the phone's audio.
+            self.toast.show_message(
+                self._link_note() or "The link route is not available.",
+                self.palette_tokens, "danger",
+            )
+            return
+        self._set_mode("music")
+
+    def _link_usable(self) -> bool:
+        """Whether audio over the link could start right now."""
+        return (
             self.hub.config.features.phone_audio
             and self.hub.connected
             and "phone_audio" in self.hub.companion.capabilities
             and phone_audio.available()
-        ):
-            self.hub.start_phone_audio()
-            return
-        self._set_mode("music")
+        )
 
     def _read_state(self) -> tuple:
         """Gather Bluetooth and audio state off the GUI thread.

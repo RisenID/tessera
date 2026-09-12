@@ -108,6 +108,15 @@ class PhoneAudioConfig:
     is about the point where both are true on a quiet network.
     """
 
+    #: Which way to play the phone's audio when the switch in the sidebar is
+    #: pressed. Both routes stay available on the Audio page whatever this
+    #: says; this only decides what one click does.
+    #:
+    #: * "auto" -- over the link when the phone offers it, else Bluetooth
+    #: * "link" -- always over the companion link
+    #: * "bluetooth" -- always the A2DP profile switch
+    route: str = "auto"
+
     volume: int = 100              # percent
     buffer_ms: int = 120
     #: Where to play it. Empty means the system's default output, which is

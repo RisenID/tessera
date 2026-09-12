@@ -14,6 +14,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.IBinder
 import android.util.Log
+import dev.tessera.companion.features.PrivilegedShell
+import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.net.Advertiser
 import dev.tessera.companion.net.TlsServer
 import dev.tessera.companion.protocol.Session
@@ -49,6 +51,10 @@ class TesseraService : Service() {
 
     /** What to do once the user has consented, set by the session that asked. */
     private var pendingAudio: (() -> Unit)? = null
+
+    /** Guards the exported consent activity; see [newConsentToken]. */
+    @Volatile
+    private var consentToken: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -180,14 +186,36 @@ class TesseraService : Service() {
      * background app may not start one -- so this posts a notification for the
      * user to tap. The desktop is told the same thing in words.
      */
-    fun askForAudioConsent(after: () -> Unit) {
+    fun askForAudioConsent(after: () -> Unit): Boolean {
         pendingAudio = after
-        val manager = getSystemService(NotificationManager::class.java) ?: return
+
+        // The quiet path: with the projection app op granted, Android approves
+        // without drawing anything, so the request can be made and answered
+        // without the phone being touched -- or even woken. Starting an
+        // activity from a background service is barred, so the shell starts it,
+        // which is the same privilege that granted the op.
+        if (ProjectionGrant.allowed(this)) {
+            val token = newConsentToken()
+            val started = PrivilegedShell.run(
+                "am start -n $packageName/.ConsentActivity " +
+                    "--es ${ConsentActivity.EXTRA_TOKEN} $token"
+            ).code == 0
+            if (started) {
+                Log.i(TAG, "asking for a projection quietly")
+                return true
+            }
+            // No Shizuku any more: try it ourselves before bothering the user.
+            val direct = runCatching {
+                startActivity(ConsentActivity.intent(this, token))
+            }
+            if (direct.isSuccess) return true
+            Log.i(TAG, "could not start the consent activity; asking the user")
+        }
+
+        val manager = getSystemService(NotificationManager::class.java) ?: return false
         ensureConsentChannel()
 
-        val intent = Intent(this, MainActivity::class.java)
-            .setAction(MainActivity.ACTION_REQUEST_AUDIO)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val intent = ConsentActivity.intent(this, newConsentToken())
         val tap = PendingIntent.getActivity(
             this,
             2,
@@ -202,7 +230,31 @@ class TesseraService : Service() {
             .setAutoCancel(true)
             .build()
         runCatching { manager.notify(CONSENT_NOTIFICATION_ID, notification) }
+        return false
     }
+
+    /**
+     * A one-use password for the consent activity.
+     *
+     * That activity has to be exported so the shell can start it, which would
+     * otherwise let any app on the phone ask us to raise a capture request.
+     * Only a request carrying the token issued for a pending audio request is
+     * answered, and the token is spent on use.
+     */
+    private fun newConsentToken(): String =
+        java.util.UUID.randomUUID().toString().also { consentToken = it }
+
+    fun takeConsentToken(offered: String): Boolean {
+        val expected = consentToken
+        consentToken = null
+        return expected != null && offered.isNotEmpty() && offered == expected
+    }
+
+    /** Grants the projection app op, so nothing is ever asked again. */
+    fun grantProjection(): String? = ProjectionGrant.grant(this)
+
+    /** Whether audio can start without the phone being touched. */
+    fun projectionSilent(): Boolean = ProjectionGrant.allowed(this)
 
     /** Called by the activity with the user's answer. */
     fun onAudioConsent(resultCode: Int, data: Intent?) {
