@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        11%{?dist}
+Release:        12%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,16 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-12
+- Laid out like Phone Link: a device panel down the left -- which phone, its
+  connection, its battery, its switches, what it is playing -- and a tab strip
+  across the top for the pages, instead of a navigation list in the sidebar.
+- The quick toggles and the now-playing block moved from the overview into
+  that panel, so they are in reach from every tab rather than only one.
+- Navigation is in one place again. The overview's buttons that only opened
+  another page are gone, since the tabs cover that.
+- Settings is the gear at the end of the tab strip.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-11
 - Settings has a Startup section: start Tessera at login, and start it
   minimised to the tray. The minimised setting existed in the config file

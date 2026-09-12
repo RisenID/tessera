@@ -4,6 +4,25 @@ Why the interface looks and behaves as it does. This is the detail that used
 to sit in the window as paragraphs of explanation; the app now says the short
 version and this says the rest.
 
+## Layout
+
+Phone Link's arrangement, drawn with the desktop's own widgets.
+
+A **device panel** down the left: which phone, whether it is connected, its
+battery, its switches, and what it is playing. A **tab strip** across the top
+of the content area for the pages. Settings is the gear at the end of the
+strip.
+
+Navigation lives in exactly one place. Buttons that only opened a page were
+removed from the overview when the tabs arrived, and the device panel holds
+switches and media rather than a second set of links. Settings is a real tab
+rather than a page with no tab, because QTabBar cannot hold "nothing
+selected" while tabs exist -- the first attempt showed Settings while the
+strip pointed at Hotspot.
+
+Media and the quick toggles belong to the shell, not to the overview, so they
+are visible on every tab -- which is the point of Phone Link's panel.
+
 ## Following the desktop, not imposing on it
 
 `tessera/ui/theme.py` builds its colours from `QApplication.palette()`. The

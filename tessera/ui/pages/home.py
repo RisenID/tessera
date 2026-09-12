@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...backends.mpris import MprisPlayer
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, OtpCard, Tile, Toast, heading, line_row
@@ -36,20 +35,6 @@ def _ago(millis: int) -> str:
     return moment.strftime("%d %b")
 
 
-def quick_button(label: str, icon_name: str, checkable: bool = False) -> QPushButton:
-    """A button for the quick row; checkable ones get the platform's own
-    checked state, so a toggle never looks like a plain action."""
-    button = QPushButton(label)
-    icon = QIcon.fromTheme(icon_name)
-    if not icon.isNull():
-        button.setIcon(icon)
-    button.setCheckable(checkable)
-    button.setCursor(Qt.CursorShape.PointingHandCursor)
-    if checkable:
-        button.setToolTip(f"{label} — on or off")
-    return button
-
-
 class HomePage(QWidget):
     """Overview of the phone, with the common actions in reach."""
 
@@ -62,8 +47,6 @@ class HomePage(QWidget):
         super().__init__(parent)
         self.hub = hub
         self.palette_tokens = palette
-        self._player = MprisPlayer(self)
-        self._service = ""
         self._thumbs: dict[str, QPixmap] = {}
 
         page = QVBoxLayout(self)
@@ -82,8 +65,6 @@ class HomePage(QWidget):
         outer.setContentsMargins(0, 0, SPACE["md"], SPACE["xl"])
         outer.setSpacing(SPACE["lg"])
 
-        outer.addWidget(self._build_quick_row())
-
         # The newest passcode, copyable without leaving the overview. It used
         # to exist only on the notifications page.
         self.otp_card: OtpCard | None = None
@@ -96,27 +77,23 @@ class HomePage(QWidget):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
-        self.media_tile = Tile("Now playing", palette=palette)
-        self._build_media(self.media_tile)
-        grid.addWidget(self.media_tile, 0, 0)
-
-        self.calls_tile = Tile("Recent calls", "Open", palette=palette)
-        self.calls_tile.actionClicked.connect(lambda: self.openPage.emit("Calls"))
-        grid.addWidget(self.calls_tile, 0, 1)
-
         self.notifications_tile = Tile("Notifications", "Open", palette=palette)
         self.notifications_tile.actionClicked.connect(
             lambda: self.openPage.emit("Notifications")
         )
-        grid.addWidget(self.notifications_tile, 1, 0)
+        grid.addWidget(self.notifications_tile, 0, 0)
 
         self.messages_tile = Tile("Messages", "Open", palette=palette)
         self.messages_tile.actionClicked.connect(lambda: self.openPage.emit("Messages"))
-        grid.addWidget(self.messages_tile, 1, 1)
+        grid.addWidget(self.messages_tile, 0, 1)
+
+        self.calls_tile = Tile("Recent calls", "Open", palette=palette)
+        self.calls_tile.actionClicked.connect(lambda: self.openPage.emit("Calls"))
+        grid.addWidget(self.calls_tile, 1, 0)
 
         self.photos_tile = Tile("Recent photos", "Open", palette=palette)
         self.photos_tile.actionClicked.connect(lambda: self.openPage.emit("Photos"))
-        grid.addWidget(self.photos_tile, 2, 0, 1, 2)
+        grid.addWidget(self.photos_tile, 1, 1)
 
         outer.addLayout(grid)
         outer.addStretch(1)
@@ -127,8 +104,6 @@ class HomePage(QWidget):
         hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.callChanged.connect(lambda _c: self.refresh_calls())
         hub.connectionChanged.connect(lambda _c: self.refresh_all())
-        hub.dndChanged.connect(self._sync_toggles)
-        hub.mediaChanged.connect(lambda _m: self.refresh_media())
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh_light)
@@ -149,149 +124,7 @@ class HomePage(QWidget):
 
     # -- quick actions -------------------------------------------------------
 
-    def _build_quick_row(self) -> QWidget:
-        card = Card(self, flat=True, padding=SPACE["md"])
-        row = QHBoxLayout()
-        row.setSpacing(SPACE["sm"])
-
-        # Toggles first, then a separator, then the actions -- so the two
-        # kinds are not silently mixed in one undifferentiated row.
-        self.dnd_toggle = quick_button("Do Not Disturb", "notifications-disabled", True)
-        self.dnd_toggle.clicked.connect(self._toggle_dnd)
-        row.addWidget(self.dnd_toggle)
-
-        self.clipboard_toggle = quick_button("Clipboard", "edit-paste", True)
-        self.clipboard_toggle.setChecked(
-            self.hub.config.features.clipboard
-            and self.hub.config.clipboard.mode != "off"
-        )
-        self.clipboard_toggle.clicked.connect(self._toggle_clipboard)
-        row.addWidget(self.clipboard_toggle)
-
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.VLine)
-        separator.setObjectName("Divider")
-        separator.setFixedWidth(1)
-        row.addWidget(separator)
-
-        for label, icon_name, page in (
-            ("Hotspot", "network-wireless-hotspot", "Hotspot"),
-            ("Mirror screen", "smartphone", "Screen"),
-            ("Webcam", "camera-web", "Webcam"),
-        ):
-            button = quick_button(label, icon_name)
-            button.clicked.connect(lambda _c=False, p=page: self.openPage.emit(p))
-            row.addWidget(button)
-
-        ring = quick_button("Ring phone", "audio-volume-high")
-        ring.clicked.connect(self._ring)
-        row.addWidget(ring)
-
-        row.addStretch(1)
-        card.body().addLayout(row)
-        return card
-
-    def _toggle_dnd(self) -> None:
-        wanted = "priority" if self.dnd_toggle.isChecked() else "off"
-        self.hub.set_phone_dnd(wanted)
-
-    def _toggle_clipboard(self) -> None:
-        on = self.clipboard_toggle.isChecked()
-        self.hub.config.features.clipboard = on
-        self.hub.config.clipboard.mode = "two_way" if on else "off"
-        self.hub.clipboard.set_mode(self.hub.config.clipboard.mode)
-        self.hub.config.save()
-        self.hub.apply_features()
-        self.toast.show_message(
-            "Clipboard sharing on" if on else "Clipboard sharing off",
-            self.palette_tokens,
-        )
-
-    def _ring(self) -> None:
-        try:
-            self.hub.kdeconnect.ring()
-            self.toast.show_message("Ringing your phone", self.palette_tokens)
-        except Exception:
-            self.toast.show_message(
-                "Ringing needs KDE Connect paired with this phone",
-                self.palette_tokens,
-                "warning",
-            )
-
-    def _sync_toggles(self, mode: str = "") -> None:
-        self.dnd_toggle.setChecked((mode or self.hub.phone_dnd) != "off")
-
     # -- media ---------------------------------------------------------------
-
-    def _build_media(self, tile: Tile) -> None:
-        self.track_label = QLabel("Nothing playing")
-        self.track_label.setStyleSheet("font-weight: 650;")
-        self.track_label.setWordWrap(True)
-        tile.add_row(self.track_label)
-
-        self.album_label = QLabel()
-        self.album_label.setStyleSheet(
-            f"color: {self.palette_tokens.muted}; font-size: 12px;"
-        )
-        tile.add_row(self.album_label)
-
-        controls = QWidget()
-        layout = QHBoxLayout(controls)
-        layout.setContentsMargins(0, 0, 0, 0)
-        for icon_name, glyph, action, tip in (
-            ("media-skip-backward", "⏮", "Previous", "Previous track"),
-            ("media-playback-start", "⏯", "PlayPause", "Play or pause"),
-            ("media-skip-forward", "⏭", "Next", "Next track"),
-        ):
-            button = QPushButton()
-            icon = QIcon.fromTheme(icon_name)
-            if icon.isNull():
-                button.setText(glyph)
-            else:
-                button.setIcon(icon)
-            button.setToolTip(tip)
-            button.setFixedWidth(44)
-            button.clicked.connect(lambda _c=False, a=action: self._control(a))
-            layout.addWidget(button)
-        layout.addStretch(1)
-        tile.add_row(controls)
-
-    def _control(self, action: str) -> None:
-        # Send through the companion when it is there; it controls whatever app
-        # is playing, not merely whatever Bluetooth exposes.
-        if self.hub.companion.connected and self.hub.media.get("canControl"):
-            self.hub.media_command(
-                {"PlayPause": "playpause", "Next": "next", "Previous": "previous"}[action]
-            )
-        else:
-            try:
-                self._player.control(self._service, action)
-            except RuntimeError as exc:
-                self.toast.show_message(str(exc)[:110], self.palette_tokens, "warning")
-        QTimer.singleShot(600, self.refresh_media)
-
-    def refresh_media(self) -> None:
-        # The companion app is preferred: it reads MediaSession, so it works
-        # with no Bluetooth connected and without moving the phone's audio.
-        media = self.hub.media
-        if media.get("title"):
-            artist = media.get("artist", "")
-            self.track_label.setText(
-                f"{media['title']} — {artist}" if artist else media["title"]
-            )
-            detail = media.get("album", "") or media.get("app", "")
-            state = "" if media.get("playing") else "  (paused)"
-            self.album_label.setText(f"{detail}{state}")
-            return
-
-        address = self.hub.config.bluetooth.address
-        self._service = self._player.find_player(address, self.hub.bluetooth_name)
-        track = self._player.track(self._service)
-        self.track_label.setText(track.summary)
-        self.album_label.setText(
-            track.album
-            or ("" if self._service else "Nothing playing on your phone")
-        )
 
     # -- tiles ---------------------------------------------------------------
 
@@ -318,16 +151,13 @@ class HomePage(QWidget):
     def refresh_all(self) -> None:
         self.refresh_otp()
         self.refresh_notifications()
-        self.refresh_media()
         self.refresh_calls()
         self.refresh_messages()
         self.refresh_photos()
-        self._sync_toggles()
 
     def refresh_light(self) -> None:
         """The cheap ones, on a timer; the rest only on a real change."""
-        self.refresh_media()
-        self._sync_toggles()
+        self.refresh_otp()
 
     def refresh_notifications(self) -> None:
         tile = self.notifications_tile
