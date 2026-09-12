@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QMainWindow,
     QMenu,
+    QSplitter,
     QStackedWidget,
     QSystemTrayIcon,
     QTabBar,
@@ -30,7 +31,7 @@ from .pages.photos import PhotosPage
 from .pages.screen import ScreenPage
 from .pages.settings import SettingsPage
 from .pages.webcam import WebcamPage
-from .panel import DevicePanel
+from .panel import MAX_WIDTH, MIN_WIDTH, DevicePanel
 from .theme import SPACE, Palette, tab_stylesheet
 from .widgets import themed_icon, tinted_icon
 
@@ -106,8 +107,11 @@ class MainWindow(QMainWindow):
         self.panel = DevicePanel(hub, palette)
         self.panel.pageRequested.connect(self.show_page)
         self.panel.statusMessage.connect(self._set_status)
-        self.panel.hotspotRequested.connect(self._hotspot_from_panel)
-        layout.addWidget(self.panel)
+        self.panel.hotspotRequested.connect(
+            lambda: self._from_panel("Hotspot")
+        )
+        self.panel.audioRequested.connect(lambda: self._from_panel("Audio"))
+        self.panel.mirrorRequested.connect(lambda: self._from_panel("Screen"))
 
         # Content area: tabs across the top, the selected page beneath.
         content = QWidget()
@@ -121,18 +125,37 @@ class MainWindow(QMainWindow):
             page = page_class(hub, palette)
             self.stack.addWidget(page)
             if isinstance(page, SettingsPage):
+                self.settings_page = page
                 page.featuresChanged.connect(self._apply_feature_visibility)
-                page.featuresChanged.connect(self.panel.apply_features)
-            if isinstance(page, HotspotPage):
-                self.hotspot_page = page
+                page.featuresChanged.connect(self.panel.apply_tiles)
+                page.featuresChanged.connect(self._apply_panel_width)
             if isinstance(page, HomePage):
                 # Tiles hand off to their full page rather than duplicating it.
                 page.openPage.connect(self.show_page)
         content_layout.addWidget(self.stack, 1)
-        layout.addWidget(content, 1)
+
+        # A splitter, so the rail is dragged to whatever width suits rather
+        # than being a number this code chose.
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setObjectName("Split")
+        self.splitter.setHandleWidth(4)
+        self.splitter.addWidget(self.panel)
+        self.splitter.addWidget(content)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.splitterMoved.connect(lambda _p, _i: self._remember_width())
+        layout.addWidget(self.splitter, 1)
+
+        #: Written a moment after the drag stops, not on every pixel of it.
+        self._width_save = QTimer(self)
+        self._width_save.setSingleShot(True)
+        self._width_save.setInterval(700)
+        self._width_save.timeout.connect(hub.config.save)
 
         self.setCentralWidget(root)
-        self.panel.set_window_width(self.width())
+        self._apply_panel_width()
         self._apply_feature_visibility()
         self.tabs.setCurrentIndex(0)
         self._change_page(0)
@@ -313,22 +336,54 @@ class MainWindow(QMainWindow):
     def _set_status(self, message: str) -> None:
         self.panel.set_status(message)
 
-    def _hotspot_from_panel(self) -> None:
-        """One click for the whole hotspot sequence, with the page to watch it.
+    def _from_panel(self, name: str) -> None:
+        """A panel switch whose work belongs to a page: run it, and show it.
 
-        Starting a hotspot is not instant -- the phone brings up the AP, this
-        computer joins it, then the phone has to be found again on the new
-        network -- so the page comes forward to report on it.
+        Starting a hotspot, taking over the audio path or launching scrcpy is
+        not instant and can fail halfway, so the page that owns the sequence
+        comes forward to report on it rather than being reimplemented in a
+        tile.
         """
-        if not self._enabled("Hotspot"):
-            self._set_status("Hotspot is switched off in Settings.")
+        if not self._enabled(name):
+            self._set_status(f"{name} is switched off in Settings.")
             return
-        self.show_page("Hotspot")
-        self.hotspot_page.quick_toggle()
+        self.show_page(name)
+        page = self.stack.widget(self._page_index(name))
+        toggle = getattr(page, "quick_toggle", None)
+        if toggle is not None:
+            toggle()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        super().resizeEvent(event)
-        self.panel.set_window_width(self.width())
+    # -- the rail's width ----------------------------------------------------
+
+    def _display_mode(self) -> str:
+        """Which saved width applies: a filled screen is not a window."""
+        return (
+            "width_fullscreen"
+            if self.isFullScreen() or self.isMaximized() else "width"
+        )
+
+    def _apply_panel_width(self) -> None:
+        """Give the rail the width saved for the mode the window is in."""
+        cfg = self.hub.config.panel
+        wanted = max(MIN_WIDTH, min(MAX_WIDTH, int(getattr(cfg, self._display_mode()))))
+        rest = max(1, self.splitter.width() - wanted - self.splitter.handleWidth())
+        self.splitter.setSizes([wanted, rest])
+
+    def _remember_width(self) -> None:
+        cfg = self.hub.config.panel
+        setattr(cfg, self._display_mode(), self.panel.width())
+        # Settings shows the same two numbers; a drag is the other way of
+        # setting them, so keep the boxes honest.
+        self.settings_page.reload_panel_widths()
+        self._width_save.start()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().changeEvent(event)
+        # Maximising or going full screen switches to that mode's saved width.
+        # Deferred: the state change arrives before the new geometry, and
+        # applying a width against the old one gave the rail its minimum.
+        if event.type() == event.Type.WindowStateChange:
+            QTimer.singleShot(0, self._apply_panel_width)
 
     # -- tray ----------------------------------------------------------------
 

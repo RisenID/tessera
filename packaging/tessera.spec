@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        14%{?dist}
+Release:        15%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,25 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-15
+- The sidebar is resizable: drag its edge to anywhere between 280 and 720
+  pixels. What is drawn inside scales with the width it is given, up to a
+  ceiling, so a wider rail means bigger icons rather than only more space.
+  The width is no longer tied to the window's, which resized the rail under
+  you whenever the window changed.
+- Two widths are remembered, one for a window and one for a maximised or full
+  screen one, so dragging in one mode leaves the other alone. Settings shows
+  both and they can be typed in directly.
+- Settings lists the sidebar's quick switches and each can be turned on or
+  off. Two more are on offer: mirror the phone's screen, and play the phone's
+  audio here.
+- The webcam switch is drawn as a camcorder. The old icon read as a briefcase
+  at that size.
+- Passcodes can be copied from the sidebar: the newest one sits above the
+  notification feed with a copy button, and any feed row carrying a code gets
+  one of its own. The overview's passcode card is gone, since the sidebar
+  shows it on every page.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-14
 - Apps is a tab of its own in the strip rather than the bottom half of the
   Screen page, which is now only the mirror. It has its own feature switch.

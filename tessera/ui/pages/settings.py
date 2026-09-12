@@ -23,6 +23,7 @@ from ...core import autostart
 from ...core.clipboard import MODE_LABELS as CLIPBOARD_LABELS
 from ...core.hub import Hub
 from ...core.proc import ManagedProcess, submit
+from ..panel import MAX_WIDTH, MIN_WIDTH, TILE_LABELS, TILES
 from ..theme import SPACE, Palette
 from ..widgets import Card, Pill, Toast, heading
 
@@ -142,6 +143,55 @@ class SettingsPage(QWidget):
         startup_note.setWordWrap(True)
         startup.add(startup_note)
         outer.addWidget(startup)
+
+        # -- the device panel ------------------------------------------------
+        rail = Card(self)
+        rail_title = QLabel("Sidebar")
+        rail_title.setObjectName("SectionTitle")
+        rail.add(rail_title)
+
+        rail_note = QLabel(
+            "Drag the edge of the sidebar to resize it. The width is kept "
+            "separately for a window and for a full screen."
+        )
+        rail_note.setObjectName("Muted")
+        rail_note.setWordWrap(True)
+        rail.add(rail_note)
+
+        self.panel_width = QSpinBox()
+        self.panel_width.setRange(MIN_WIDTH, MAX_WIDTH)
+        self.panel_width.setSingleStep(10)
+        self.panel_width.setSuffix(" px")
+        self.panel_width.setValue(hub.config.panel.width)
+        rail.add(self._labelled("Width in a window", self.panel_width))
+
+        self.panel_width_full = QSpinBox()
+        self.panel_width_full.setRange(MIN_WIDTH, MAX_WIDTH)
+        self.panel_width_full.setSingleStep(10)
+        self.panel_width_full.setSuffix(" px")
+        self.panel_width_full.setValue(hub.config.panel.width_fullscreen)
+        rail.add(self._labelled("Width full screen", self.panel_width_full))
+
+        tiles_label = QLabel("Quick switches")
+        tiles_label.setStyleSheet("font-weight: 600;")
+        rail.add(tiles_label)
+
+        self.tile_boxes: dict[str, QCheckBox] = {}
+        chosen = hub.config.panel.tiles
+        for key in TILES:
+            box = QCheckBox(TILE_LABELS.get(key, key))
+            box.setToolTip(TILES[key][2])
+            box.setChecked(key in chosen)
+            self.tile_boxes[key] = box
+            rail.add(box)
+
+        tiles_note = QLabel(
+            "A switch whose feature is turned off above stays hidden either way."
+        )
+        tiles_note.setObjectName("Muted")
+        tiles_note.setWordWrap(True)
+        rail.add(tiles_note)
+        outer.addWidget(rail)
 
         # -- screen ----------------------------------------------------------
         screen = Card(self)
@@ -507,6 +557,14 @@ class SettingsPage(QWidget):
         for key, box in self.feature_boxes.items():
             setattr(self.hub.config.features, key, box.isChecked())
 
+        panel = self.hub.config.panel
+        panel.width = self.panel_width.value()
+        panel.width_fullscreen = self.panel_width_full.value()
+        # Kept in the catalogue's order, which is the order they are drawn in.
+        panel.tiles = [
+            key for key, box in self.tile_boxes.items() if box.isChecked()
+        ]
+
         self.hub.config.start_minimised = self.minimised_box.isChecked()
         if self.autostart_box.isChecked() != autostart.enabled():
             if not autostart.set_enabled(self.autostart_box.isChecked()):
@@ -539,6 +597,15 @@ class SettingsPage(QWidget):
 
     def _show_error(self, message: str) -> None:
         self.pair_status.setText(message)
+
+    def reload_panel_widths(self) -> None:
+        """Pick up a width the user set by dragging instead of typing."""
+        panel = self.hub.config.panel
+        for box, value in ((self.panel_width, panel.width),
+                           (self.panel_width_full, panel.width_fullscreen)):
+            box.blockSignals(True)
+            box.setValue(value)
+            box.blockSignals(False)
 
     def _refresh(self) -> None:
         if self.hub.companion.connected:

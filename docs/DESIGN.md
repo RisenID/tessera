@@ -24,18 +24,34 @@ Everything in it is about the phone, and all of it is visible on every tab --
 which is the point of Phone Link's panel. The feed is why the overview has no
 notifications tile any more: two copies of the same list drifted apart.
 
-The rail **grows with the window** -- 23.5% of its width, between 300 and 480
-pixels -- and what is drawn inside scales with it: icons, switches, the phone
-tile, the feed avatars and the name. A fixed rail is either cramped on a small
-screen or a column of 16-pixel icons on a large one. The scale is quantised to
-one decimal place, because re-laying out on every pixel of a window drag would
-rebuild the feed dozens of times over for no visible difference.
+The rail is **dragged to whatever width suits**: it sits in a `QSplitter`
+between 280 and 720 pixels, and what is drawn inside scales with the width it
+has been given -- icons, switches, the phone tile, the feed avatars and the
+name -- up to a ceiling, past which extra width is space rather than size.
+The scale is quantised to one decimal place, because re-laying out on every
+pixel of a drag would rebuild the feed dozens of times over for no visible
+difference.
+
+The width is remembered **per display mode**: `panel.width` for a window,
+`panel.width_fullscreen` when the window is maximised or full screen. One
+shared number meant dragging the rail to suit a filled screen left it absurd
+in a window, and the two modes are what people actually switch between.
+Dragging writes to the mode in use, a moment after the drag stops rather than
+on every pixel of it; Settings shows both numbers and typing into them is the
+other way to set them. It was briefly tied to the window width instead, which
+sounds equivalent and is not: the rail kept resizing itself under people.
 
 ### The switches
 
-Six squares, reflowing to however many fit across the rail: Do Not Disturb,
-the ringer, clipboard sharing, ring the phone, the hotspot, and the phone's
-camera as a webcam. Each hides itself when its feature is switched off.
+Squares, reflowing to however many fit across the rail. Eight are on offer
+and six are shown by default; which ones is `config.panel.tiles`, set from the
+list in Settings, and the order there is the order they are drawn in. Each
+hides itself when its feature is switched off, whether or not it was chosen.
+
+`TILES` in `ui/panel.py` is the catalogue: icons, fallback glyph, tooltip,
+whether it latches, and the feature that governs it. Adding one means an entry
+there, a handler in `_tile_clicked`, and a label in `TILE_LABELS` -- a test
+asserts all three exist for every key.
 
 - **Do Not Disturb** is the roundel (`process-stop`), not a crossed-out bell.
   A bell with a line through it reads as "notifications off", which is a
@@ -46,18 +62,26 @@ camera as a webcam. Each hides itself when its feature is switched off.
 - **Ring the phone** is a bell, because the ringer square beside it shows a
   phone while the phone is on vibrate, and two phone glyphs side by side read
   as one control.
-- **The hotspot** and **the camera** are actions with state, so they report
-  what is happening rather than what was clicked: the hotspot tile follows
-  `Hub.hotspot_joined`, the camera tile follows `Hub.camera_running`.
+- **The webcam** is a camcorder, not `camera-web`, which at this size reads as
+  a briefcase.
+- **The hotspot, the camera, the mirror and the audio switch** are actions with
+  state, so they report what is happening rather than what was clicked:
+  `Hub.hotspot_joined`, `Hub.camera_running`, `MirrorManager.is_running`,
+  `Hub.bluetooth_streaming`.
 
 Which squares are showing is read from a flag on each button rather than from
 `isHidden()`: before the window is first shown every child reports itself
 hidden, and filtering on that left half the tiles out of the grid for good.
 
-A hotspot is not an instant thing -- the phone brings up the AP, this computer
-joins it, then the phone has to be found again on the new network -- so the
-tile calls `HotspotPage.quick_toggle()` and the window brings that page
-forward to report on it, rather than reimplementing the sequence in the panel.
+Three of them hand off to a page: the hotspot, the screen mirror and the audio
+switch. None is instant and each can fail halfway -- a hotspot means asking the
+phone, joining the AP and then finding the phone again on the new network -- so
+the tile asks the window, which shows the page that owns the sequence and calls
+its `quick_toggle()`. Nothing is reimplemented in the panel.
+
+The audio switch is the only way the panel touches the audio path, and it is a
+click, which is the rule: connecting Bluetooth never takes the audio, and
+nothing streams until somebody presses something.
 
 **Complications** are the small readings in one line: Bluetooth, Wi-Fi,
 cellular, ringer, battery. Each hides itself when the phone has not reported
@@ -139,10 +163,15 @@ fallback for a system with no usable theme. Sizes are points relative to
 
 ## One-time passcodes
 
-A code is useful wherever you are reading it, so `OtpCard` lives in
-`ui/widgets.py` and three surfaces use it:
+A code is useful wherever you are reading it. The sidebar carries the newest
+one on every page -- `PanelOtp`, the same idea as `OtpCard` at the rail's
+scale, plus a "Copy 448192" button on any feed row that contains one -- and
+that is why the overview no longer has a passcode card of its own.
 
-* **Overview** — the newest code, copyable without navigating anywhere.
+`OtpCard` lives in `ui/widgets.py` and these surfaces use it:
+
+* **Sidebar** — the newest code, on every page, and a copy button on any feed
+  row carrying one.
 * **Notifications** — up to three recent codes, pinned above the list.
 * **Messages** — a copy button on the message that carries the code, inside
   the chain, on incoming messages only.
@@ -156,10 +185,11 @@ pasted into a login form is worse than no code.
 
 ## Quick actions
 
-The row on the overview mixes two kinds of thing, so they are drawn
-differently and separated. Toggles are checkable buttons and get the
-platform's own checked state; actions are plain buttons. Previously a toggle
-that was off looked identical to a button that just does something.
+The rail's switches mix two kinds of thing. Latching ones (Do Not Disturb,
+clipboard, hotspot, camera, mirror, audio) are checkable and get the
+platform's checked state, drawn in the accent colour; one-shot ones (ringer,
+ring the phone) are plain. A toggle that was off used to look identical to a
+button that just does something. See "The switches" above.
 
 ## Bluetooth audio
 

@@ -8,6 +8,7 @@ lives in the tab strip instead. See docs/DESIGN.md.
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..backends.mpris import MprisPlayer
+from ..core import otp
 from ..core.hub import Hub
 from ..core.models import Notification
 from .theme import SPACE, Palette
@@ -31,10 +33,13 @@ from .widgets import Avatar, Pill, divider, themed_icon, tinted_icon
 #: which the feed's own button opens.
 FEED_LIMIT = 8
 
-#: The panel at its narrowest, its share of a wider window, and its widest.
-#: A fixed width left the icons tiny on a large screen with the rest of the
-#: window mostly empty.
-MIN_WIDTH, WIDTH_SHARE, MAX_WIDTH = 300, 0.235, 480
+#: How far the rail can be dragged. The minimum is what the complication strip
+#: and four switches need before they start wrapping into nonsense.
+MIN_WIDTH, MAX_WIDTH = 280, 720
+
+#: Widths beyond this add space rather than size: icons stop growing so a very
+#: wide rail does not turn into a row of billboards.
+SCALE_CEILING = 1.6
 
 #: What the ringer button steps through, in order.
 RINGER_CYCLE = ("normal", "vibrate", "silent")
@@ -44,6 +49,41 @@ RINGER_ICONS = {
     "normal": ("audio-volume-high", "\N{BELL}"),
     "vibrate": ("phone-vibrate", "\N{MOBILE PHONE}"),
     "silent": ("audio-volume-muted", "\N{SPEAKER WITH CANCELLATION STROKE}"),
+}
+
+
+#: Every switch the panel can carry: icons (first one the theme has wins),
+#: fallback glyph, tooltip, whether it latches, and the feature that governs
+#: it. Which of them are actually shown is config.panel.tiles.
+TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
+    # The Do Not Disturb roundel, not a crossed-out bell: the bell reads as
+    # "notifications off", which is a different switch.
+    "dnd": (("process-stop", "notifications-disabled"), "\N{CIRCLED MINUS}",
+            "Do Not Disturb", True, "dnd_sync"),
+    "ringer": (("audio-volume-high",), "\N{BELL}", "Ringer", False, ""),
+    "clipboard": (("edit-paste",), "\N{CLIPBOARD}", "Clipboard sharing",
+                  True, "clipboard"),
+    # A bell, not a handset: the ringer switch shows a phone while the phone is
+    # on vibrate, and two phone glyphs read as one control.
+    "ring": (("notifications", "phone-ringing"), "\N{BELL}", "Ring phone",
+             False, ""),
+    "hotspot": (("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
+                "Start the phone's hotspot and join it", True, "hotspot"),
+    # A camcorder rather than camera-web, which at this size reads as a
+    # briefcase.
+    "camera": (("camera-video", "camera-web"), "\N{MOVIE CAMERA}",
+               "Use a phone camera as a webcam", True, "webcam"),
+    "mirror": (("smartphone",), "\N{MOBILE PHONE}", "Mirror the phone's screen",
+               True, "screen"),
+    "audio": (("audio-headphones",), "\N{HEADPHONE}",
+              "Play the phone's audio here", True, "bluetooth_audio"),
+}
+
+#: Human names for the switches, for the list in Settings.
+TILE_LABELS = {
+    "dnd": "Do Not Disturb", "ringer": "Ringer mode", "clipboard": "Clipboard sharing",
+    "ring": "Ring phone", "hotspot": "Hotspot", "camera": "Webcam",
+    "mirror": "Mirror screen", "audio": "Play phone audio here",
 }
 
 
@@ -122,6 +162,57 @@ class Complication(QWidget):
         self.setVisible(True)
 
 
+class PanelOtp(QFrame):
+    """The newest passcode, copyable without leaving the rail.
+
+    The full OtpCard is too wide for 300 pixels, so this is the same idea at
+    the rail's scale: the digits, where they came from, and one button.
+    """
+
+    copied = Signal(str)
+
+    def __init__(self, palette: Palette, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setObjectName("FeedRow")
+        self.code = ""
+        self._palette = palette
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACE["sm"], SPACE["xs"], SPACE["xs"], SPACE["xs"])
+        layout.setSpacing(SPACE["sm"])
+
+        text = QVBoxLayout()
+        text.setSpacing(0)
+        self.value = QLabel()
+        self.value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text.addWidget(self.value)
+        self.source = QLabel()
+        self.source.setStyleSheet(f"color: {palette.muted}; font-size: 10px;")
+        text.addWidget(self.source)
+        layout.addLayout(text, 1)
+
+        self.button = QPushButton("Copy")
+        self.button.setObjectName("Copy")
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.clicked.connect(self._copy)
+        layout.addWidget(self.button, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.setVisible(False)
+
+    def show_code(self, code: str, source: str, size: int = 17) -> None:
+        self.code = code
+        self.value.setText(code)
+        self.value.setStyleSheet(
+            f"font-family: monospace; font-weight: 700; letter-spacing: 2px;"
+            f"font-size: {size}px; color: {self._palette.text};"
+        )
+        self.source.setText(source)
+        self.setVisible(True)
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.code)
+        self.copied.emit(self.code)
+
+
 class FeedRow(QFrame):
     """A notification in the panel: app, time and one line of text.
 
@@ -131,9 +222,11 @@ class FeedRow(QFrame):
 
     opened = Signal()
     dismissed = Signal(str)
+    codeCopied = Signal(str)
 
     def __init__(self, note: Notification, palette: Palette, icons=None,
-                 avatar: int = 24, parent: QWidget | None = None):
+                 avatar: int = 24, code: str = "",
+                 parent: QWidget | None = None):
         super().__init__(parent)
         self.note = note
         self.setObjectName("FeedRow")
@@ -169,6 +262,16 @@ class FeedRow(QFrame):
         self.body.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._full = " ".join(note.summary_line.split()) or note.app
         text.addWidget(self.body)
+
+        # A passcode is worth copying from wherever it is being read, which
+        # includes the rail. See docs/DESIGN.md.
+        if code:
+            copy = QPushButton(f"Copy {code}")
+            copy.setObjectName("Copy")
+            copy.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy.clicked.connect(lambda: self._copy(code))
+            text.addSpacing(SPACE["xs"])
+            text.addWidget(copy, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addLayout(text, 1)
 
         if note.clearable:
@@ -188,6 +291,10 @@ class FeedRow(QFrame):
             )
         )
 
+    def _copy(self, code: str) -> None:
+        QGuiApplication.clipboard().setText(code)
+        self.codeCopied.emit(code)
+
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().mouseReleaseEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
@@ -199,8 +306,11 @@ class DevicePanel(QWidget):
 
     pageRequested = Signal(str)
     statusMessage = Signal(str)
-    #: The hotspot sequence belongs to the page; see HotspotPage.quick_toggle.
+    #: Switches whose sequence belongs to a page, which the window brings
+    #: forward: see HotspotPage/AudioPage/ScreenPage.quick_toggle.
     hotspotRequested = Signal()
+    audioRequested = Signal()
+    mirrorRequested = Signal()
 
     def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
         super().__init__(parent)
@@ -212,7 +322,10 @@ class DevicePanel(QWidget):
         self._rows: list[FeedRow] = []
 
         self.setObjectName("Sidebar")
-        self.setFixedWidth(MIN_WIDTH)
+        # Bounds, not a fixed width: the rail lives in a splitter now and the
+        # user drags it to whatever suits them.
+        self.setMinimumWidth(MIN_WIDTH)
+        self.setMaximumWidth(MAX_WIDTH)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE["md"], SPACE["md"], SPACE["md"], SPACE["md"])
@@ -243,8 +356,10 @@ class DevicePanel(QWidget):
         hub.cameraStarted.connect(lambda _d: self.sync_toggles())
         hub.cameraStopped.connect(self.sync_toggles)
         hub.cameraFailed.connect(lambda _m: self.sync_toggles())
+        hub.mirrors.changed.connect(self.sync_toggles)
         hub.mediaChanged.connect(lambda _m: self.refresh_media())
         hub.notificationsChanged.connect(self.refresh_feed)
+        hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.icons.iconReady.connect(self._on_icon)
 
         # Started in showEvent, not here: a window hidden to the tray -- which
@@ -252,11 +367,12 @@ class DevicePanel(QWidget):
         self._media_timer = QTimer(self)
         self._media_timer.timeout.connect(self.refresh_media)
 
-        self.apply_features()
+        self.apply_tiles()
         self.refresh_header()
         self.refresh_readings()
         self.refresh_media()
         self.refresh_feed()
+        self.refresh_otp()
         self.sync_toggles()
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
@@ -270,17 +386,13 @@ class DevicePanel(QWidget):
 
     # -- size ----------------------------------------------------------------
 
-    def set_window_width(self, window_width: int) -> None:
-        """Grow with the window, and scale what is drawn inside to match.
+    def _rescale(self) -> None:
+        """Match what is drawn to the width the rail has been dragged to.
 
-        A fixed panel is either cramped on a small screen or a column of
-        16-pixel icons on a large one.
+        Quantised to one decimal place: re-laying out on every pixel of a drag
+        would rebuild the feed dozens of times over for no visible change.
         """
-        width = max(MIN_WIDTH, min(MAX_WIDTH, round(window_width * WIDTH_SHARE)))
-        self.setFixedWidth(width)
-        # Quantised to one decimal: re-laying out on every pixel of a window
-        # drag would rebuild the feed dozens of times for no visible change.
-        scale = round(width / MIN_WIDTH, 1)
+        scale = min(SCALE_CEILING, round(self.width() / MIN_WIDTH, 1))
         if scale == self._scale:
             return
         self._scale = scale
@@ -314,6 +426,7 @@ class DevicePanel(QWidget):
             f"color: {self.palette_tokens.muted}; font-size: {font_px}px;"
         )
         self.refresh_feed()
+        self.refresh_otp()
 
     # -- construction --------------------------------------------------------
 
@@ -407,59 +520,49 @@ class DevicePanel(QWidget):
     def _build_tiles(self) -> QWidget:
         """The phone's switches as squares, Phone Link's arrangement.
 
-        A grid rather than a row: there are six, and they reflow to however
-        many fit as the panel grows.
+        A grid rather than a row: which ones are here is the user's choice, and
+        they reflow to however many fit as the rail is dragged wider.
         """
         self.tile_host = QWidget()
         self.tile_grid = QGridLayout(self.tile_host)
         self.tile_grid.setContentsMargins(0, SPACE["xs"], 0, SPACE["xs"])
         self.tile_grid.setSpacing(SPACE["xs"])
 
-        # The Do Not Disturb roundel, not a crossed-out bell: the bell reads as
-        # "notifications off", which is a different switch.
-        self.dnd_toggle = self._tile(
-            ("process-stop", "notifications-disabled"), "\N{CIRCLED MINUS}",
-            "Do Not Disturb", checkable=True,
-        )
-        self.dnd_toggle.clicked.connect(self._toggle_dnd)
+        self.tiles: dict[str, QPushButton] = {}
+        self._tile_buttons: list[QPushButton] = []
+        for key, (icons, glyph, tip, checkable, _feature) in TILES.items():
+            button = self._tile(icons, glyph, tip, checkable)
+            button.clicked.connect(
+                lambda _checked=False, k=key: self._tile_clicked(k)
+            )
+            self.tiles[key] = button
+            self._tile_buttons.append(button)
 
-        self.ringer_tile = self._tile(("audio-volume-high",), "\N{BELL}", "Ringer")
-        self.ringer_tile.clicked.connect(self._cycle_ringer)
-
-        self.clipboard_toggle = self._tile(
-            ("edit-paste",), "\N{CLIPBOARD}", "Clipboard sharing", checkable=True,
-        )
+        self.clipboard_toggle = self.tiles["clipboard"]
         self.clipboard_toggle.setChecked(
             self.hub.config.features.clipboard
             and self.hub.config.clipboard.mode != "off"
         )
-        self.clipboard_toggle.clicked.connect(self._toggle_clipboard)
+        # Named because the readings and the sync signals reach for them.
+        self.dnd_toggle = self.tiles["dnd"]
+        self.ringer_tile = self.tiles["ringer"]
+        self.hotspot_tile = self.tiles["hotspot"]
+        self.camera_tile = self.tiles["camera"]
 
-        # A bell, not a handset: the ringer tile beside it shows a phone
-        # while the ringer is on vibrate, and two phones read as one control.
-        self.ring_tile = self._tile(
-            ("notifications", "phone-ringing"), "\N{BELL}", "Ring phone",
-        )
-        self.ring_tile.clicked.connect(self._ring)
-
-        self.hotspot_tile = self._tile(
-            ("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
-            "Start the phone's hotspot and join it", checkable=True,
-        )
-        self.hotspot_tile.clicked.connect(self._toggle_hotspot)
-
-        self.camera_tile = self._tile(
-            ("camera-web",), "\N{MOVIE CAMERA}",
-            "Use a phone camera as a webcam", checkable=True,
-        )
-        self.camera_tile.clicked.connect(self._toggle_camera)
-
-        self._tile_buttons = [
-            self.dnd_toggle, self.ringer_tile, self.clipboard_toggle,
-            self.ring_tile, self.hotspot_tile, self.camera_tile,
-        ]
-        self._reflow_tiles()
+        self.apply_tiles()
         return self.tile_host
+
+    def _tile_clicked(self, key: str) -> None:
+        {
+            "dnd": self._toggle_dnd,
+            "ringer": self._cycle_ringer,
+            "clipboard": self._toggle_clipboard,
+            "ring": self._ring,
+            "hotspot": self._toggle_hotspot,
+            "camera": self._toggle_camera,
+            "mirror": self._toggle_mirror,
+            "audio": self._toggle_audio,
+        }[key]()
 
     def _tile(self, icons: tuple[str, ...], glyph: str, tip: str,
               checkable: bool = False) -> QPushButton:
@@ -496,7 +599,7 @@ class DevicePanel(QWidget):
     def _reflow_tiles(self) -> None:
         """As many squares per row as the panel is wide enough for.
 
-        Which tiles are showing is read from the flag apply_features sets, not
+        Which tiles are showing is read from the flag apply_tiles sets, not
         from isHidden(): before the window is first shown every child reports
         itself hidden, and filtering on that left half the tiles out of the
         grid for good.
@@ -516,18 +619,24 @@ class DevicePanel(QWidget):
             self.tile_grid.addWidget(button, index // columns, index % columns)
         self.tile_grid.setColumnStretch(columns, 1)
 
-    def apply_features(self) -> None:
-        """Hide the switches whose feature is turned off."""
+    def apply_tiles(self) -> None:
+        """Show the switches the user chose, minus any whose feature is off."""
+        chosen = [key for key in self.hub.config.panel.tiles if key in TILES]
         features = self.hub.config.features
-        for button, on in (
-            (self.dnd_toggle, features.dnd_sync),
-            (self.clipboard_toggle, features.clipboard),
-            (self.hotspot_tile, features.hotspot),
-            (self.camera_tile, features.webcam),
-        ):
+        for key, button in self.tiles.items():
+            feature = TILES[key][4]
+            on = key in chosen and (
+                not feature or bool(getattr(features, feature, True))
+            )
             button.setProperty("feature_off", not on)
-            button.setVisible(bool(on))
+            button.setVisible(on)
+        # Draw them in the order the user listed them.
+        self._tile_buttons = [self.tiles[key] for key in chosen] + [
+            button for key, button in self.tiles.items() if key not in chosen
+        ]
         self._reflow_tiles()
+
+
 
     def _build_battery(self) -> QWidget:
         """Level, and what the phone says about it: charging, time, temperature."""
@@ -587,6 +696,12 @@ class DevicePanel(QWidget):
         self.clear_all.clicked.connect(self._dismiss_all)
         head.addWidget(self.clear_all)
         layout.addLayout(head)
+
+        self.otp_strip = PanelOtp(self.palette_tokens)
+        self.otp_strip.copied.connect(
+            lambda code: self.statusMessage.emit(f"Copied {code}")
+        )
+        layout.addWidget(self.otp_strip)
 
         self.feed_scroll = QScrollArea()
         self.feed_scroll.setWidgetResizable(True)
@@ -700,6 +815,16 @@ class DevicePanel(QWidget):
         # knows, so it is set from hotspotChanged rather than by the click.
         self.hotspot_tile.setChecked(self.hub.hotspot_joined)
         self.hotspotRequested.emit()
+
+    def _toggle_mirror(self) -> None:
+        self.tiles["mirror"].setChecked(self.hub.mirrors.is_running("screen"))
+        self.mirrorRequested.emit()
+
+    def _toggle_audio(self) -> None:
+        # Audio is only ever taken over on a click, never on a connection, so
+        # this is the click that does it. See docs/DESIGN.md.
+        self.tiles["audio"].setChecked(self.hub.bluetooth_streaming)
+        self.audioRequested.emit()
 
     def _toggle_camera(self) -> None:
         if self.hub.camera_running:
@@ -920,11 +1045,19 @@ class DevicePanel(QWidget):
                 widget.deleteLater()
 
         self._rows = []
+        want_codes = self.hub.config.features.otp
         for note in notifications[:FEED_LIMIT]:
+            match = otp.find_code(
+                f"{note.title} {note.text}".strip(), note.app
+            ) if want_codes else None
             row = FeedRow(note, self.palette_tokens, self.hub.icons,
-                          avatar=self._px(24))
+                          avatar=self._px(24),
+                          code=match.code if match else "")
             row.opened.connect(lambda: self.pageRequested.emit("Notifications"))
             row.dismissed.connect(self.hub.dismiss)
+            row.codeCopied.connect(
+                lambda code: self.statusMessage.emit(f"Copied {code}")
+            )
             self._rows.append(row)
             self.feed_layout.insertWidget(self.feed_layout.count() - 1, row)
 
@@ -943,21 +1076,41 @@ class DevicePanel(QWidget):
             "Nothing new." if self.hub.connected else "No phone connected."
         )
 
+    def refresh_otp(self) -> None:
+        """The newest passcode, or nothing when there is none."""
+        if not self.hub.config.features.otp:
+            self.otp_strip.setVisible(False)
+            return
+        codes = self.hub.recent_codes(limit=1)
+        if not codes:
+            self.otp_strip.setVisible(False)
+            return
+        match, note = codes[0]
+        self.otp_strip.show_code(
+            match.code,
+            f"{note.app} \N{MIDDLE DOT} {note.time_text}",
+            size=self._px(17),
+        )
+
     def _on_icon(self, package: str, pixmap) -> None:
         for row in self._rows:
             if row.note.package == package:
                 row.avatar.set_pixmap_rounded(pixmap)
 
     def sync_toggles(self, mode: str = "") -> None:
+        """Every latching switch reports the phone's state, not the last click."""
         self.dnd_toggle.setChecked((mode or self.hub.phone_dnd) != "off")
         self.hotspot_tile.setChecked(self.hub.hotspot_joined)
         self.camera_tile.setChecked(self.hub.camera_running)
+        self.tiles["mirror"].setChecked(self.hub.mirrors.is_running("screen"))
+        self.tiles["audio"].setChecked(self.hub.bluetooth_streaming)
 
     def set_status(self, message: str) -> None:
         self.status.setText(message)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().resizeEvent(event)
+        self._rescale()
         self._reflow_tiles()
 
 

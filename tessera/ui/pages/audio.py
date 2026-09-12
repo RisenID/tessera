@@ -183,6 +183,17 @@ class AudioPage(QWidget):
             return
         submit(self._read_state, on_done=self._apply_state, on_error=lambda _m: None)
 
+    def quick_toggle(self) -> None:
+        """Play the phone's audio here, or hand it back.
+
+        The panel's switch calls this. Taking over the audio path only ever
+        happens on a click, and this is that click.
+        """
+        if self.hub.bluetooth_streaming or self._stream_node:
+            self._park()
+        else:
+            self._set_mode("music")
+
     def _read_state(self) -> tuple:
         """Gather Bluetooth and audio state off the GUI thread.
 

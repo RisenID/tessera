@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
-from ..widgets import Card, OtpCard, Tile, Toast, heading, line_row
+from ..widgets import Tile, Toast, heading, line_row
 
 
 def _ago(millis: int) -> str:
@@ -65,12 +65,8 @@ class HomePage(QWidget):
         outer.setContentsMargins(0, 0, SPACE["md"], SPACE["xl"])
         outer.setSpacing(SPACE["lg"])
 
-        # The newest passcode, copyable without leaving the overview. It used
-        # to exist only on the notifications page.
-        self.otp_card: OtpCard | None = None
-        self.otp_slot = QVBoxLayout()
-        self.otp_slot.setContentsMargins(0, 0, 0, 0)
-        outer.addLayout(self.otp_slot)
+        # No passcode card: the sidebar shows the newest code on every page,
+        # and the notifications page lists the last few.
 
         grid = QGridLayout()
         grid.setSpacing(SPACE["lg"])
@@ -96,7 +92,6 @@ class HomePage(QWidget):
 
         self.toast = Toast(self)
 
-        hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.callChanged.connect(lambda _c: self.refresh_calls())
         hub.connectionChanged.connect(lambda _c: self.refresh_all())
 
@@ -123,35 +118,14 @@ class HomePage(QWidget):
 
     # -- tiles ---------------------------------------------------------------
 
-    def refresh_otp(self) -> None:
-        """Show the newest passcode, or nothing when there is none."""
-        if self.otp_card is not None:
-            self.otp_slot.removeWidget(self.otp_card)
-            self.otp_card.deleteLater()
-            self.otp_card = None
-        if not self.hub.config.features.otp:
-            return
-        codes = self.hub.recent_codes(limit=1)
-        if not codes:
-            return
-        match, note = codes[0]
-        self.otp_card = OtpCard(
-            match.code, f"{note.app} · {note.time_text}", self.palette_tokens
-        )
-        self.otp_card.copied.connect(
-            lambda _c: self.toast.show_message("Passcode copied", self.palette_tokens, "success")
-        )
-        self.otp_slot.addWidget(self.otp_card)
-
     def refresh_all(self) -> None:
-        self.refresh_otp()
         self.refresh_calls()
         self.refresh_messages()
         self.refresh_photos()
 
     def refresh_light(self) -> None:
-        """The cheap ones, on a timer; the rest only on a real change."""
-        self.refresh_otp()
+        """Times move on even when nothing changes."""
+        self.refresh_calls()
 
     def refresh_calls(self) -> None:
         tile = self.calls_tile

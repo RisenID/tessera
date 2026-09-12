@@ -89,6 +89,10 @@ class ScreenPage(QWidget):
         self.hub.config.mirror.turn_screen_off = enabled
         self.hub.config.save()
 
+    #: The panel's switch; mirroring is already a toggle.
+    def quick_toggle(self) -> None:
+        self._toggle_mirror()
+
     def _toggle_mirror(self) -> None:
         if self.hub.mirrors.is_running("screen"):
             self.hub.mirrors.close("screen")

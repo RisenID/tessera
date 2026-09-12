@@ -138,6 +138,28 @@ class MirrorConfig:
     show_system_apps: bool = False
 
 
+#: The switches offered in the device panel, and the six shown by default.
+#: Keys are defined in ui/panel.py, which knows how to draw and drive them.
+PANEL_TILES = (
+    "dnd", "ringer", "clipboard", "ring", "hotspot", "camera", "mirror", "audio",
+)
+DEFAULT_TILES = ("dnd", "ringer", "clipboard", "ring", "hotspot", "camera")
+
+
+@dataclass
+class PanelConfig:
+    """The device panel: how wide, and which switches it carries.
+
+    Two widths, because a rail that suits a window is too narrow when the
+    window is filling a large screen, and one shared number meant dragging it
+    in one mode spoiled the other.
+    """
+
+    width: int = 320
+    width_fullscreen: int = 400
+    tiles: list[str] = field(default_factory=lambda: list(DEFAULT_TILES))
+
+
 @dataclass
 class Config:
     device_id: str = ""            # KDE Connect device id
@@ -153,6 +175,7 @@ class Config:
     bluetooth: BluetoothConfig = field(default_factory=BluetoothConfig)
     webcam: WebcamConfig = field(default_factory=WebcamConfig)
     hotspot: HotspotConfig = field(default_factory=HotspotConfig)
+    panel: PanelConfig = field(default_factory=PanelConfig)
 
     # -- persistence ---------------------------------------------------------
 

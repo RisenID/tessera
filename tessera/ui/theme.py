@@ -214,6 +214,11 @@ QFrame#FeedRow {{
 }}
 QFrame#FeedRow:hover {{ background: {p.surface_hover}; }}
 
+/* The grab handle for the sidebar's width. Given a colour of its own so it
+   can be found; the platform draws it as empty space. */
+QSplitter#Split::handle {{ background: {p.border}; }}
+QSplitter#Split::handle:hover {{ background: {p.accent}; }}
+
 /* ---------- tab strip ---------- */
 
 QWidget#TabStrip {{
