@@ -23,17 +23,25 @@ machinery, and those are named here rather than left to fail.
 | Ringer mode, Do Not Disturb on the phone | Unchanged |
 | Start at login | A value under `HKCU\…\CurrentVersion\Run`, which is what the Startup Apps page in Settings lists |
 
-## What cannot work, and why
+## What is missing, and why
 
-**Playing the phone's audio through this computer.** Windows has no Bluetooth
-audio-sink profile: it is a source, not a sink. There is no supported way for
-an application to make it accept an A2DP stream, so the Audio page, the
-sidebar's audio switch and the LDAC decoder are all absent rather than broken.
+Two of these are work outstanding, not platform limits. An earlier version of
+this document said Windows could not do them at all; that was wrong, and
+`docs/PHONE_AUDIO_AND_CAMERA.md` sets out the path for each.
 
-**Using the phone as a webcam.** This needs a virtual camera *driver*, and
-Windows loads only signed kernel-mode drivers. Shipping one is a different kind
-of project — a signing certificate, WHQL submission — so the Webcam page is
-absent too. The phone's camera can still be seen through screen mirroring.
+**Playing the phone's audio through this computer.** Not written yet. Windows
+10 2004 and later does have a Bluetooth A2DP *sink*, driven by an app through
+`Windows.Media.Audio.AudioPlaybackConnection` — a plain WinRT API that needs no
+package identity and no elevation. Until it is written, the Audio page, the
+sidebar's audio switch and the LDAC decoder are absent rather than broken.
+
+**Using the phone as a webcam.** Not written yet. Windows 11 22H2 and later can
+host a virtual camera in *user mode* through `MFCreateVirtualCamera`: a COM DLL
+loaded by the Frame Server, with no driver signing and no WHQL. It does have to
+be registered once as an administrator, which a per-user installer cannot do on
+its own, so it would be an optional extra step rather than part of the install.
+Until then the Webcam page is absent, and the phone's camera can still be seen
+through screen mirroring.
 
 **Do Not Disturb in both directions.** Focus Assist cannot be set by another
 program; Microsoft exposes no API for it. So the sync runs one way: when the

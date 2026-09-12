@@ -57,18 +57,21 @@ REAL = "windows" if sys.platform.startswith("win") else (
 #: Features that cannot work on a platform, and why. The interface reads this
 #: to hide them and to explain; nothing else is allowed to assume an OS.
 #:
-#: Windows: A2DP sink is not a profile Windows offers, so the phone cannot use
-#: this computer as a speaker; there is no equivalent of v4l2loopback without
-#: shipping a signed kernel-mode driver; and KDE Connect's control interface is
-#: a D-Bus one.
+#: Two of the Windows entries are "not written yet", not "cannot be done", and
+#: they say so: Windows 10 2004 and later can receive Bluetooth audio through
+#: AudioPlaybackConnection, and Windows 11 22H2 and later can host a user-mode
+#: virtual camera through MFCreateVirtualCamera. Focus Assist and D-Bus are the
+#: ones the platform really does not offer. See docs/WINDOWS.md.
 UNSUPPORTED: dict[str, dict[str, str]] = {
     "windows": {
         "bluetooth_audio":
-            "Windows has no Bluetooth audio-sink profile, so the phone cannot "
-            "play through this computer.",
+            "Not written for Windows yet. Windows can receive Bluetooth audio "
+            "(Windows 10 2004 and later), so this is work outstanding rather "
+            "than a limit of the platform.",
         "webcam":
-            "Using the phone as a webcam needs a virtual camera driver, which "
-            "Windows will only load if it is signed.",
+            "Not written for Windows yet. It needs a virtual camera, which "
+            "Windows 11 22H2 and later can host without a signed driver but "
+            "which has to be registered once as an administrator.",
         "kdeconnect":
             "KDE Connect is reached over D-Bus, which is a Linux interface. "
             "The companion app covers the same ground.",
