@@ -92,7 +92,27 @@ class FeatureConfig:
     apps: bool = True            # the launcher, opening one app per window
     hotspot: bool = True
     bluetooth_audio: bool = True
+    #: Playing what the phone is playing, over the companion link rather than
+    #: Bluetooth. Separate from bluetooth_audio: it needs no pairing, works on
+    #: every platform, and cannot take audio off the phone's own headphones.
+    phone_audio: bool = True
     calls: bool = True
+
+
+@dataclass
+class PhoneAudioConfig:
+    """Playing the phone's audio here, over the companion link.
+
+    The buffer is the whole trade-off: long enough to ride out Wi-Fi jitter,
+    short enough that pausing on the phone does not keep playing here. 120 ms
+    is about the point where both are true on a quiet network.
+    """
+
+    volume: int = 100              # percent
+    buffer_ms: int = 120
+    #: Where to play it. Empty means the system's default output, which is
+    #: what most people want and what follows their headphones around.
+    device: str = ""
 
 
 @dataclass
@@ -172,6 +192,7 @@ class Config:
     features: FeatureConfig = field(default_factory=FeatureConfig)
     bluetooth: BluetoothConfig = field(default_factory=BluetoothConfig)
     webcam: WebcamConfig = field(default_factory=WebcamConfig)
+    phone_audio: PhoneAudioConfig = field(default_factory=PhoneAudioConfig)
     hotspot: HotspotConfig = field(default_factory=HotspotConfig)
     panel: PanelConfig = field(default_factory=PanelConfig)
 

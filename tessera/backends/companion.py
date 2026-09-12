@@ -318,6 +318,14 @@ class CompanionClient(QObject):
     cameraFrame = Signal(bytes)
     cameraStopped = Signal()
 
+    #: The phone's own audio, over this link rather than Bluetooth.
+    phoneAudioStarted = Signal(dict)     # codec, rate, channels
+    phoneAudioFrame = Signal(bytes)      # 20 ms of PCM
+    phoneAudioStopped = Signal()
+    #: Android asks the user on the phone before capturing playback, and only
+    #: an activity can ask -- so the phone says "I have put a notification up".
+    phoneAudioConsent = Signal(str)
+
     #: Backoff schedule for reconnection, in seconds.
     RETRY_DELAYS = (2, 5, 10, 20, 30, 60)
 
@@ -657,6 +665,9 @@ class CompanionClient(QObject):
         if header.get("t") == "camera_frame":
             self.cameraFrame.emit(payload)
             return
+        if header.get("t") == "audio_frame":
+            self.phoneAudioFrame.emit(payload)
+            return
         rid = header.get("rid")
         if isinstance(rid, int):
             callback = self._pending.pop(rid, None)
@@ -780,6 +791,15 @@ class CompanionClient(QObject):
 
     def _recv_camera_stopped(self, _message: dict[str, Any]) -> None:
         self.cameraStopped.emit()
+
+    def _recv_audio_started(self, message: dict[str, Any]) -> None:
+        self.phoneAudioStarted.emit(message)
+
+    def _recv_audio_stopped(self, _message: dict[str, Any]) -> None:
+        self.phoneAudioStopped.emit()
+
+    def _recv_audio_consent(self, message: dict[str, Any]) -> None:
+        self.phoneAudioConsent.emit(message.get("message", ""))
 
     def _recv_error(self, message: dict[str, Any]) -> None:
         rid = message.get("rid")

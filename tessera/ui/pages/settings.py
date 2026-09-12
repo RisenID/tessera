@@ -42,6 +42,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("screen", "Screen mirroring", "The whole phone in a window, through scrcpy over adb"),
     ("apps", "Apps", "Launch one app into its own window"),
     ("hotspot", "Hotspot", "Start the phone's hotspot and join it"),
+    ("phone_audio", "Phone audio over the link",
+     "Play what the phone is playing, without Bluetooth or a profile switch"),
     ("bluetooth_audio", "Calls and music", "Bluetooth audio to and from the phone"),
 )
 

@@ -52,7 +52,9 @@ PAGES = [
     ("Notifications", "notifications", "🔔", NotificationsPage, "notifications"),
     ("Screen", "smartphone", "📱", ScreenPage, "screen"),
     ("Webcam", "camera-web", "🎥", WebcamPage, "webcam"),
-    ("Audio", "audio-headphones", "🎧", AudioPage, "bluetooth_audio"),
+    # phone_audio, not bluetooth_audio: the page leads with the route that
+    # works everywhere, and hides its Bluetooth half where that cannot.
+    ("Audio", "audio-headphones", "🎧", AudioPage, "phone_audio"),
     ("Do Not Disturb", "notifications-disabled", "🌙", DndPage, "dnd_sync"),
     ("Hotspot", "network-wireless-hotspot", "📶", HotspotPage, "hotspot"),
     ("Settings", "settings-configure", "⚙", SettingsPage, None),
@@ -146,6 +148,8 @@ class MainWindow(QMainWindow):
                 page.featuresChanged.connect(self._apply_feature_visibility)
                 page.featuresChanged.connect(self.panel.apply_tiles)
                 page.featuresChanged.connect(self._apply_panel_width)
+            if isinstance(page, AudioPage):
+                self.audio_page = page
             if isinstance(page, HomePage):
                 # Tiles hand off to their full page rather than duplicating it.
                 page.openPage.connect(self.show_page)

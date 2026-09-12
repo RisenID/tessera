@@ -8,6 +8,7 @@ import dev.tessera.companion.TesseraService
 import dev.tessera.companion.Store
 import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
+import dev.tessera.companion.features.AudioStreamer
 import dev.tessera.companion.features.CameraStreamer
 import dev.tessera.companion.features.CallMonitor
 import dev.tessera.companion.features.CallsRepository
@@ -60,6 +61,7 @@ class Session(
     private var authenticated = false
     private var subscriber: Bus.Subscriber? = null
     private var camera: CameraStreamer? = null
+    private var audio: AudioStreamer? = null
 
     override fun run() {
         Log.i(TAG, "session from ${socket.inetAddress?.hostAddress}")
@@ -147,6 +149,9 @@ class Session(
         if (SmsRepository.canSend(context)) add("sms_send")
         if (MediaRepository.canRead(context)) add("media")
         add("camera")
+        // Playback capture: what the phone is playing, sent to the desktop.
+        // Android 10 and later; the permission is asked for when it starts.
+        if (AudioStreamer.supported()) add("phone_audio")
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
@@ -255,6 +260,9 @@ class Session(
 
             "camera_start" -> startCamera(message, id)
             "camera_stop" -> stopCamera()
+
+            "audio_start" -> startAudio(id)
+            "audio_stop" -> stopAudio(notify = true)
 
             "hotspot_start" -> {
                 val error = Hotspot.start(
@@ -459,6 +467,95 @@ class Session(
         TesseraService.running_instance?.setCameraActive(false)
     }
 
+    // -- the phone's audio ---------------------------------------------------
+
+    /**
+     * Starts sending what the phone is playing.
+     *
+     * Nothing here happens on a mere connection: the desktop asks for this
+     * because someone pressed a button, which is the rule this project keeps --
+     * connecting must never take audio off the phone's own headphones. Playback
+     * capture cannot do that in any case, which is why it is the route chosen.
+     *
+     * The user has to consent on the phone. If they have not, the service asks
+     * and the stream starts when they answer; the desktop is told to expect
+     * that rather than left waiting.
+     */
+    private fun startAudio(id: Int?) {
+        if (!AudioStreamer.supported()) return fail(id, AudioStreamer.UNSUPPORTED)
+        if (!AudioStreamer.canCapture(context)) return fail(id, AudioStreamer.NO_PERMISSION)
+
+        val service = TesseraService.running_instance
+            ?: return fail(id, "The companion service is not running on the phone.")
+
+        stopAudio()
+        val projection = service.audioProjection()
+        if (projection == null) {
+            service.askForAudioConsent { if (open.get()) beginAudio(service) }
+            send(
+                JSONObject()
+                    .put("t", "audio_consent")
+                    .put(
+                        "message",
+                        "Tap the notification on the phone to allow it to send " +
+                            "its audio. Android asks every time, with the same " +
+                            "dialog screen sharing uses."
+                    )
+            )
+            return
+        }
+        beginAudio(service, projection)
+    }
+
+    /** Second half of [startAudio], also the callback for a late consent. */
+    private fun beginAudio(service: TesseraService, ready: android.media.projection.MediaProjection? = null) {
+        val projection = ready ?: service.audioProjection() ?: run {
+            fail(null, "The phone would not allow its audio to be captured.")
+            return
+        }
+        val streamer = AudioStreamer(
+            context = context,
+            projection = projection,
+            onStarted = { header -> send(header) },
+            onFrame = { frame ->
+                sendBinary(JSONObject().put("t", "audio_frame"), frame, null)
+            },
+            onError = { reason ->
+                fail(null, reason)
+                stopAudio()
+            },
+        )
+        audio = streamer
+        streamer.start()
+    }
+
+    /** Stops the stream and tells the desktop, whoever asked. */
+    private fun stopAudio(notify: Boolean = false) {
+        val streamer = audio ?: run {
+            TesseraService.running_instance?.clearPendingAudio()
+            return
+        }
+        audio = null
+        streamer.stop()
+        TesseraService.running_instance?.let {
+            it.clearPendingAudio()
+            it.setAudioActive(false)
+        }
+        if (notify) send(JSONObject().put("t", "audio_stopped"))
+    }
+
+    /**
+     * The user revoked the projection from the status bar.
+     *
+     * Called by the service, on any session: only the one that is streaming
+     * has anything to do, and the desktop needs telling because it did not ask
+     * for this.
+     */
+    fun stopAudioFromSystem() {
+        if (audio == null) return
+        stopAudio(notify = true)
+    }
+
     // -- writing -------------------------------------------------------------
 
     /**
@@ -530,6 +627,7 @@ class Session(
         }
         subscriber = null
         stopCamera()
+        stopAudio()
         writer.shutdownNow()
         runCatching { socket.close() }
         Log.i(TAG, "session closed")

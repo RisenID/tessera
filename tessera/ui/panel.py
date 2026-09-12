@@ -77,8 +77,10 @@ TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
                "\N{CAMERA}", "Use a phone camera as a webcam", True, "webcam"),
     "mirror": (("smartphone",), "\N{MOBILE PHONE}", "Mirror the phone's screen",
                True, "screen"),
+    # Governed by phone_audio, not bluetooth_audio: the link route works on
+    # every platform, and the switch falls back to Bluetooth when it must.
     "audio": (("audio-headphones",), "\N{HEADPHONE}",
-              "Play the phone's audio here", True, "bluetooth_audio"),
+              "Play the phone's audio here", True, "phone_audio"),
 }
 
 #: Human names for the switches, for the list in Settings.
@@ -353,6 +355,8 @@ class DevicePanel(QWidget):
         hub.batteryChanged.connect(self._on_battery)
         hub.phoneStatusChanged.connect(lambda _s: self.refresh_readings())
         hub.bluetoothStreamingChanged.connect(lambda _s: self.refresh_readings())
+        hub.phoneAudioChanged.connect(lambda _p: self.refresh_readings())
+        hub.phoneAudioChanged.connect(lambda _p: self.sync_toggles())
         hub.dndChanged.connect(self.sync_toggles)
         hub.hotspotChanged.connect(lambda _j: self.sync_toggles())
         hub.cameraStarted.connect(lambda _d: self.sync_toggles())
@@ -835,7 +839,7 @@ class DevicePanel(QWidget):
     def _toggle_audio(self) -> None:
         # Audio is only ever taken over on a click, never on a connection, so
         # this is the click that does it. See docs/DESIGN.md.
-        self.tiles["audio"].setChecked(self.hub.bluetooth_streaming)
+        self.tiles["audio"].setChecked(self._audio_playing())
         self.audioRequested.emit()
 
     def _toggle_camera(self) -> None:
@@ -884,7 +888,15 @@ class DevicePanel(QWidget):
         status = self.hub.phone_status
         p = self.palette_tokens
 
-        if self.hub.bluetooth_streaming:
+        if self.hub.phone_audio_active:
+            # Over the link, not Bluetooth -- so say so: the radio is not
+            # involved and the phone's own headphones are untouched.
+            self.comp_bluetooth.set(
+                "audio-headphones", "audio-volume-high",
+                text="audio", tooltip="The phone's audio is playing here, over the link",
+                tone=p.accent,
+            )
+        elif self.hub.bluetooth_streaming:
             self.comp_bluetooth.set(
                 "network-bluetooth-activated", "network-bluetooth",
                 text="audio", tooltip="Phone audio is playing here", tone=p.accent,
@@ -1115,7 +1127,15 @@ class DevicePanel(QWidget):
         self.hotspot_tile.setChecked(self.hub.hotspot_joined)
         self.camera_tile.setChecked(self.hub.camera_running)
         self.tiles["mirror"].setChecked(self.hub.mirrors.is_running("screen"))
-        self.tiles["audio"].setChecked(self.hub.bluetooth_streaming)
+        self.tiles["audio"].setChecked(self._audio_playing())
+
+    def _audio_playing(self) -> bool:
+        """Either route: over the link, or over Bluetooth."""
+        return (
+            self.hub.phone_audio_active
+            or self.hub.phone_audio_pending
+            or self.hub.bluetooth_streaming
+        )
 
     def set_status(self, message: str) -> None:
         self.status.setText(message)

@@ -22,6 +22,7 @@ from ..backends import bluetooth, btcodecs
 from ..backends.companion import CompanionClient, PairedPhone, b64decode
 from ..backends.dnd import MODE_OFF, DndSync, ZenMode
 from ..backends.kdeconnect import KdeConnect
+from ..backends.phone_audio import PhoneAudio
 from ..backends.webcam import CompanionCamera, Webcam, WebcamError
 from ..ui.icons import IconStore
 from . import otp
@@ -58,6 +59,11 @@ class Hub(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     bluetoothStreamingChanged = Signal(bool)
+    #: The phone's audio, played here over the companion link.
+    phoneAudioChanged = Signal(bool)
+    phoneAudioLevel = Signal(float)
+    #: Android is asking on the phone; the string says what the user must do.
+    phoneAudioWaiting = Signal(str)
     hotspotChanged = Signal(bool)            # joined the phone's hotspot
     errorOccurred = Signal(str)
 
@@ -73,6 +79,7 @@ class Hub(QObject):
         # The companion path is preferred -- it needs no adb at all.
         self.webcam = Webcam(config.webcam, self)
         self.companion_camera = CompanionCamera(config.webcam, self)
+        self.phone_audio = PhoneAudio(config.phone_audio, self)
         self.mirrors = mirror.MirrorManager(self)
         self.icons = IconStore(self.companion, self)
         self.clipboard = ClipboardSync(self.companion, config.clipboard, self)
@@ -91,6 +98,9 @@ class Hub(QObject):
         self._media: dict[str, Any] = {}
         self._phone_status: dict[str, Any] = {}
         self._hotspot_joined = False
+        #: True between asking the phone for audio and it starting, so the
+        #: interface can say "waiting for the phone" rather than nothing.
+        self._phone_audio_pending = False
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -100,6 +110,7 @@ class Hub(QObject):
         self._wire_kdeconnect()
         self._wire_dnd()
         self._wire_camera()
+        self._wire_phone_audio()
         self._apply_codec_preference()
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
@@ -357,6 +368,100 @@ class Hub(QObject):
     def _on_phone_camera_stopped(self) -> None:
         if self.companion_camera.running:
             self.companion_camera.stop()
+
+    # -- the phone's audio, over the link --------------------------------------
+
+    @property
+    def phone_audio_active(self) -> bool:
+        return self.phone_audio.running
+
+    @property
+    def phone_audio_pending(self) -> bool:
+        """Asked for, not playing yet: usually waiting for consent."""
+        return self._phone_audio_pending
+
+    def start_phone_audio(self) -> None:
+        """Ask the phone to send what it is playing.
+
+        Only ever from a button. Nothing about connecting starts this, which is
+        the rule for audio in this app -- and unlike the Bluetooth route it
+        could not take sound off the phone's headphones even if it tried: what
+        arrives is a copy of the phone's mix.
+        """
+        if not self.config.features.phone_audio:
+            self.errorOccurred.emit(
+                "Playing the phone's audio is switched off in Settings."
+            )
+            return
+        if "phone_audio" not in self.companion.capabilities:
+            self.errorOccurred.emit(
+                "This phone cannot send its audio: the companion app needs "
+                "Android 10 or later, and its own version may be older than "
+                "this feature."
+            )
+            return
+        if self.phone_audio.running:
+            return
+        self._phone_audio_pending = True
+        self.phoneAudioChanged.emit(False)
+        self.companion.send({"t": "audio_start"})
+
+    def stop_phone_audio(self) -> None:
+        self._phone_audio_pending = False
+        if self.companion.connected:
+            self.companion.send({"t": "audio_stop"})
+        self.phone_audio.close()
+
+    def toggle_phone_audio(self) -> None:
+        if self.phone_audio.running or self._phone_audio_pending:
+            self.stop_phone_audio()
+        else:
+            self.start_phone_audio()
+
+    def _wire_phone_audio(self) -> None:
+        self.companion.phoneAudioStarted.connect(self._on_phone_audio_started)
+        self.companion.phoneAudioFrame.connect(self.phone_audio.feed)
+        self.companion.phoneAudioStopped.connect(self._on_phone_audio_stopped)
+        self.companion.phoneAudioConsent.connect(self._on_phone_audio_consent)
+        self.phone_audio.levelChanged.connect(self.phoneAudioLevel)
+        self.phone_audio.failed.connect(self._on_phone_audio_failed)
+        self.phone_audio.started.connect(lambda: self.phoneAudioChanged.emit(True))
+        self.phone_audio.stopped.connect(lambda: self.phoneAudioChanged.emit(False))
+        # A link that drops takes the stream with it; the phone will not be
+        # sending any more, and a half-open sink would sit there silent.
+        self.companion.connectedChanged.connect(self._on_link_for_audio)
+        # An error from the phone while we are waiting on consent is the end of
+        # that attempt, whatever it was: stop claiming to be starting.
+        self.companion.errorOccurred.connect(self._on_phone_error_for_audio)
+
+    def _on_phone_audio_started(self, header: dict) -> None:
+        self._phone_audio_pending = False
+        self.phone_audio.open(header)
+
+    def _on_phone_audio_stopped(self) -> None:
+        self._phone_audio_pending = False
+        self.phone_audio.close()
+
+    def _on_phone_audio_consent(self, message: str) -> None:
+        self._phone_audio_pending = True
+        self.phoneAudioWaiting.emit(
+            message or "Allow it on the phone to start the audio."
+        )
+
+    def _on_phone_audio_failed(self, reason: str) -> None:
+        self._phone_audio_pending = False
+        self.phone_audio.close()
+        self.errorOccurred.emit(reason)
+
+    def _on_phone_error_for_audio(self, _reason: str) -> None:
+        if self._phone_audio_pending:
+            self._phone_audio_pending = False
+            self.phoneAudioChanged.emit(False)
+
+    def _on_link_for_audio(self, connected: bool) -> None:
+        if not connected and (self.phone_audio.running or self._phone_audio_pending):
+            self._phone_audio_pending = False
+            self.phone_audio.close()
 
     # -- bluetooth audio -------------------------------------------------------
 

@@ -1,14 +1,37 @@
-"""Bluetooth audio: calls on the computer, and music from the phone."""
+"""The phone's audio on this computer, by either of the two routes.
+
+Two of them, and they are not equivalent:
+
+* **over the link** -- the companion app sends a copy of the phone's media mix
+  over the connection the app already holds. No pairing, no profile, and it
+  cannot take audio away from the phone's own headphones because it is a copy.
+  This is the route Phone Link uses, and it works on every platform.
+* **over Bluetooth** -- the phone becomes an A2DP source, which *does* move its
+  audio here, and is the only route that can carry a call's microphone.
+
+The link route leads because it is the one that answers "play the music on my
+computer" without disturbing anything on the phone. Bluetooth stays for calls
+and for phones without the companion app.
+"""
 
 from __future__ import annotations
 
 import time
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ...backends import audio, bluetooth, btcodecs
+from ...backends import audio, bluetooth, btcodecs, phone_audio
 from ...backends.mpris import MprisPlayer
+from ...core import platform
 from ...core.hub import Hub
 from ...core.proc import submit
 from ..theme import SPACE, Palette
@@ -43,8 +66,13 @@ class AudioPage(QWidget):
         outer.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
         outer.setSpacing(SPACE["lg"])
         outer.addWidget(
-            heading("Audio", "Take calls on this computer, and play the phone's music through it")
+            heading(
+                "Audio",
+                "Play the phone's audio here over the link, or use Bluetooth for calls",
+            )
         )
+
+        outer.addWidget(self._build_link_card(palette))
 
         # -- connection ------------------------------------------------------
         link = Card(self)
@@ -82,6 +110,7 @@ class AudioPage(QWidget):
         self.link_status.setWordWrap(True)
         link.add(self.link_status)
         outer.addWidget(link)
+        self.bluetooth_card = link
 
         # -- what the audio link is doing ------------------------------------
         mode = Card(self)
@@ -121,6 +150,7 @@ class AudioPage(QWidget):
         self.mode_status.setWordWrap(True)
         mode.add(self.mode_status)
         outer.addWidget(mode)
+        self.mode_card = mode
 
         # -- now playing -----------------------------------------------------
         media = Card(self)
@@ -146,12 +176,152 @@ class AudioPage(QWidget):
         transport.addStretch(1)
         media.body().addLayout(transport)
         outer.addWidget(media)
+        self.media_card = media
+
+        #: The Bluetooth half of the page, shown only where Bluetooth audio can
+        #: work: it is absent on Windows, and can be switched off anywhere.
+        self._bluetooth_cards = [link, mode, media]
+        self._apply_availability()
+
         outer.addStretch(1)
 
         self.toast = Toast(self)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
         self.refresh()
+
+    # -- the link route ------------------------------------------------------
+
+    def _build_link_card(self, palette: Palette) -> QWidget:
+        """The card for audio over the companion link."""
+        card = self.link_card = Card(self)
+
+        row = QHBoxLayout()
+        title = QLabel("Over the link")
+        title.setObjectName("SectionTitle")
+        row.addWidget(title)
+        row.addStretch(1)
+        self.stream_pill = Pill("Not playing", "muted")
+        self.stream_pill.apply(palette)
+        row.addWidget(self.stream_pill)
+        card.body().addLayout(row)
+
+        note = QLabel(
+            "Plays whatever the phone is playing, over the connection this app "
+            "already has. It is a copy of the phone's sound, so the phone keeps "
+            "playing as it was — including through its own headphones, which "
+            "nothing here can take away. No Bluetooth is involved."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        buttons = QHBoxLayout()
+        self.stream_button = QPushButton("Play the phone's audio here")
+        self.stream_button.setObjectName("Primary")
+        self.stream_button.clicked.connect(self.hub.toggle_phone_audio)
+        buttons.addWidget(self.stream_button)
+        buttons.addStretch(1)
+
+        volume_label = QLabel("Volume")
+        volume_label.setObjectName("Muted")
+        buttons.addWidget(volume_label)
+        self.volume = QSlider(Qt.Orientation.Horizontal)
+        self.volume.setRange(0, 100)
+        self.volume.setFixedWidth(160)
+        self.volume.setValue(self.hub.config.phone_audio.volume)
+        self.volume.valueChanged.connect(self._set_volume)
+        buttons.addWidget(self.volume)
+        card.body().addLayout(buttons)
+
+        # A meter, because "is it playing or is the phone silent?" is the first
+        # question when nothing comes out, and the answer is not otherwise
+        # visible anywhere.
+        self.level = QProgressBar()
+        self.level.setRange(0, 100)
+        self.level.setTextVisible(False)
+        self.level.setFixedHeight(6)
+        self.level.setValue(0)
+        card.add(self.level)
+
+        self.stream_status = QLabel()
+        self.stream_status.setObjectName("Muted")
+        self.stream_status.setWordWrap(True)
+        card.add(self.stream_status)
+
+        self.hub.phoneAudioChanged.connect(self._on_stream_changed)
+        self.hub.phoneAudioWaiting.connect(self._on_stream_waiting)
+        self.hub.phoneAudioLevel.connect(self._on_level)
+        self._apply_stream_state()
+        return card
+
+    def _set_volume(self, value: int) -> None:
+        self.hub.phone_audio.set_volume(value)
+        self.hub.config.phone_audio.volume = int(value)
+        self.hub.config.save()
+
+    def _on_stream_changed(self, _playing: bool) -> None:
+        self._apply_stream_state()
+
+    def _on_stream_waiting(self, message: str) -> None:
+        self.stream_pill.setText("Asking the phone")
+        self.stream_pill.apply(self.palette_tokens, "warning")
+        self.stream_status.setText(message)
+        self.stream_button.setText("Cancel")
+
+    def _on_level(self, peak: float) -> None:
+        if not self.isVisible():
+            return
+        self.level.setValue(int(min(1.0, peak) * 100))
+
+    def _apply_stream_state(self) -> None:
+        playing = self.hub.phone_audio_active
+        pending = self.hub.phone_audio_pending
+
+        if playing:
+            self.stream_pill.setText("Playing here")
+            self.stream_pill.apply(self.palette_tokens, "success")
+            self.stream_button.setText("Stop")
+            self.stream_status.setText(
+                "An app on the phone can refuse to be captured, and most that "
+                "play protected audio do; those arrive as silence."
+            )
+        elif pending:
+            self._on_stream_waiting(
+                "Waiting for the phone. Android asks every time."
+            )
+            return
+        else:
+            self.stream_pill.setText("Not playing")
+            self.stream_pill.apply(self.palette_tokens, "muted")
+            self.stream_button.setText("Play the phone's audio here")
+            self.stream_status.setText(self._link_note())
+            self.level.setValue(0)
+
+    def _link_note(self) -> str:
+        """Why the button might not work, before it is pressed."""
+        if not phone_audio.available():
+            return "This computer has no audio output Qt can play through."
+        if not self.hub.config.features.phone_audio:
+            return "Switched off in Settings."
+        if not self.hub.connected:
+            return "The companion app is not connected."
+        if "phone_audio" not in self.hub.companion.capabilities:
+            return (
+                "This phone is not offering audio: the companion app needs "
+                "Android 10 or later, and may be older than this feature."
+            )
+        return ""
+
+    def _apply_availability(self) -> None:
+        """Show only the routes this computer and these settings allow."""
+        bluetooth_possible = (
+            platform.supported("bluetooth_audio")
+            and self.hub.config.features.bluetooth_audio
+        )
+        for card in self._bluetooth_cards:
+            card.setVisible(bluetooth_possible)
+        self.link_card.setVisible(self.hub.config.features.phone_audio)
 
     # -- only while anyone is looking ----------------------------------------
     #
@@ -167,6 +337,8 @@ class AudioPage(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        self._apply_availability()
+        self._apply_stream_state()
         self._timer.start(self.REFRESH_MS)
         self.refresh()
 
@@ -184,15 +356,28 @@ class AudioPage(QWidget):
         submit(self._read_state, on_done=self._apply_state, on_error=lambda _m: None)
 
     def quick_toggle(self) -> None:
-        """Play the phone's audio here, or hand it back.
+        """Play the phone's audio here, or stop.
 
-        The panel's switch calls this. Taking over the audio path only ever
-        happens on a click, and this is that click.
+        The panel's switch calls this. Either route only ever starts on a
+        click, and this is that click -- but the link route is tried first,
+        because it takes nothing away from the phone. Bluetooth is the
+        fallback for a phone without the companion app.
         """
+        if self.hub.phone_audio_active or self.hub.phone_audio_pending:
+            self.hub.stop_phone_audio()
+            return
         if self.hub.bluetooth_streaming or self._stream_node:
             self._park()
-        else:
-            self._set_mode("music")
+            return
+        if (
+            self.hub.config.features.phone_audio
+            and self.hub.connected
+            and "phone_audio" in self.hub.companion.capabilities
+            and phone_audio.available()
+        ):
+            self.hub.start_phone_audio()
+            return
+        self._set_mode("music")
 
     def _read_state(self) -> tuple:
         """Gather Bluetooth and audio state off the GUI thread.

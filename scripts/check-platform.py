@@ -282,8 +282,10 @@ def interface_checks() -> None:
     for _ in range(4):
         app.processEvents()
 
-    check("Audio and Webcam are not offered", sorted(IMPOSSIBLE),
-          ["Audio", "Webcam"])
+    # Audio stays: the page leads with the route over the companion link,
+    # which needs no Bluetooth and works here. Only its Bluetooth half goes.
+    check("Webcam is not offered", sorted(IMPOSSIBLE), ["Webcam"])
+    check("but Audio is, for the link route", "Audio" not in IMPOSSIBLE, True)
     check("no dead tabs",
           [window.tabs.tabText(i) for i in range(window.tabs.count())
            if window.tabs.isTabVisible(i) and window.tabs.tabData(i) in IMPOSSIBLE],
@@ -299,8 +301,17 @@ def interface_checks() -> None:
           window.settings_page.audio_card.isHidden(), True)
     check("the Bluetooth audio switch cannot be turned on",
           window.settings_page.feature_boxes["bluetooth_audio"].isEnabled(), False)
-    check("no audio switch in the sidebar",
-          window.panel.tiles["audio"].property("feature_off"), True)
+    check("the Bluetooth cards are hidden on the Audio page",
+          [c.isVisibleTo(window.audio_page) for c in window.audio_page._bluetooth_cards],
+          [False, False, False])
+    check("but the link card is shown",
+          window.audio_page.link_card.isVisibleTo(window.audio_page), True)
+    # The audio tile is not on by default, so choosing it is what proves the
+    # platform no longer vetoes it: on Windows it used to be struck out.
+    hub.config.panel.tiles.append("audio")
+    window.panel.apply_tiles()
+    check("the sidebar will take an audio switch on Windows",
+          window.panel.tiles["audio"].property("feature_off"), False)
     check("nor a webcam one",
           window.panel.tiles["camera"].property("feature_off"), True)
     check("but the clipboard one is there",

@@ -12,6 +12,10 @@
 
     <string name="channel_status">Connection status</string>
     <string name="channel_status_description">Shows whether your computer is connected.</string>
+    <string name="channel_consent">Permission requests</string>
+    <string name="channel_consent_description">Asks you to allow something your computer has requested.</string>
+    <string name="audio_consent_title">Send this phone\'s audio?</string>
+    <string name="audio_consent_text">Your computer asked to play what this phone is playing. Tap to allow.</string>
 
     <!-- Hero -->
     <string name="status_running">Ready for your computer</string>
@@ -40,6 +44,8 @@
     <string name="perm_photos_why">Browse your gallery and save photos across.</string>
     <string name="perm_camera">Camera</string>
     <string name="perm_camera_why">Use this phone as a webcam.</string>
+    <string name="perm_audio">Microphone</string>
+    <string name="perm_audio_why">Play this phone\'s audio on your computer. The microphone itself is never opened — Android requires the permission to capture what is playing.</string>
 
     <!-- Hotspot -->
     <string name="hotspot_title">One‑click hotspot</string>

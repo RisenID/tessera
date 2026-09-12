@@ -27,6 +27,14 @@
          webcam therefore needs the service to also run as a camera foreground
          service for as long as the stream lasts. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- Sending what the phone is playing to the desktop. Playback capture is
+         gated behind a MediaProjection, so the service must also be a
+         mediaProjection foreground service while a stream is live. RECORD_AUDIO
+         is required by AudioRecord even though the microphone is never opened:
+         the source is the phone's own media mix, a copy of it, which is why
+         this cannot take audio away from the phone's headphones. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -100,7 +108,7 @@
         <service
             android:name=".TesseraService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|camera" />
+            android:foregroundServiceType="connectedDevice|camera|mediaProjection" />
 
         <!-- Shizuku hands the app a shell-UID binder through this provider. -->
         <provider

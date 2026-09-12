@@ -3,6 +3,7 @@ package dev.tessera.companion
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.provider.Settings
 import android.text.format.Formatter
 import android.view.View
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -48,6 +50,32 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var rows: List<Row>
 
+    /** True when the activity was opened only to ask about audio, from the
+     *  notification the service posts. It closes again once answered, rather
+     *  than leaving the user in a settings screen they did not go looking for. */
+    private var audioRequestOnly = false
+
+    /**
+     * The screen-capture dialog's answer.
+     *
+     * Playback capture is gated behind the same permission as screen sharing,
+     * so this is the dialog the user sees -- and only an activity may raise it,
+     * which is the whole reason this class is involved in audio at all.
+     */
+    private val projectionRequest = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val granted = result.resultCode == RESULT_OK && result.data != null
+        TesseraService.running_instance?.onAudioConsent(
+            result.resultCode,
+            if (granted) result.data else null,
+        )
+        if (audioRequestOnly) {
+            audioRequestOnly = false
+            finish()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Wallpaper-derived colour on Android 12+; the baseline M3 palette
         // elsewhere. Applied before inflation so the first frame is right.
@@ -81,6 +109,34 @@ class MainActivity : AppCompatActivity() {
         }
 
         TesseraService.start(this)
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** The service asks for audio consent by sending the user here. */
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action != ACTION_REQUEST_AUDIO) return
+        // Do not ask twice if the notification is tapped again mid-dialog.
+        intent.action = null
+        audioRequestOnly = true
+        askForProjection()
+    }
+
+    private fun askForProjection() {
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        if (manager == null) {
+            TesseraService.running_instance?.onAudioConsent(RESULT_CANCELED, null)
+            return
+        }
+        runCatching { projectionRequest.launch(manager.createScreenCaptureIntent()) }
+            .onFailure {
+                TesseraService.running_instance?.onAudioConsent(RESULT_CANCELED, null)
+            }
     }
 
     /**
@@ -142,6 +198,17 @@ class MainActivity : AppCompatActivity() {
                 },
                 grant = { requestRuntimePermissions() },
             ),
+            Row(
+                binding.rowAudio,
+                R.string.perm_audio,
+                R.string.perm_audio_why,
+                R.drawable.ic_audio,
+                granted = {
+                    checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                },
+                grant = { requestRuntimePermissions() },
+            ),
         )
 
         for (row in rows) {
@@ -167,6 +234,8 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.SEND_SMS)
             add(Manifest.permission.READ_CONTACTS)
             add(Manifest.permission.CAMERA)
+            // Playback capture needs it; the microphone is never opened.
+            add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.READ_MEDIA_IMAGES)
                 add(Manifest.permission.READ_MEDIA_VIDEO)
@@ -269,5 +338,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val RUNTIME_REQUEST = 100
         private const val SHIZUKU_REQUEST = 101
+
+        /** Sent by the service's notification when the desktop wants audio. */
+        const val ACTION_REQUEST_AUDIO = "dev.tessera.companion.REQUEST_AUDIO"
     }
 }

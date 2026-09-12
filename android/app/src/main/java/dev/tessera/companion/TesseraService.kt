@@ -6,7 +6,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.IBinder
 import android.util.Log
 import dev.tessera.companion.net.Advertiser
@@ -35,6 +40,15 @@ class TesseraService : Service() {
 
     @Volatile
     private var running = false
+
+    /** The user's answer to the screen-capture dialog, waiting to be spent.
+     *  Android treats it as single use, so it is cleared when a projection is
+     *  made from it and the next stream asks again. */
+    private var audioConsent: Intent? = null
+    private var audioConsentCode: Int = 0
+
+    /** What to do once the user has consented, set by the session that asked. */
+    private var pendingAudio: (() -> Unit)? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -117,6 +131,133 @@ class TesseraService : Service() {
             // only a start made while the app was in the foreground is eligible.
             Log.w(TAG, "could not raise the camera service type", it)
         }.getOrDefault(false)
+    }
+
+    // -- the phone's audio ---------------------------------------------------
+
+    /**
+     * A MediaProjection to capture playback with, or null when the user has not
+     * consented yet.
+     *
+     * The order matters and is Android's, not ours: from API 34 a projection
+     * may only be created while a foreground service of type mediaProjection is
+     * already running, so the type goes up first and comes back down if the
+     * projection is refused.
+     */
+    fun audioProjection(): MediaProjection? {
+        val data = audioConsent ?: return null
+        if (!setAudioActive(true)) {
+            Log.w(TAG, "could not raise the mediaProjection service type")
+            return null
+        }
+        // Single use by Android's rules: spend it whether or not this works,
+        // so a stale token is never offered to the platform twice.
+        audioConsent = null
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        val projection = runCatching {
+            manager?.getMediaProjection(audioConsentCode, data)
+        }.onFailure { Log.w(TAG, "the projection was refused", it) }.getOrNull()
+
+        if (projection == null) {
+            setAudioActive(false)
+            return null
+        }
+        // Android 14 insists on a callback before capture begins, and it is
+        // how we hear about the user revoking consent from the status bar.
+        projection.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                Log.i(TAG, "the user stopped the projection")
+                sessions.forEach(Session::stopAudioFromSystem)
+            }
+        }, Handler(Looper.getMainLooper()))
+        return projection
+    }
+
+    /**
+     * Asks the user to allow playback capture, and runs [after] if they do.
+     *
+     * A dialog cannot be raised from here -- only an activity can ask, and a
+     * background app may not start one -- so this posts a notification for the
+     * user to tap. The desktop is told the same thing in words.
+     */
+    fun askForAudioConsent(after: () -> Unit) {
+        pendingAudio = after
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        ensureConsentChannel()
+
+        val intent = Intent(this, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_REQUEST_AUDIO)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val tap = PendingIntent.getActivity(
+            this,
+            2,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = Notification.Builder(this, CONSENT_CHANNEL_ID)
+            .setContentTitle(getString(R.string.audio_consent_title))
+            .setContentText(getString(R.string.audio_consent_text))
+            .setSmallIcon(R.drawable.ic_stat_tessera)
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        runCatching { manager.notify(CONSENT_NOTIFICATION_ID, notification) }
+    }
+
+    /** Called by the activity with the user's answer. */
+    fun onAudioConsent(resultCode: Int, data: Intent?) {
+        getSystemService(NotificationManager::class.java)
+            ?.cancel(CONSENT_NOTIFICATION_ID)
+        if (data == null) {
+            pendingAudio = null
+            return
+        }
+        audioConsent = data
+        audioConsentCode = resultCode
+        val next = pendingAudio
+        pendingAudio = null
+        next?.invoke()
+    }
+
+    /** Forget a request whose session has gone away. */
+    fun clearPendingAudio() {
+        pendingAudio = null
+        getSystemService(NotificationManager::class.java)
+            ?.cancel(CONSENT_NOTIFICATION_ID)
+    }
+
+    /**
+     * Adds or drops the mediaProjection foreground-service type.
+     *
+     * Same bargain as the camera: the type is only held while a stream is
+     * live, so the phone never implies it is being captured when it is not.
+     */
+    fun setAudioActive(active: Boolean): Boolean {
+        val types = if (active) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        }
+        return runCatching {
+            startForeground(NOTIFICATION_ID, buildNotification(statusText()), types)
+            true
+        }.onFailure {
+            Log.w(TAG, "could not change the mediaProjection service type", it)
+        }.getOrDefault(false)
+    }
+
+    private fun ensureConsentChannel() {
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(CONSENT_CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CONSENT_CHANNEL_ID,
+                getString(R.string.channel_consent),
+                // The desktop is waiting on this one: it has to be seen.
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = getString(R.string.channel_consent_description) }
+        )
     }
 
     private fun statusText(): String = when (val count = sessions.size) {
@@ -204,7 +345,9 @@ class TesseraService : Service() {
             private set
 
         private const val CHANNEL_ID = "tessera-status"
+        private const val CONSENT_CHANNEL_ID = "tessera-consent"
         private const val NOTIFICATION_ID = 1
+        private const val CONSENT_NOTIFICATION_ID = 2
         const val ACTION_STOP = "dev.tessera.companion.STOP"
 
         fun start(context: android.content.Context) {
