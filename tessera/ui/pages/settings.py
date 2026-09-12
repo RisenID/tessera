@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -47,20 +47,32 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
 
 
 class SettingsPage(QWidget):
-    """Pairing, features and preferences."""
+    """Pairing, features and preferences.
+
+    Every control applies itself. There is no Save button: it used to sit
+    inside the "Screen and windows" card at the bottom of a scrolling page,
+    so a checkbox ticked in Startup or Sidebar looked like it had done
+    something and was thrown away at the next launch.
+    """
 
     featuresChanged = Signal()
+
     def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
         super().__init__(parent)
         self.hub = hub
         self.palette_tokens = palette
+        #: Set while the widgets are being filled in, so that filling them in
+        #: does not look like the user changing them.
+        self._loading = True
 
         # The page is taller than any window, so it scrolls. Without this the
         # layout compresses every card until the text is unreadable.
         page = QVBoxLayout(self)
         page.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], 0)
         page.setSpacing(SPACE["lg"])
-        page.addWidget(heading("Settings", "Pair your phone and tune how things behave"))
+        page.addWidget(heading(
+            "Settings", "Changes apply as you make them"
+        ))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -151,8 +163,8 @@ class SettingsPage(QWidget):
         rail.add(rail_title)
 
         rail_note = QLabel(
-            "Drag the edge of the sidebar to resize it. The width is kept "
-            "separately for a window and for a full screen."
+            "Drag the edge of the sidebar to resize it, or set it here. The "
+            "width is kept separately for a window and for a full screen."
         )
         rail_note.setObjectName("Muted")
         rail_note.setWordWrap(True)
@@ -271,7 +283,7 @@ class SettingsPage(QWidget):
 
         codec_note = QLabel(
             "Forcing a codec the phone cannot manage drops it to plain SBC. "
-            "Saving silences this computer for a second."
+            "Changing this silences this computer for a second."
         )
         codec_note.setObjectName("Muted")
         codec_note.setWordWrap(True)
@@ -324,10 +336,6 @@ class SettingsPage(QWidget):
         self._ldac_proc.failed.connect(self._ldac_failed)
         self._refresh_ldac()
 
-        save = QPushButton("Save")
-        save.setObjectName("Primary")
-        save.clicked.connect(self._save)
-        screen.add(save)
         outer.addWidget(screen)
         outer.addStretch(1)
 
@@ -336,6 +344,36 @@ class SettingsPage(QWidget):
         hub.companion.errorOccurred.connect(self._show_error)
         self._refresh()
         self.discover()
+
+        # Applied a beat after the last change: a spin box being dragged emits
+        # on every step, and writing the config on each one is wasteful.
+        self._commit_timer = QTimer(self)
+        self._commit_timer.setSingleShot(True)
+        self._commit_timer.setInterval(350)
+        self._commit_timer.timeout.connect(self._commit)
+        self._wire_controls()
+        self._loading = False
+
+    # -- applying ------------------------------------------------------------
+
+    def _wire_controls(self) -> None:
+        """Every control writes the config as soon as it is touched."""
+        for box in (
+            self.autostart_box, self.minimised_box, self.system_apps,
+            self.mirror_audio, *self.feature_boxes.values(),
+            *self.tile_boxes.values(),
+        ):
+            box.toggled.connect(self._touch)
+        for spin in (self.max_size, self.mirror_fps, self.panel_width,
+                     self.panel_width_full):
+            spin.valueChanged.connect(self._touch)
+        for combo in (self.clipboard_mode, self.codec_choice):
+            combo.currentIndexChanged.connect(self._touch)
+        self.window_size.textEdited.connect(self._touch)
+
+    def _touch(self, *_args) -> None:
+        if not self._loading:
+            self._commit_timer.start()
 
     @staticmethod
     def _bar(layout) -> QWidget:
@@ -546,7 +584,8 @@ class SettingsPage(QWidget):
         self._refresh()
         self.toast.show_message("Phone forgotten", self.palette_tokens)
 
-    def _save(self) -> None:
+    def _commit(self) -> None:
+        """Write what the controls say, and make it take effect now."""
         cfg = self.hub.config.mirror
         cfg.max_size = self.max_size.value()
         cfg.fps = self.mirror_fps.value()
@@ -593,7 +632,7 @@ class SettingsPage(QWidget):
         # than at the next reconnection.
         self.hub.apply_features()
         self.featuresChanged.emit()
-        self.toast.show_message("Saved", self.palette_tokens, "success")
+        self.toast.show_message("Saved", self.palette_tokens, "success", 1200)
 
     def _show_error(self, message: str) -> None:
         self.pair_status.setText(message)

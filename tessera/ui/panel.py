@@ -69,10 +69,9 @@ TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
              False, ""),
     "hotspot": (("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
                 "Start the phone's hotspot and join it", True, "hotspot"),
-    # A camcorder rather than camera-web, which at this size reads as a
-    # briefcase.
-    "camera": (("camera-video", "camera-web"), "\N{MOVIE CAMERA}",
-               "Use a phone camera as a webcam", True, "webcam"),
+    # A camera, not camera-web -- which at this size reads as a briefcase.
+    "camera": (("camera-photo", "camera-video", "camera-web"),
+               "\N{CAMERA}", "Use a phone camera as a webcam", True, "webcam"),
     "mirror": (("smartphone",), "\N{MOBILE PHONE}", "Mirror the phone's screen",
                True, "screen"),
     "audio": (("audio-headphones",), "\N{HEADPHONE}",
@@ -531,7 +530,10 @@ class DevicePanel(QWidget):
         self.tiles: dict[str, QPushButton] = {}
         self._tile_buttons: list[QPushButton] = []
         for key, (icons, glyph, tip, checkable, _feature) in TILES.items():
-            button = self._tile(icons, glyph, tip, checkable)
+            # Parented here rather than by the layout: a switch the user has
+            # not chosen is never added to the grid, and showing a parentless
+            # widget makes it a top-level window of its own.
+            button = self._tile(icons, glyph, tip, checkable, self.tile_host)
             button.clicked.connect(
                 lambda _checked=False, k=key: self._tile_clicked(k)
             )
@@ -565,8 +567,9 @@ class DevicePanel(QWidget):
         }[key]()
 
     def _tile(self, icons: tuple[str, ...], glyph: str, tip: str,
-              checkable: bool = False) -> QPushButton:
-        button = QPushButton()
+              checkable: bool = False,
+              parent: QWidget | None = None) -> QPushButton:
+        button = QPushButton(parent)
         button.setObjectName("Quick")
         button.setProperty("icons", icons)
         button.setProperty("glyph", glyph)

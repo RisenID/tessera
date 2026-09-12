@@ -183,6 +183,23 @@ messaging app posts is unaffected. `core/otp.py` scores candidates on the
 words around them and shows nothing below the threshold, because a wrong code
 pasted into a login form is worse than no code.
 
+## Settings apply themselves
+
+There is no Save button. Every control writes the config as soon as it is
+touched, a third of a second after the last change so that dragging a spin box
+does not write the file on every step, and a brief "Saved" confirms it.
+
+The Save button it replaces sat *inside* the "Screen and windows" card at the
+bottom of a page that scrolls, so a switch ticked in Startup or Sidebar looked
+as though it had done something, did nothing, and was gone at the next launch.
+That is the whole of what "settings do not save" and "the sidebar switches do
+not work" turned out to be: the config file on the machine was hours old, with
+no error anywhere, because nothing had ever asked for it to be written.
+
+Filling the widgets in is not the user changing them, so `_loading` guards the
+first pass, and `_fill_codecs` and `reload_panel_widths` block signals while
+they write into their own widgets.
+
 ## Quick actions
 
 The rail's switches mix two kinds of thing. Latching ones (Do Not Disturb,

@@ -363,9 +363,15 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_panel_width(self) -> None:
-        """Give the rail the width saved for the mode the window is in."""
+        """Give the rail the width saved for the mode the window is in.
+
+        A no-op when it already has it, so committing some unrelated setting
+        cannot yank the rail back to a number the user has since dragged past.
+        """
         cfg = self.hub.config.panel
         wanted = max(MIN_WIDTH, min(MAX_WIDTH, int(getattr(cfg, self._display_mode()))))
+        if self.panel.width() == wanted:
+            return
         rest = max(1, self.splitter.width() - wanted - self.splitter.handleWidth())
         self.splitter.setSizes([wanted, rest])
 

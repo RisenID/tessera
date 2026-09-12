@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        15%{?dist}
+Release:        16%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,19 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-16
+- Settings apply as they are made, and the Save button is gone. It used to sit
+  inside the "Screen and windows" card at the bottom of a scrolling page, so
+  anything changed in Startup, Sidebar or Features appeared to take and was
+  thrown away at the next launch. Nothing was being written at all.
+- The sidebar's quick switches therefore work: ticking one shows it
+  immediately, unticking hides it, and both survive a restart.
+- A setting committed elsewhere no longer snaps the sidebar back to its saved
+  width, so a width you have just dragged past is left alone.
+- A switch the user has not chosen is parented to the panel rather than left
+  parentless, so enabling one cannot flash a stray window of its own.
+- The webcam switch is drawn as a photo camera.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-15
 - The sidebar is resizable: drag its edge to anywhere between 280 and 720
   pixels. What is drawn inside scales with the width it is given, up to a
