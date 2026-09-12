@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        18%{?dist}
+Release:        19%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -31,6 +31,12 @@ Requires:       NetworkManager
 Requires:       avahi-tools
 # pkexec, used once to load the virtual-camera kernel module.
 Requires:       polkit
+# gdbus, which raises the desktop notifications. Not a stylistic choice: the
+# specification's replaces_id is an unsigned 32-bit integer and PySide6 sends
+# every Python int as a signed one, so QtDBus cannot make the call at all.
+# glib2 is present on any system with a notification server; naming it means a
+# stripped one fails at install rather than falling back to a tray balloon.
+Requires:       glib2
 
 # Weak dependencies: each unlocks one feature, and several live in RPM Fusion
 # or a COPR, so a missing one must not block installation. The app detects each
@@ -146,6 +152,7 @@ print('all modules import')"
 %files
 %license LICENSE
 %doc README.md docs/PROTOCOL.md docs/WINDOWS.md
+%doc docs/PHONE_AUDIO_AND_CAMERA.md docs/FEATURE_REVIEW.md
 %{python3_sitelib}/tessera/
 %{_bindir}/tessera
 %{_datadir}/applications/%{appid}.desktop
@@ -157,6 +164,34 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-19
+- The phone's audio can now play here over the companion link instead of
+  Bluetooth. The phone sends a copy of what it is playing, so it keeps playing
+  there and its own headphones are untouched -- nothing in this route is
+  capable of taking them, which the A2DP route always was. No pairing, no
+  profile switch, and it works on Windows too.
+- Android asks before capturing playback, and makes that consent single-use, so
+  the first version asked on the phone every time. Settings now offers to grant
+  the projection app operation once, through Shizuku, over the link: after that
+  the audio starts in about a second with nothing to do on the phone.
+- Both audio routes are kept. A setting decides which one the sidebar's switch
+  uses: whichever works, always the link, or always Bluetooth. They are not
+  equivalent -- only Bluetooth can carry a call.
+- Notifications repeated on this desktop now go to the desktop's own
+  notification server, so they carry a Dismiss action and, where the server
+  supports it, a reply box in the popup itself. The tray remains the route
+  where there is no session bus.
+- The phone is published as an MPRIS player, so its track appears in the
+  desktop's media applet and the keyboard's media keys control it -- with no
+  Bluetooth involved.
+- Ringing the phone no longer needs KDE Connect: the companion app rings it on
+  the alarm stream, so a silenced phone still answers, and puts the volume back
+  afterwards.
+- adb is reconnected automatically when it drops, using the address the
+  companion app is already talking to. Screen mirroring and the app launcher
+  stopped working after every reboot until now.
+- The phone no longer polls its clipboard while its screen is off.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-18
 - Tessera now builds and runs on Windows. One module decides the platform --
   where files go, which features can work -- and everything else asks it, so
