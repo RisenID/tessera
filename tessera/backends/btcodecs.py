@@ -38,7 +38,7 @@ import logging
 import os
 from pathlib import Path
 
-from ..core.proc import run
+from ..core.proc import have, run
 
 log = logging.getLogger(__name__)
 
@@ -167,13 +167,26 @@ def write_preference(choice: str, phone_codecs: "tuple[str, ...] | list[str]" = 
     return True
 
 
+def session_managed_by_systemd() -> bool:
+    """Whether the session manager can be restarted with systemctl --user."""
+    return have("systemctl") and Path("/run/systemd/system").is_dir()
+
+
 def reload_session() -> bool:
     """Restart WirePlumber so the new codec list is advertised.
 
     The codecs are advertised to BlueZ once, when the session manager starts,
     so a change only takes effect after this. Audio on this computer stops for
     about a second; anything playing resumes on its own.
+
+    False on a system with no systemd user session -- Void, Artix, Alpine and
+    the like. The file is still written, so the new list takes effect the next
+    time WirePlumber starts; there is simply no supported way from here to make
+    that happen now.
     """
+    if not session_managed_by_systemd():
+        log.info("no systemd user session; the codec list applies at next start")
+        return False
     result = run(["systemctl", "--user", "restart", "wireplumber"], timeout=25.0)
     if not result.ok:
         log.warning("could not restart wireplumber: %s", result.text)

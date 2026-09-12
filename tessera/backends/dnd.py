@@ -24,6 +24,7 @@ from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBusVariant
 
 from ..core.config import DndConfig
 from ..core.proc import have, run, submit
+from . import silence
 from . import adb
 
 log = logging.getLogger(__name__)
@@ -113,6 +114,15 @@ class DndSync(QObject):
         self._bus = QDBusConnection.sessionBus()
 
         self._cookie: int | None = None        # our own inhibition, if any
+        #: Whether this notification server implements Plasma's Inhibit, which
+        #: is not part of the notification specification. Probed once, lazily.
+        self._inhibits: bool | None = None
+        #: The desktop's own switch, for the desktops that have no Inhibit.
+        self._silencer: silence.Silencer | None = None
+        self._looked_for_silencer = False
+        #: True when we silenced the desktop through that switch, so that
+        #: releasing undoes only what we did -- the cookie's job on Plasma.
+        self._held = False
         self._phone: ZenMode | None = None
         self._desktop: bool | None = None
         self._busy = False                     # a phone write is in flight
@@ -204,24 +214,59 @@ class DndSync(QObject):
         values = reply.arguments()
         return values[0] if values else None
 
-    def desktop_supported(self) -> bool:
-        return (
-            self._bus.isConnected()
-            and self._bus.interface().isServiceRegistered(NOTIFY_SERVICE).value()
-        )
+    def _read_inhibited(self) -> bool | None:
+        """The Inhibited property, or None when the server has no such thing.
 
-    def _read_desktop(self) -> bool:
-        """Whether desktop notifications are currently inhibited."""
+        The distinction is the whole point. Registering
+        org.freedesktop.Notifications says nothing about implementing
+        Inhibit -- that is Plasma's extension, and GNOME's daemon registers
+        the same name without it. Taking registration as proof is what made
+        Do Not Disturb sync look supported on GNOME and then do nothing.
+        """
+        if not self._bus.isConnected():
+            return None
+        if not self._bus.interface().isServiceRegistered(NOTIFY_SERVICE).value():
+            return None
         msg = QDBusMessage.createMethodCall(NOTIFY_SERVICE, NOTIFY_PATH, PROPS_IFACE, "Get")
         msg.setArguments([NOTIFY_IFACE, "Inhibited"])
         reply = self._bus.call(msg, timeout=5000)
         if reply.type() == QDBusMessage.ErrorMessage:
-            return False
+            return None
         values = reply.arguments()
         value = values[0] if values else False
         while isinstance(value, QDBusVariant):
             value = value.variant()
         return bool(value)
+
+    def _inhibit_supported(self) -> bool:
+        if self._inhibits is None:
+            self._inhibits = self._read_inhibited() is not None
+        return bool(self._inhibits)
+
+    @property
+    def silencer(self) -> "silence.Silencer | None":
+        """This desktop's own notification switch, found once."""
+        if not self._looked_for_silencer:
+            self._looked_for_silencer = True
+            self._silencer = silence.detect()
+        return self._silencer
+
+    def desktop_mechanism(self) -> str:
+        """What Tessera would drive to silence this desktop, for a message."""
+        if self._inhibit_supported():
+            return "this desktop's notification server"
+        found = self.silencer
+        return found.desktop if found else ""
+
+    def desktop_supported(self) -> bool:
+        return bool(self.desktop_mechanism())
+
+    def _read_desktop(self) -> bool:
+        """Whether desktop notifications are currently silenced."""
+        if self._inhibit_supported():
+            return bool(self._read_inhibited())
+        found = self.silencer
+        return found.silenced() if found else False
 
     def _uninhibit(self, cookie: int) -> bool:
         """Drop inhibition *cookie*.
@@ -250,23 +295,51 @@ class DndSync(QObject):
         return result.ok
 
     def hold_desktop(self, reason: str) -> None:
-        """Turn desktop DND on, if we have not already."""
-        if self._cookie is not None:
+        """Silence the desktop, if we have not already."""
+        if self._cookie is not None or self._held:
+            return
+
+        if self._inhibit_supported():
+            try:
+                cookie = self._notify_call("Inhibit", "tessera", reason, {})
+            except RuntimeError as exc:
+                self.errorOccurred.emit(f"Could not enable desktop Do Not Disturb: {exc}")
+                return
+            self._cookie = int(cookie) if cookie is not None else None
+            self._note_desktop(True)
+            return
+
+        found = self.silencer
+        if found is None:
+            self.errorOccurred.emit(
+                "This desktop offers no way to silence its notifications that "
+                "Tessera knows how to drive, so Do Not Disturb can only be "
+                "mirrored the other way, from the desktop to the phone."
+            )
             return
         try:
-            cookie = self._notify_call("Inhibit", "tessera", reason, {})
+            found.set(True)
         except RuntimeError as exc:
-            self.errorOccurred.emit(f"Could not enable desktop Do Not Disturb: {exc}")
+            self.errorOccurred.emit(f"Could not silence {found.desktop}: {exc}")
             return
-        self._cookie = int(cookie) if cookie is not None else None
+        self._held = True
         self._note_desktop(True)
 
     def release_desktop(self) -> None:
-        """Drop our inhibition, leaving any the user set alone."""
-        if self._cookie is None:
+        """Undo only our own silencing, leaving anything the user set alone."""
+        if self._cookie is not None:
+            self._uninhibit(self._cookie)
+            self._cookie = None
+        elif self._held:
+            found = self.silencer
+            if found is not None:
+                try:
+                    found.set(False)
+                except RuntimeError as exc:
+                    log.warning("could not unsilence %s: %s", found.desktop, exc)
+            self._held = False
+        else:
             return
-        self._uninhibit(self._cookie)
-        self._cookie = None
         self._note_desktop(self._read_desktop())
 
     def _note_desktop(self, state: bool) -> None:
@@ -282,19 +355,43 @@ class DndSync(QObject):
         value = changed["Inhibited"]
         while isinstance(value, QDBusVariant):
             value = value.variant()
-        state = bool(value)
+        self._desktop_now(bool(value))
+
+    def _desktop_now(self, state: bool) -> None:
+        """Act on the desktop's silence state, wherever it was read from."""
         if state == self._desktop:
             return
         previous, self._desktop = self._desktop, state
         self.desktopStateChanged.emit(state)
         # Only a change we did not cause should travel to the phone.
-        if previous is not None and self._cookie is None:
+        if previous is not None and self._cookie is None and not self._held:
             self._push_to_phone(state)
+
+    def _watch_silencer(self) -> None:
+        """Notice the user's own toggle, on a desktop with no change signal.
+
+        Plasma announces its toggle through PropertiesChanged, which is how a
+        change made in the tray reaches us for nothing. gsettings, xfconf and
+        dunst say nothing, so on those desktops the only way to see the user
+        flip their own Do Not Disturb is to look -- and without this, sync
+        would work in one direction only there.
+        """
+        if self._inhibit_supported() or self._config.mode == MODE_OFF:
+            return
+        if self._config.mode not in (MODE_DESKTOP_TO_PHONE, MODE_TWO_WAY):
+            return
+        found = self.silencer
+        if found is not None:
+            self._desktop_now(found.silenced())
 
     # -- phone side ----------------------------------------------------------
 
     @Slot()
     def _poll(self) -> None:
+        # Runs whatever the phone side is doing: a desktop without a change
+        # signal has to be looked at, and this is the timer that already ticks.
+        self._watch_silencer()
+
         if self._config.mode == MODE_OFF or not self._serial or self._busy:
             return
         if self._pushed:

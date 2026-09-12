@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Signal
 
+from ..core import packages
 from ..core.proc import ManagedProcess, have, run
 
 log = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class MirrorOptions:
 def mirror_command(serial: str, options: MirrorOptions, title: str = "Phone") -> list[str]:
     """Full-screen mirror with touch and keyboard control."""
     if not available():
-        raise MirrorError("scrcpy is not installed. Run scripts/setup-fedora.sh.")
+        raise MirrorError("scrcpy is not installed. " + packages.advice("scrcpy"))
     argv = ["scrcpy", *options.base_args(), f"--window-title={title}"]
     if serial:
         argv += ["-s", serial]
@@ -102,7 +103,7 @@ def app_command(
         raise MirrorError(
             "Opening a single app in its own window needs scrcpy 3.0 or newer; "
             f"you have {current[0]}.{current[1]}. Use full screen mirroring, or "
-            "update scrcpy with scripts/setup-fedora.sh."
+            "update scrcpy."
         )
 
     display = size if not dpi else f"{size}/{dpi}"

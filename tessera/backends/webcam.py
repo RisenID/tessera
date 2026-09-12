@@ -18,6 +18,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 
 from ..core.config import WebcamConfig
+from ..core import packages
 from ..core.proc import ManagedProcess, have, run
 
 log = logging.getLogger(__name__)
@@ -128,8 +129,9 @@ def ensure_module(devices: int = 1) -> list[VideoDevice]:
     if not module_installed():
         raise WebcamError(
             "The v4l2loopback kernel module is not installed. "
-            "Run scripts/setup-fedora.sh, which installs it and builds it for "
-            "your running kernel."
+            + packages.advice("v4l2loopback")
+            + " It builds against the running kernel, so it also needs the "
+            "kernel headers for that kernel."
         )
 
     if not have("pkexec"):
@@ -269,7 +271,7 @@ class Webcam(QObject):
             raise WebcamError("The virtual camera is already running.")
         if not scrcpy_available():
             raise WebcamError(
-                "scrcpy is not installed. Run scripts/setup-fedora.sh to install it."
+                "scrcpy is not installed. " + packages.advice("scrcpy")
             )
         if self._config.source == "camera" and scrcpy_version() < (2, 2):
             raise WebcamError(
@@ -360,7 +362,7 @@ class CompanionCamera(QObject):
         if self.running:
             raise WebcamError("The virtual camera is already running.")
         if not have("ffmpeg"):
-            raise WebcamError("ffmpeg is not installed. Run scripts/setup-fedora.sh.")
+            raise WebcamError("ffmpeg is not installed. " + packages.advice("ffmpeg"))
 
         device = self._config.device.strip() or ensure_module()[0].path
         self._device = device

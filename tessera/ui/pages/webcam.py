@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from ...backends import webcam
 from ...core.hub import Hub
+from ...core import packages
 from ..theme import SPACE, Palette
 from ..widgets import Card, Pill, Toast, heading
 
@@ -343,17 +344,24 @@ class WebcamPage(QWidget):
         self.toast.show_message("Camera error", self.palette_tokens, "danger")
 
     def _check_environment(self) -> None:
-        problems = []
+        problems: list[str] = []
+        #: What to install, named for packages.advice rather than for the user.
+        missing: list[str] = []
         if not webcam.module_installed():
             problems.append("the v4l2loopback kernel module is missing")
+            missing.append("v4l2loopback")
         if self.hub.camera_uses_companion:
             if not webcam.ffmpeg_available():
                 problems.append("ffmpeg is not installed")
+                missing.append("ffmpeg")
         elif not webcam.scrcpy_available():
             problems.append("scrcpy is not installed (needed without the companion app)")
+            missing.append("scrcpy")
 
         if problems:
-            self.status.setText("Run scripts/setup-fedora.sh — " + ", and ".join(problems) + ".")
+            self.status.setText(
+                ", and ".join(problems).capitalize() + ". " + packages.advice(*missing)
+            )
         else:
             route = "the companion app" if self.hub.camera_uses_companion else "scrcpy over adb"
             self.status.setText(f"Ready. Video will come through {route}.")

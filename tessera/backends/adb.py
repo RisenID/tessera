@@ -14,6 +14,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from ..core import packages
 from ..core.proc import Result, have, run
 
 log = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ def available() -> bool:
 
 def _adb(args: list[str], serial: str | None = None, timeout: float = 15.0) -> Result:
     if not available():
-        raise AdbUnavailable("adb is not installed (dnf install android-tools)")
+        raise AdbUnavailable("adb is not installed. " + packages.advice("adb"))
     argv = [ADB]
     if serial:
         argv += ["-s", serial]

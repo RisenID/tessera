@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from ...backends import mirror
 from ...core.hub import Hub
+from ...core import packages
 from ..theme import SPACE, Palette
 from ..widgets import Avatar, Card, EmptyState, Toast, heading
 
@@ -202,7 +203,7 @@ class ScreenPage(QWidget):
 
         if not mirror.available():
             self.mirror_status.setText(
-                "scrcpy is not installed. Run scripts/setup-fedora.sh to install it."
+                "scrcpy is not installed. " + packages.advice("scrcpy")
             )
         elif not self.hub.serial:
             self.mirror_status.setText(

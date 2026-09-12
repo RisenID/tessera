@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,30 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-9
+- Install advice now names the right package and the right command for the
+  distribution it is running on. It said "sudo dnf install android-tools" and
+  "run scripts/setup-fedora.sh" everywhere, which is wrong on Debian, Arch,
+  openSUSE and the rest -- and advice that does not work is barely better
+  than none. See tessera/core/packages.py; only the Fedora names are verified
+  against a real system, and a package it cannot name is described in words
+  rather than invented.
+- Do Not Disturb reaches desktops other than Plasma. Inhibit/UnInhibit is a
+  Plasma extension to the notification specification, not part of it, so on
+  GNOME the old check passed -- the service is registered -- and silencing
+  then did nothing at all. Tessera now probes for the method rather than the
+  service, and falls back to GNOME's, Cinnamon's or XFCE's own switch, or to
+  dunstctl. A desktop with none of those says so instead of pretending.
+- Those desktops announce no change when the user flips their own Do Not
+  Disturb, so that direction is polled for them. Plasma still gets it free.
+- scripts/install-user.sh installs Tessera for one user on any distribution:
+  a launcher, a menu entry, the icon and the audio configuration, all inside
+  $HOME, with no root and no packaging. Not pip -- Fedora and Debian both
+  mark the system interpreter as externally managed.
+- The LDAC decoder no longer assumes systemd. Without it, it prints the one
+  environment variable to set rather than writing a unit override nothing
+  will read, and the codec list falls back to applying at next start.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-8
 - Bluetooth no longer assumes the adapter is hci0. It is on most machines and
   is not on plenty of others -- plug in a USB Bluetooth dongle, or have had

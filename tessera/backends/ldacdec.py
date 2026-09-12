@@ -18,6 +18,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from ..core import packages
 from ..core.proc import have, run
 from . import btcodecs
 
@@ -73,11 +74,15 @@ def installed() -> bool:
 #: tested by asking the compiler rather than looking in /usr/include, which
 #: accounts for CPATH and for layouts other than Fedora's -- the same test the
 #: script makes, so the two can never disagree about whether a run will work.
+#: What the script needs, paired with the capability key that names the
+#: package supplying it. The package itself is looked up per distribution --
+#: see core.packages -- because it is libldac-devel on Fedora,
+#: libldacbt-enc-dev on Debian and libldac on Arch.
 BUILD_REQUIREMENTS: tuple[tuple[str, str], ...] = (
     ("gcc", "gcc"),
     ("curl", "curl"),
-    ("ldacBT.h", "libldac-devel"),
-    ("bluetooth/bluetooth.h", "bluez-libs-devel"),
+    ("ldacBT.h", "ldac-headers"),
+    ("bluetooth/bluetooth.h", "bluez-headers"),
 )
 
 
@@ -98,19 +103,20 @@ def missing_packages() -> list[str]:
     return missing
 
 
-def install_command(packages: list[str]) -> str:
-    """The command that installs the build dependencies."""
-    return "sudo dnf install " + " ".join(packages)
+def install_command(capabilities: list[str]) -> str:
+    """What the user would type to install the build dependencies."""
+    return packages.install_command(*capabilities) or packages.advice(*capabilities)
 
 
-def install_argv(packages: list[str]) -> list[str]:
+def install_argv(capabilities: list[str]) -> list[str]:
     """The same thing through polkit, for running it from the app.
 
     Installing packages is a bigger step than anything else Tessera does on its
     own, so it is a button of its own with the command written next to it,
-    never folded silently into the setup run.
+    never folded silently into the setup run. Empty when this system's package
+    manager is not recognised, which the UI turns into an explanation.
     """
-    return ["pkexec", "dnf", "install", "-y", *packages]
+    return packages.install_argv(*capabilities)
 
 
 def setup_argv(action: str = "") -> list[str]:

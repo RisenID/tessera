@@ -80,6 +80,25 @@ if [[ -t 1 ]]; then bold=$'\033[1m'; red=$'\033[31m'; off=$'\033[0m'
 else bold=''; red=''; off=''; fi
 
 say() { printf '\n%s%s%s\n' "$bold" "$*" "$off"; }
+
+# Whether this session is managed by systemd. The drop-in below is a systemd
+# unit override, and on Void, Artix, Alpine or any other init there is nothing
+# to read it -- so the environment has to be set by hand instead. Saying so is
+# the difference between a plugin that is ignored for no visible reason and a
+# one-line instruction.
+has_systemd() { command -v systemctl >/dev/null && [[ -d /run/systemd/system ]]; }
+
+restart_session_manager() {
+    if has_systemd; then
+        systemctl --user daemon-reload
+        systemctl --user restart wireplumber
+        return
+    fi
+    printf '\nThis session is not managed by systemd, so nothing was restarted\n'
+    printf 'and no drop-in was written. Put this in the environment WirePlumber\n'
+    printf 'starts with, then restart it however your system does that:\n\n'
+    printf '  SPA_PLUGIN_DIR=%s/spa-0.2:%s\n\n' "$prefix" "$plugins"
+}
 die() { printf '%serror:%s %s\n' "$red" "$off" "$*" >&2; exit 1; }
 
 # -- what is in place right now ----------------------------------------------
@@ -133,9 +152,14 @@ uninstall() {
           "$dropin"
     rmdir -p "$plugin_dir" 2>/dev/null || true
     rmdir -p "$(dirname "$dropin")" 2>/dev/null || true
-    systemctl --user daemon-reload
-    systemctl --user restart wireplumber
-    printf 'Done. WirePlumber is back on the stock plugins.\n'
+    if has_systemd; then
+        systemctl --user daemon-reload
+        systemctl --user restart wireplumber
+        printf 'Done. WirePlumber is back on the stock plugins.\n'
+    else
+        printf 'Done. Remove SPA_PLUGIN_DIR from WirePlumber'"'"'s environment and\n'
+        printf 'restart it to go back to the stock plugins.\n'
+    fi
 }
 
 case "${1:-}" in
@@ -151,15 +175,108 @@ esac
 # local build in /usr/local, and layouts other than Fedora's.
 have_header() { echo "#include <$1>" | gcc -E -x c - >/dev/null 2>&1; }
 
-missing=()
-command -v gcc >/dev/null || missing+=(gcc)
-command -v curl >/dev/null || missing+=(curl)
-command -v gcc >/dev/null && {
-    have_header ldacBT.h || missing+=(libldac-devel)
-    have_header bluetooth/bluetooth.h || missing+=(bluez-libs-devel)
+# Package names differ by distribution, and advice that does not work is
+# barely better than none. The table is deliberately small -- this script needs
+# exactly three things -- and mirrors tessera/core/packages.py, which the app
+# uses for the same purpose.
+# The package manager family this system uses. One function, because both the
+# package names and the install command depend on it.
+os_family() {
+    local id like
+    id="$(. /etc/os-release 2>/dev/null && printf '%s' "${ID:-}")"
+    like="$(. /etc/os-release 2>/dev/null && printf '%s' "${ID_LIKE:-}")"
+    # Globs, not space-delimited words: openSUSE's ID is
+    # "opensuse-tumbleweed", which a " opensuse " match misses entirely --
+    # and the binary fallback below would then pick whatever manager happened
+    # to be installed, which is how a test on this machine produced dnf.
+    case " $id $like " in
+        *fedora*|*rhel*|*centos*|*almalinux*|*rocky*) printf dnf; return ;;
+        *debian*|*ubuntu*|*mint*)                     printf apt; return ;;
+        *arch*)                                       printf pacman; return ;;
+        *suse*)                                       printf zypper; return ;;
+        *alpine*)                                     printf apk; return ;;
+        *void*)                                       printf xbps; return ;;
+        *gentoo*)                                     printf emerge; return ;;
+        *solus*)                                      printf eopkg; return ;;
+    esac
+    # Not listed: whichever manager is actually installed.
+    local candidate
+    for candidate in dnf apt pacman zypper apk xbps-install; do
+        command -v "$candidate" >/dev/null && { printf '%s' "${candidate%%-*}"; return; }
+    done
 }
-if (( ${#missing[@]} )); then
-    printf 'Missing build dependencies. Install them with:\n\n  sudo dnf install %s\n\n' "${missing[*]}" >&2
+
+# Package names differ by distribution, and advice that does not work is barely
+# better than none. Deliberately small -- this script needs exactly three
+# things -- and it mirrors tessera/core/packages.py, which the app uses for the
+# same purpose. An unknown family falls back to the plain name, which is right
+# for gcc and curl and the best guess available for the rest.
+# Empty when no package name is known for this system. The caller keeps those
+# out of the command line and names them in words instead: putting
+# "libldac (development headers)" into an apk invocation is not advice, it is
+# a syntax error with parentheses in it.
+package_for() {
+    case "$(os_family):$1" in
+        dnf:gcc|zypper:gcc|xbps:gcc|emerge:gcc|eopkg:gcc) printf gcc ;;
+        apt:gcc)                        printf build-essential ;;
+        pacman:gcc)                     printf base-devel ;;
+        apk:gcc)                        printf build-base ;;
+        *:curl)                         printf curl ;;
+        apt:ldac)                       printf libldacbt-enc-dev ;;
+        pacman:ldac)                    printf libldac ;;
+        dnf:ldac|zypper:ldac|xbps:ldac) printf libldac-devel ;;
+        dnf:bluez)                      printf bluez-libs-devel ;;
+        apt:bluez)                      printf libbluetooth-dev ;;
+        pacman:bluez)                   printf bluez-libs ;;
+        zypper:bluez|xbps:bluez)        printf bluez-devel ;;
+        apk:bluez)                      printf bluez-dev ;;
+    esac
+}
+
+describe() {
+    case "$1" in
+        gcc)   printf 'a C compiler' ;;
+        curl)  printf 'curl' ;;
+        ldac)  printf "Sony's LDAC encoder headers" ;;
+        bluez) printf 'the BlueZ development headers' ;;
+        *)     printf '%s' "$1" ;;
+    esac
+}
+
+install_line() {
+    case "$(os_family)" in
+        dnf)    printf 'sudo dnf install %s' "$*" ;;
+        apt)    printf 'sudo apt install %s' "$*" ;;
+        pacman) printf 'sudo pacman -S %s' "$*" ;;
+        zypper) printf 'sudo zypper install %s' "$*" ;;
+        apk)    printf 'sudo apk add %s' "$*" ;;
+        xbps)   printf 'sudo xbps-install -S %s' "$*" ;;
+        emerge) printf 'sudo emerge %s' "$*" ;;
+        eopkg)  printf 'sudo eopkg install %s' "$*" ;;
+        *)      printf 'install %s with your package manager' "$*" ;;
+    esac
+}
+
+need=()
+command -v gcc >/dev/null || need+=(gcc)
+command -v curl >/dev/null || need+=(curl)
+command -v gcc >/dev/null && {
+    have_header ldacBT.h || need+=(ldac)
+    have_header bluetooth/bluetooth.h || need+=(bluez)
+}
+
+if (( ${#need[@]} )); then
+    named=() unnamed=()
+    for item in "${need[@]}"; do
+        package="$(package_for "$item")"
+        if [[ -n $package ]]; then named+=("$package"); else unnamed+=("$(describe "$item")"); fi
+    done
+    printf 'Missing build dependencies.\n\n' >&2
+    (( ${#named[@]} )) && printf '  %s\n\n' "$(install_line "${named[@]}")" >&2
+    for item in "${unnamed[@]}"; do
+        printf '  You also need %s, which has no known package on this system.\n' "$item" >&2
+    done
+    (( ${#unnamed[@]} )) && printf '\n' >&2
     exit 1
 fi
 
@@ -237,6 +354,14 @@ install -m 0755 "$work/libspa-codec-bluez5-ldac.so" "$plugin_dir/libspa-codec-bl
 # SPA_PLUGIN_DIR is a colon-separated search path and the first match wins, so
 # naming Tessera's directory ahead of the system one replaces exactly one
 # plugin and leaves the other thirteen alone.
+if ! has_systemd; then
+    plugins="${plugins:-$(system_plugins)}"
+    restart_session_manager
+    say 'Result'
+    check
+    exit 0
+fi
+
 cat > "$dropin" <<CONF
 # Written by scripts/build-ldac-decoder.sh. Delete it, or run that script with
 # --uninstall, to go back to the stock plugins.
@@ -248,8 +373,7 @@ cat > "$dropin" <<CONF
 Environment=SPA_PLUGIN_DIR=$prefix/spa-0.2:$plugins
 CONF
 
-systemctl --user daemon-reload
-systemctl --user restart wireplumber
+restart_session_manager
 sleep 3
 
 say 'Result'

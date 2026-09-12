@@ -19,6 +19,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 
+from ..core import packages
 from ..core.proc import have, run
 
 log = logging.getLogger(__name__)
@@ -306,7 +307,7 @@ def link_to_sink(node: str, sink: str = "") -> None:
         raise RuntimeError(
             f"{' and '.join(missing)} {'are' if len(missing) > 1 else 'is'} missing, "
             "so the phone's audio cannot be connected to the speakers. "
-            "Install them with: sudo dnf install pipewire-utils"
+            + packages.advice("pipewire-tools")
         )
     target = sink or default_sink()
     if not target:

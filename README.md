@@ -157,34 +157,73 @@ database, so it keeps working regardless.
 
 ### Desktop
 
-Tessera ships as an RPM. Build it and install:
+The desktop half is Python and Qt, so there is nothing to compile and it runs
+on any distribution. There are two ways in.
+
+**Fedora and relatives** — build the RPM and install it:
 
 ```bash
 ./scripts/build-rpm.sh
 sudo dnf install ~/rpmbuild/RPMS/noarch/tessera-*.noarch.rpm
 ```
 
-That pulls in everything the core features need (PySide6, android-tools,
-NetworkManager, avahi-tools, polkit), installs the launcher and icon, and drops
-in the v4l2loopback options file for the virtual camera. Then launch **Tessera**
-from the application menu, or run `tessera`.
+That pulls in everything the core features need, installs the launcher and
+icon, and drops in the v4l2loopback options file for the virtual camera.
 
-Three features depend on packages Fedora does not ship in its own repositories,
-so they are weak dependencies rather than hard ones — Tessera detects each at
-runtime and tells you what is missing:
+**Any distribution** — install for your user, no root and no packaging:
 
-| Feature | Needs | Where |
-| --- | --- | --- |
-| Webcam over the companion app | `ffmpeg` | RPM Fusion |
-| Virtual camera device | `v4l2loopback` | RPM Fusion |
-| Screen mirroring and app windows | `scrcpy` 3.0+ | COPR, or upstream |
+```bash
+sudo <your package manager> install python3-pyside6   # the only dependency
+./scripts/install-user.sh
+```
 
-`./scripts/setup-fedora.sh` enables RPM Fusion and installs those extras if you
-want them.
+That writes a launcher to `~/.local/bin`, a menu entry, the icon, and the
+WirePlumber configuration that lets this computer receive audio — all inside
+`$HOME`. It runs the checkout in place, so updating is a `git pull`.
+`--uninstall` removes every file it created; `--check` reports what is there.
 
-**v4l2loopback needs kernel headers matching your running kernel.** On a custom
+Deliberately not pip: Fedora and Debian both mark the system interpreter as
+externally managed, so `pip install --user .` fails on both without being told
+to break system packages, and a virtualenv would want its own copy of Qt.
+
+Either way, launch **Tessera** from the application menu or run `tessera`.
+
+#### The optional extras
+
+Four features need a program Tessera does not bundle. Each is optional, and the
+app detects what is missing at runtime and tells you the command for *your*
+distribution — the package names differ, and `tessera/core/packages.py` holds
+the table:
+
+| Feature | Needs | Fedora | Debian/Ubuntu | Arch |
+| --- | --- | --- | --- | --- |
+| Screen mirroring, app windows | scrcpy 3.0+ | `scrcpy` | `scrcpy` | `scrcpy` |
+| Webcam over the companion app | ffmpeg | `ffmpeg` | `ffmpeg` | `ffmpeg` |
+| Virtual camera device | v4l2loopback | `v4l2loopback` | `v4l2loopback-dkms` | `v4l2loopback-dkms` |
+| Receiving Bluetooth audio | pw-dump, pw-link | `pipewire-utils` | `pipewire-bin` | `pipewire` |
+| Screen mirroring, adb fallback | adb | `android-tools` | `adb` | `android-tools` |
+
+On Fedora, `./scripts/setup-fedora.sh` enables RPM Fusion and installs them.
+
+**v4l2loopback needs kernel headers matching your running kernel**, because it
+is an out-of-tree module that rebuilds on every kernel update. On a custom
 kernel the package is not `kernel-devel` — on CachyOS it is
-`kernel-cachyos-lto-devel`. The script tells you if headers are missing.
+`kernel-cachyos-lto-devel`.
+
+#### What differs between desktops
+
+| | |
+| --- | --- |
+| Light/dark theme | Read from Qt's palette, so it follows any desktop |
+| Do Not Disturb → desktop | Plasma's `Inhibit`; GNOME, Cinnamon and XFCE through their own switch; dunst through `dunstctl` |
+| Desktop → Do Not Disturb | Plasma announces its own toggle, so it is free there; elsewhere it is polled |
+| Media keys, track info | MPRIS, which every desktop implements |
+| Joining the phone's hotspot | NetworkManager. An `iwd`- or `systemd-networkd`-only system cannot join from here |
+| LDAC decoder installation | Writes a systemd user drop-in; without systemd it prints the one variable to set by hand |
+
+A desktop with no notification switch Tessera recognises — a bare compositor,
+say — says so rather than pretending: Do Not Disturb still works from the
+desktop to the phone, just not the other way.
 
 
 ### Phone
