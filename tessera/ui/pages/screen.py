@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from ...backends import mirror
 from ...core.hub import Hub
 from ...core import packages
+from ...core.proc import submit
 from ..theme import SPACE, Palette
 from ..widgets import Card, Toast, heading
 
@@ -54,6 +55,14 @@ class ScreenPage(QWidget):
         self.screen_off.setChecked(hub.config.mirror.turn_screen_off)
         self.screen_off.toggled.connect(self._set_screen_off)
         controls.addWidget(self.screen_off)
+
+        # Mirroring is the one feature still reached over adb, and adb over
+        # Wi-Fi does not survive a reboot. Tessera reconnects on its own when
+        # it can; this is for the first time, which needs the cable.
+        self.wireless_button = QPushButton("Set up over USB")
+        self.wireless_button.clicked.connect(self._enable_wireless)
+        self.wireless_button.setVisible(False)
+        controls.addWidget(self.wireless_button)
         controls.addStretch(1)
         mirror_card.body().addLayout(controls)
 
@@ -115,7 +124,10 @@ class ScreenPage(QWidget):
             )
         elif not self.hub.serial:
             self.mirror_status.setText(
-                "No phone reachable over adb, which screen control needs."
+                "No phone reachable over adb, which screen control needs. "
+                "Tessera keeps trying the address the companion app is on; "
+                "plug the phone in once and it can arrange the wireless link "
+                "itself, so a reboot does not end it."
             )
         else:
             open_windows = len(self.hub.mirrors.sessions)
@@ -124,6 +136,32 @@ class ScreenPage(QWidget):
                 if open_windows
                 else "Ready."
             )
+
+        # Only worth offering while a cable is in: that is the one moment adb
+        # can be told to listen on the network.
+        self.wireless_button.setVisible(
+            mirror.available() and self.hub.serial_is_usb
+        )
+
+    def _enable_wireless(self) -> None:
+        """Ask adb to keep listening after the cable comes out."""
+        self.wireless_button.setEnabled(False)
+        self.mirror_status.setText("Setting up adb over Wi-Fi...")
+
+        def done(endpoint: object) -> None:
+            self.wireless_button.setEnabled(True)
+            self.hub.remember_wireless_adb(str(endpoint))
+            self.toast.show_message(
+                f"Wireless adb ready at {endpoint}", self.palette_tokens, "success"
+            )
+            self._update_state()
+
+        def failed(message: str) -> None:
+            self.wireless_button.setEnabled(True)
+            self.toast.show_message(message[:140], self.palette_tokens, "danger")
+            self._update_state()
+
+        submit(self.hub.enable_wireless_adb, on_done=done, on_error=failed)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().resizeEvent(event)

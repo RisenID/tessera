@@ -16,6 +16,7 @@ import dev.tessera.companion.features.Capabilities
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.ClipboardWatcher
 import dev.tessera.companion.features.DndController
+import dev.tessera.companion.features.FindPhone
 import dev.tessera.companion.features.Hotspot
 import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NetworkAddresses
@@ -150,6 +151,8 @@ class Session(
         if (SmsRepository.canSend(context)) add("sms_send")
         if (MediaRepository.canRead(context)) add("media")
         add("camera")
+        // Ringing needs nothing granted: it plays the phone's own ringtone.
+        add("ring")
         // Playback capture: what the phone is playing, sent to the desktop.
         // Android 10 and later; the permission is asked for when it starts.
         if (AudioStreamer.supported()) add("phone_audio")
@@ -265,6 +268,20 @@ class Session(
 
             "camera_start" -> startCamera(message, id)
             "camera_stop" -> stopCamera()
+
+            // Finding the phone. On the alarm stream, so a silenced phone
+            // still answers -- which is the phone that usually needs finding.
+            "ring" -> {
+                val problem = FindPhone.start(context)
+                if (problem != null) fail(id, problem)
+                else reply(id, JSONObject().put("ringing", true)
+                    .put("stopsInMs", FindPhone.remainingMs))
+            }
+
+            "ring_stop" -> {
+                FindPhone.stop(context)
+                reply(id, JSONObject().put("ringing", false))
+            }
 
             "audio_start" -> startAudio(id)
             "audio_stop" -> stopAudio(notify = true)

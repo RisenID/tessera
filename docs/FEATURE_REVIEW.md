@@ -30,7 +30,8 @@ for free.
 | Hotspot | Shizuku / tethering binder | **keep** |
 | Webcam | Companion frames → v4l2loopback | **keep** on Linux |
 | Clipboard | Shizuku, polled every 2 s on the phone | **improve** — poll only with the screen on |
-| **Ring the phone** | **KDE Connect** | **replace** — the companion can do it |
+| ~~Ring the phone~~ | Companion, alarm stream | **done** |
+| ~~adb never reconnects~~ | Remembered address, mDNS, the companion's own | **done** |
 | **Now playing on the desktop** | Read from BlueZ via mpris-proxy | **improve** — publish an MPRIS player |
 | **Desktop popups** | Tray balloon, no actions | **improve** — real notifications with reply |
 | **Screen mirroring, app windows** | scrcpy over adb | **improve** — auto-reconnect; long-term, over the link |

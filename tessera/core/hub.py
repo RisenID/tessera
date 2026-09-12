@@ -12,6 +12,7 @@ paired yet.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from time import monotonic, sleep
 from typing import Any
 
@@ -295,6 +296,16 @@ class Hub(QObject):
     def serial(self) -> str:
         return self._serial
 
+    @property
+    def serial_is_usb(self) -> bool:
+        """Whether the phone is on a cable rather than the network.
+
+        A wireless serial is an address: "192.168.1.5:5555". Only a cable can
+        arm adb for the network, so this is what decides whether that is worth
+        offering.
+        """
+        return bool(self._serial) and ":" not in self._serial
+
     def refresh_adb(self) -> None:
         def resolve() -> tuple[str, str]:
             try:
@@ -461,6 +472,43 @@ class Hub(QObject):
     def _on_phone_camera_stopped(self) -> None:
         if self.companion_camera.running:
             self.companion_camera.stop()
+
+    # -- finding the phone -----------------------------------------------------
+
+    def ring_phone(self, on_done: Callable[[str], None] | None = None) -> None:
+        """Make the phone ring, so it can be found.
+
+        Through the companion app, which needs nothing granted and works on
+        every platform. KDE Connect is the fallback for a phone that has not
+        got the companion app -- it used to be the only route, which meant this
+        switch did nothing at all unless a second app was installed and
+        separately paired.
+        """
+        def say(message: str) -> None:
+            if on_done is not None:
+                on_done(message)
+
+        if self.connected and "ring" in self.companion.capabilities:
+            def replied(message: dict[str, Any]) -> None:
+                if message.get("t") == "error":
+                    say(message.get("message", "The phone would not ring."))
+                else:
+                    say("Ringing your phone")
+            self.companion.request({"t": "ring"}, replied)
+            return
+
+        try:
+            self.kdeconnect.ring()
+            say("Ringing your phone through KDE Connect")
+        except Exception:
+            say(
+                "Ringing needs the companion app connected, or KDE Connect "
+                "paired with this phone."
+            )
+
+    def stop_ringing(self) -> None:
+        if self.connected and "ring" in self.companion.capabilities:
+            self.companion.send({"t": "ring_stop"})
 
     # -- the phone's audio, over the link --------------------------------------
 

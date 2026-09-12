@@ -818,13 +818,9 @@ class DevicePanel(QWidget):
         )
 
     def _ring(self) -> None:
-        try:
-            self.hub.kdeconnect.ring()
-            self.statusMessage.emit("Ringing your phone")
-        except Exception:
-            self.statusMessage.emit(
-                "Ringing needs KDE Connect paired with this phone"
-            )
+        # The companion app rings the phone itself, on the alarm stream so a
+        # silenced phone still answers. KDE Connect is only the fallback now.
+        self.hub.ring_phone(self.statusMessage.emit)
 
     def _toggle_hotspot(self) -> None:
         # The tile reports what the hotspot is doing, which only the page
