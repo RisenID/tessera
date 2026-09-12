@@ -26,10 +26,10 @@ for free.
 | Phone audio | Companion link (new) | **keep** |
 | Call audio | Bluetooth HFP | **keep** — no alternative exists |
 | Do Not Disturb (phone) | Companion, push | **keep** |
-| Do Not Disturb (desktop) | Polled every 5 s | **improve** — subscribe instead |
+| Do Not Disturb (desktop) | Subscribed; the timer is a fallback | **keep** — the review had this wrong |
 | Hotspot | Shizuku / tethering binder | **keep** |
 | Webcam | Companion frames → v4l2loopback | **keep** on Linux |
-| Clipboard | Shizuku, polled every 2 s on the phone | **improve** — poll only with the screen on |
+| ~~Clipboard polled with the screen off~~ | Gated on the screen being on | **done** |
 | ~~Ring the phone~~ | Companion, alarm stream | **done** |
 | ~~adb never reconnects~~ | Remembered address, mDNS, the companion's own | **done** |
 | ~~Now playing on the desktop~~ | Published as our own MPRIS player | **done** |
@@ -120,24 +120,30 @@ Two levels of fix:
    app already uses for the hotspot and the clipboard. **Large — an
    audio-sized project — and the honest order is (1) now, (2) later.**
 
-### Do Not Disturb: the desktop half is polled
+### Do Not Disturb: the review was wrong about this one
 
-The phone pushes its DND state; the desktop's own state is read every five
-seconds through D-Bus. The notification server emits `PropertiesChanged` for
-its `Inhibited` property, so this can be a subscription like everything else.
+I wrote that the desktop's state was polled every five seconds and should be a
+subscription. It already is one: `DndSync` connects to `PropertiesChanged` for
+the notification server's `Inhibited` property in its constructor, and reacts
+the moment the tray toggle is used. The five-second timer is a fallback for two
+things that genuinely have no signal — a desktop whose server does not publish
+`Inhibited`, and reading the phone over adb when the companion app is not
+connected to push it. Both are gated: the adb read is skipped entirely while
+the phone is pushing.
 
-**Cost:** small. **Benefit:** no timer, and instant rather than up to 5 s late.
+Nothing to change.
 
-### Clipboard: polled on the phone, as it must be
+### Clipboard: polled on the phone, as it must be — but not in the dark
 
 `ClipboardWatcher` polls every two seconds, and the comment explains why
 correctly: Android gives a background app no clipboard callback, and reads are
 restricted, which is also why Shizuku is required. There is no event to
-subscribe to — but there is no point polling while the phone's screen is off,
-since the clipboard cannot change without the user. Gating the poll on
-`ACTION_SCREEN_ON`/`OFF` is a few lines and removes most of the wake-ups.
+subscribe to.
 
-**Cost:** small. **Benefit:** battery, and nothing else changes.
+There was no point polling while the phone's screen was off, though: nothing
+can copy while nobody is there. The poll is now gated on the screen state,
+which a receiver keeps current, and it reads once when the screen comes back on
+in case something was copied on the lock screen. **Done.**
 
 ---
 

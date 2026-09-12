@@ -456,7 +456,7 @@ class Session(
         val listener = Bus.Subscriber { event -> send(event) }
         subscriber = listener
         Bus.subscribe(listener)
-        ClipboardWatcher.addUser()
+        ClipboardWatcher.addUser(context)
         CallMonitor.addUser(context)
         NowPlaying.activeContext = context
         NowPlaying.addUser(context)
@@ -666,7 +666,7 @@ class Session(
         if (!open.compareAndSet(true, false)) return
         subscriber?.let {
             Bus.unsubscribe(it)
-            ClipboardWatcher.removeUser()
+            ClipboardWatcher.removeUser(context)
             CallMonitor.removeUser(context)
             NowPlaying.removeUser()
             PhoneStatus.removeUser(context)
