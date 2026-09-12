@@ -1,0 +1,9 @@
+# Nothing Gradle writes belongs here any more: build output, caches and
+# machine-specific settings all live under ~/android/build/tessera. These
+# entries only catch a stray invocation that bypasses scripts/build-companion.sh.
+local.properties
+.gradle/
+.kotlin/
+build/
+*.apk
+.idea/

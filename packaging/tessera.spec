@@ -1,0 +1,381 @@
+%global appid dev.tessera.Tessera
+
+# Resolve the site-packages path without requiring python3-devel just to build
+# a pure-Python package. When the usual Python RPM macros are present they win.
+# base must be pinned to /usr: Fedora patches sysconfig so that an unprefixed
+# install resolves to /usr/local, which is the wrong place for packaged files.
+%{!?python3_sitelib: %global python3_sitelib %(%{__python3} -c "import sysconfig; print(sysconfig.get_path('purelib', vars={'base': '/usr', 'platbase': '/usr'}))")}
+%{!?__python3: %global __python3 /usr/bin/python3}
+
+Name:           tessera
+Version:        1.10.0
+Release:        8%{?dist}
+Summary:        Android phone companion: notifications, messages, photos, screen and webcam
+
+License:        GPL-3.0-only
+URL:            https://github.com/risen/tessera
+Source0:        %{name}-%{version}.tar.gz
+
+BuildArch:      noarch
+BuildRequires:  python3
+BuildRequires:  desktop-file-utils
+
+# The desktop half is pure Python; everything it drives is a separate tool.
+Requires:       python3 >= 3.11
+Requires:       python3-pyside6
+# adb, used for screen mirroring and as a fallback transport.
+Requires:       android-tools
+# Joining the phone's hotspot.
+Requires:       NetworkManager
+# avahi-browse, used to discover the phone on the local network.
+Requires:       avahi-tools
+# pkexec, used once to load the virtual-camera kernel module.
+Requires:       polkit
+
+# Weak dependencies: each unlocks one feature, and several live in RPM Fusion
+# or a COPR, so a missing one must not block installation. The app detects each
+# at runtime and explains what to install.
+Recommends:     ffmpeg
+Recommends:     v4l2loopback
+Recommends:     scrcpy
+# bluetoothctl and mpris-proxy, for calls and music over Bluetooth.
+Recommends:     bluez
+# pactl, for switching between the music and call profiles. It lives in
+# pulseaudio-utils even on a PipeWire system.
+Recommends:     pulseaudio-utils
+
+# pw-dump and pw-link, for finding the node the phone's audio arrives on and
+# connecting it to the speakers. Received Bluetooth audio is not a source, so
+# pactl alone cannot see it.
+Recommends:     pipewire-utils
+
+# Building the LDAC decoder with tessera-ldac-decoder. Only suggested: it is an
+# opt-in step, and nothing else in the package needs a compiler.
+Suggests:       gcc
+Suggests:       libldac-devel
+Suggests:       bluez-libs-devel
+
+%description
+Tessera connects an Android phone to a Linux desktop.
+
+It mirrors notifications as they arrive and lets you reply to them, surfaces
+one-time passcodes for copying with one click, reads and sends SMS, browses the
+phone's photo library, mirrors the screen or an individual app in its own
+window, presents a phone camera as an ordinary webcam, keeps Do Not Disturb in
+step between phone and desktop, and starts the phone's hotspot.
+
+Most features need the Tessera companion app on the phone, which pushes events
+rather than being polled. Screen control additionally needs adb, because
+injecting input requires a permission Android does not grant ordinary apps.
+
+%prep
+%autosetup -n %{name}-%{version}
+
+%build
+# Nothing to compile here: the application is pure Python. Byte-compilation
+# happens during %%install so the package does not depend on the byte-compile
+# build-root policy being available.
+
+%install
+install -d %{buildroot}%{python3_sitelib}/tessera
+cp -a tessera/. %{buildroot}%{python3_sitelib}/tessera/
+
+# Byte-compile with the build root stripped from the recorded paths, so
+# tracebacks point at the installed location rather than the build tree.
+%{__python3} -m compileall -q -s %{buildroot} %{buildroot}%{python3_sitelib}/tessera
+
+install -d %{buildroot}%{_bindir}
+cat > %{buildroot}%{_bindir}/tessera <<'EOF'
+#!/usr/bin/python3
+import sys
+
+from tessera.app import main
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+chmod 0755 %{buildroot}%{_bindir}/tessera
+
+desktop-file-install \
+    --dir=%{buildroot}%{_datadir}/applications \
+    packaging/%{appid}.desktop
+
+install -Dm0644 packaging/%{appid}.metainfo.xml \
+    %{buildroot}%{_metainfodir}/%{appid}.metainfo.xml
+
+install -Dm0644 packaging/icons/%{appid}.svg \
+    %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
+
+# Virtual-camera module options. Placed here rather than written at runtime so
+# that uninstalling the package removes it again.
+# WirePlumber needs the receive-side Bluetooth roles enabled before a phone
+# can stream to this computer; without them the only profile offered is the
+# one that sends audio the other way.
+install -Dm0644 packaging/51-tessera-bluez.conf \
+    %{buildroot}%{_datadir}/wireplumber/wireplumber.conf.d/51-tessera-bluez.conf
+
+install -Dm0644 packaging/tessera-v4l2loopback.conf \
+    %{buildroot}%{_prefix}/lib/modprobe.d/tessera-v4l2loopback.conf
+
+# The LDAC decoder is shipped as source because it has to be compiled against
+# whichever PipeWire release the machine is running -- libspa-bluez5.so refuses
+# a codec plugin built against a different ABI version. tessera-ldac-decoder
+# does that, installs the result under the user's home, and can undo it.
+install -d %{buildroot}%{_datadir}/tessera/ldac-decoder
+install -m0644 native/ldac-decoder/ldacBT_dec.c native/ldac-decoder/README.md \
+    %{buildroot}%{_datadir}/tessera/ldac-decoder/
+install -d %{buildroot}%{_datadir}/tessera/ldac-decoder/libldacdec
+install -m0644 third_party/libldacdec/*.c third_party/libldacdec/*.h \
+    third_party/libldacdec/LICENSE \
+    %{buildroot}%{_datadir}/tessera/ldac-decoder/libldacdec/
+install -m0755 scripts/build-ldac-decoder.sh \
+    %{buildroot}%{_datadir}/tessera/ldac-decoder/build-ldac-decoder.sh
+ln -s ../share/tessera/ldac-decoder/build-ldac-decoder.sh \
+    %{buildroot}%{_bindir}/tessera-ldac-decoder
+
+%check
+desktop-file-validate %{buildroot}%{_datadir}/applications/%{appid}.desktop
+# Import every module against the installed tree, so a packaging mistake fails
+# the build rather than the first launch.
+PYTHONPATH=%{buildroot}%{python3_sitelib} QT_QPA_PLATFORM=offscreen \
+    %{python3} -c "\
+import importlib, pkgutil, tessera; \
+[importlib.import_module(m.name) for m in pkgutil.walk_packages(tessera.__path__, 'tessera.')]; \
+print('all modules import')"
+
+%files
+%license LICENSE
+%doc README.md docs/PROTOCOL.md
+%{python3_sitelib}/tessera/
+%{_bindir}/tessera
+%{_datadir}/applications/%{appid}.desktop
+%{_metainfodir}/%{appid}.metainfo.xml
+%{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
+%{_prefix}/lib/modprobe.d/tessera-v4l2loopback.conf
+%{_datadir}/wireplumber/wireplumber.conf.d/51-tessera-bluez.conf
+%{_datadir}/tessera/
+%{_bindir}/tessera-ldac-decoder
+
+%changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-8
+- Bluetooth no longer assumes the adapter is hci0. It is on most machines and
+  is not on plenty of others -- plug in a USB Bluetooth dongle, or have had
+  one plugged in once, and the built-in radio can be hci1. The assumption did
+  not fail loudly: profile requests went to an object that did not exist and
+  the transport and codec lookups found nothing, so music never arrived and
+  nothing said why. The device's object path is now read from BlueZ.
+- The LDAC decoder finds PipeWire's plugin directory instead of assuming
+  /usr/lib64/spa-0.2. That path is wrong on 32-bit, on distributions that do
+  not split lib64, and on Debian's multiarch layout -- and a machine with
+  32-bit PipeWire libraries installed alongside has both, where guessing puts
+  a plugin of the wrong architecture ahead of the right one. It is read from
+  the running session manager, which is the only authority on the answer.
+- A missing pipewire-utils now says so, and names the package, instead of
+  surfacing as the bare words "pw-link: not found".
+- Checking the decoder distinguishes "LDAC is unavailable" from "bluetoothd
+  has logged nothing this boot, so there is no way to tell".
+
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-7
+- The phone's codec list was being lost every time the app started. It is a
+  list, and the settings loader silently dropped any field whose type was a
+  parameterised generic -- so each launch re-advertised the wide codec set,
+  restarted the audio service, then learned the codecs again, wrote the narrow
+  set and restarted it a second time. Two interruptions to this computer's
+  sound per launch, and a window in between where the phone could negotiate
+  aptX instead of LDAC. Launching is now silent.
+- Pages stop polling while they are off screen. The Audio page was reading
+  Bluetooth and PipeWire state every four seconds whether or not anyone was
+  looking at it, and carried on while the window was minimised: several
+  thousand process spawns and tens of megabytes of parsed JSON per hour for a
+  page nobody could see.
+- Finding the phone takes one query instead of four. It asks about the known
+  address rather than enumerating every paired device and reading each one.
+- The periodic Bluetooth check asks BlueZ once for what it needs, instead of
+  twice for overlapping halves of the same answer, and only reads PipeWire's
+  node list when BlueZ says audio is actually on the wire -- that read is a
+  fifth of a megabyte, and it was happening every fifteen seconds.
+- Do Not Disturb stops polling over adb while the companion app is reporting
+  the phone's state, which it does as it changes. The poll is the battery
+  cost the companion app exists to avoid.
+- Waiting for the phone to start playing now gives up after five minutes
+  instead of polling for as long as the app stays open.
+- A background task that finishes after the app has shut down no longer ends
+  the process with a traceback about a deleted signal.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-6
+- Tessera no longer keeps trying the hotspot address after the hotspot is
+  off. An address on a subnet this computer is not on now goes last rather
+  than first, so a stale one costs nothing instead of a full connect timeout
+  on every cycle. It is demoted rather than dropped, because a routed network
+  or a VPN can make such an address perfectly reachable.
+- When the remembered address is stale and mDNS is silent, the local subnet
+  is swept for anything listening on the companion port -- 253 addresses in
+  under two seconds. This is what survives the phone being given a different
+  address by DHCP. Nothing is trusted for answering: the phone is whichever
+  address presents the certificate pinned at pairing, and the pairing token
+  is never sent to anything that fails that check, because the TLS handshake
+  ends first.
+- A certificate that does not match at a guessed address is now skipped
+  quietly. It used to stop reconnection altogether and warn about
+  impersonation, which would have been the wrong answer for any other machine
+  that happens to listen on that port.
+- The phone re-advertises itself over mDNS whenever the network changes. The
+  registration was made once, at startup, and Android quietly drops it on a
+  network change -- so after a hotspot session the phone was still listening
+  and no longer findable, which is how the stale address came to be used in
+  the first place.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-5
+- A hotspot switched on by hand now gets joined. Without Shizuku the phone
+  will not take the start command, and the old behaviour -- open the
+  tethering panel, then ask the user to press Start again -- only opened the
+  panel a second time. Tessera now waits for the hotspot to appear and joins
+  it by itself, and skips the panel entirely when it is already on.
+- The phone can report its own hotspot without any privilege, which is what
+  makes that possible: "cmd wifi is-softap-enabled" needs the shell uid and
+  so is always unknown on exactly the phones that need the panel, but a soft
+  AP leaves an interface holding the gateway address of its own subnet.
+- Building the companion app installs it over USB when the phone is also
+  reachable by wireless debugging, instead of refusing to choose.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-4
+- Joining the phone's hotspot no longer drops the companion link. The phone
+  now reports every address it can be reached on, sent while both ends are
+  still on the same network and after waiting for the tether interface to
+  appear; the desktop probes them all once it has joined and reconnects on
+  whichever answers. Guessing the default gateway was right often enough to
+  look reliable and wrong in exactly the cases that stranded the link.
+- Where there is no companion app, the same list is read over adb.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-3
+- "Best the phone offers" now actually picks the best one. Offered every
+  codec, a phone does not choose the best available -- it applies its own
+  ranking, and a Galaxy S25 settles on aptX with LDAC sitting right there.
+  So the choice is made on this side: Tessera reads the codec list the phone
+  publishes over Bluetooth when it connects, works out the best both ends can
+  manage, and offers that one plus SBC. Selecting LDAC by hand is no longer
+  needed.
+- The phone's codec list is remembered, because BlueZ only publishes it while
+  the phone is connected and an offer that swung between wide and narrow on
+  every launch would restart the audio service each time.
+- The companion APK now carries the same version number as this package,
+  read from the Version field above rather than kept in a second place by
+  hand. The APK tracks the version only, not this release number.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-2
+- LDAC setup no longer needs a terminal. Settings has a Set up LDAC button
+  that runs the build and shows its output as it goes, offers to install the
+  build packages through polkit when they are missing, and rewrites the codec
+  list afterwards so the phone is actually offered LDAC -- installing the
+  decoder alone changes nothing until that happens. Remove reverses it, and
+  Rebuild is there for after a PipeWire update.
+
+* Fri Sep 11 2026 Tessera contributors - 1.10.0-1
+- LDAC can now be received. PipeWire's LDAC plugin has always contained a
+  complete decode path, compiled out for want of a library exporting
+  ldacBT_decode; tessera-ldac-decoder supplies one built on libldacdec,
+  rebuilds that one codec plugin against the running PipeWire, and installs
+  both under the user's home. The phone can then negotiate 909 kbit/s at up
+  to 96 kHz instead of aptX at 44.1. --uninstall reverses it.
+- The Bluetooth quality setting offers LDAC only when the decoder is present,
+  and says how to add one when it is not. Offering a codec this computer
+  cannot decode would have the phone send audio into silence.
+- Messages refresh themselves the moment a text arrives, instead of waiting
+  for the Refresh button. The phone decides what counts as a text -- the
+  notification must come from whichever app is that phone's default SMS app
+  and be categorised as a message -- so chat apps do not trigger a reload.
+- Opening a conversation now shows its newest message rather than its oldest,
+  and a refresh leaves the selected conversation and the scroll position
+  alone unless you were already at the end.
+- The Audio page reports codec, sample rate and bit rate, and no longer prints
+  a bit depth. That number was the width PipeWire decoded into, not the
+  audio's resolution, and read as a claim about quality that was not true.
+
+* Fri Sep 11 2026 Tessera contributors - 1.9.1-1
+- The Audio page reads what the audio is doing instead of which profile is
+  selected, so it no longer announces playback the moment Bluetooth connects.
+  It also names the codec, sample rate and bit depth actually in use.
+- "Stop audio" is now "Play on the phone again", and is only offered while
+  this computer holds the phone's media profile.
+- "Play phone audio here" asks twice before giving up. Android drops the
+  request when it is busy moving a playback session, which is why the button
+  worked only sometimes, and waits for the profile to drop rather than
+  guessing at a delay, which makes the switch quicker.
+- Only the music stream is ever connected to the speakers. The hands-free
+  stream carries a call at telephone quality and is left alone.
+* Fri Sep 11 2026 Tessera contributors - 1.9.0-1
+- The phone's audio now actually plays here. Parking the link used PipeWire's
+  silent profile, which WirePlumber remembered and restored on every later
+  connection, so the stream the phone offered had nothing willing to take it
+  and was withdrawn after a few seconds. Playback is handed back by dropping
+  the Bluetooth media profile instead, which is what Android acts on.
+- Choosing this computer in the phone's own output picker is honoured rather
+  than undone a few seconds later.
+- "Play phone audio here" reconnects the media profile rather than asking for
+  one already connected, which is the only form of the request Android moves
+  playback for.
+- A Bluetooth audio quality setting, choosing which codecs the phone is
+  offered, with the codec actually negotiated shown while it plays.
+- The phone reports why it is holding music back, so a phone that is ringing
+  is no longer reported as a phone that was never selected.
+* Fri Sep 11 2026 Tessera contributors - 1.8.0-1
+- Connecting Bluetooth no longer moves the phone's audio: only the hands-free
+  profile is connected, leaving playback where it was.
+- Now playing comes from MediaSession through the companion app, so it works
+  with no Bluetooth connected and without taking over the audio.
+- Link the received audio stream to an output, which is what was missing when
+  streaming produced no sound.
+
+* Fri Sep 11 2026 Tessera contributors - 1.7.0-1
+- Now playing works: metadata is read through busctl, because PySide6 cannot
+  decode a D-Bus a{sv}, and the player is matched by device name, which is
+  what bluez names its MPRIS service after.
+- Park a Bluetooth link whenever it appears, not only when connected from
+  here, so a phone connecting on its own no longer takes the audio path.
+- Route received audio to a sink, so streaming it is audible rather than
+  silently discarded.
+- Match audio profiles by their description, so a phone offering only
+  "audio-gateway" is understood.
+- Ship the WirePlumber roles needed to receive audio at all.
+
+* Fri Sep 11 2026 Tessera contributors - 1.6.0-1
+- Open on an overview of tiles -- media, calls, notifications, messages and
+  photos -- with quick switches, instead of a menu.
+- Connecting Bluetooth no longer takes over the audio path; streaming starts
+  only when asked, so an existing audio session is left alone.
+- Use Tessera's own status bar icon on the phone rather than the Bluetooth one.
+
+* Thu Sep 10 2026 Tessera contributors - 1.5.0-1
+- Calls page: answer, decline and hang up from the computer, dial a number,
+  and see recent calls. Call audio moves to the computer automatically when
+  Bluetooth is connected.
+
+* Thu Sep 10 2026 Tessera contributors - 1.4.0-1
+- Webcam works over the companion app: the encoded stream from the phone is
+  now fed to ffmpeg, codec configuration included.
+- Identify the virtual camera by its driver rather than its label, so a device
+  created under an older name is still recognised.
+- A switch for every optional feature, which stops the work on the phone
+  rather than only hiding the page.
+- Readable conversations: sized bubbles, separated rows and elided previews.
+
+* Thu Sep 10 2026 Tessera contributors - 1.3.0-1
+- Reconnect button in the sidebar, which restarts the search for the phone.
+- Group consecutive messages, stamp only the last of a run, and separate days,
+  so neighbouring messages are told apart at a glance.
+
+* Thu Sep 10 2026 Tessera contributors - 1.2.0-1
+- Share the clipboard in both directions.
+- Bluetooth page: take calls on the computer, play the phone's music through
+  it, switch between the two profiles and see the current track.
+
+* Thu Sep 10 2026 Tessera contributors - 1.1.0-1
+- Reconnect by re-resolving the phone's address after a network change, so
+  moving onto the phone's hotspot no longer drops the link.
+- Detect a silently dead connection with a heartbeat, and time out a stale
+  address instead of waiting for the kernel's TCP timeout.
+- Enumerate camera resolutions, frame rates and hotspot bands from the device.
+- Restart the hotspot when its SSID, passphrase or band changes.
+
+* Thu Sep 10 2026 Tessera contributors - 1.0.0-1
+- First packaged release.

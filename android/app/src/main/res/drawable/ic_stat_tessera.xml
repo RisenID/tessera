@@ -1,0 +1,26 @@
+<!--
+  Status bar icon. Android renders these as a mask: only the alpha channel is
+  used, so the shape must read at 24dp in solid white. A mosaic tile, matching
+  the launcher icon, rather than the Bluetooth glyph that was standing in for it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.5,3.5h7v7h-7z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M13.5,3.5h7v7h-7z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M3.5,13.5h7v7h-7z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13.5,13.5h7v7h-7zM15,15v4h4v-4z" />
+</vector>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Material 3 with dynamic colour. Monet is applied in code via
+      DynamicColors.applyToActivityIfAvailable(), which seeds the palette from
+      the user's wallpaper on Android 12+ and falls back to the baseline M3
+      palette elsewhere. NoActionBar because the layout supplies its own
+      MaterialToolbar; the decor action bar would collide with it.
+
+      No statusBarColor / navigationBarColor here: both are ignored from API 35,
+      where the system always draws edge-to-edge. Insets are handled in code.
+    -->
+    <style name="Theme.Tessera" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Circular icon chip. Defined here rather than relying on a library
+         style name, which differs between Material releases. -->
+    <style name="ShapeAppearance.Tessera.Circle" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="TextAppearance.Tessera.Code" parent="TextAppearance.Material3.DisplayMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0.18</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.Tessera.Mono" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">monospace</item>
+    </style>
+</resources>

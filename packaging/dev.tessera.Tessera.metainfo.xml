@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.tessera.Tessera</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Tessera</name>
+  <summary>Notifications, messages, photos, screen and webcam from your Android phone</summary>
+  <description>
+    <p>
+      Tessera connects an Android phone to a Linux desktop. It mirrors
+      notifications as they arrive and lets you reply to them, surfaces
+      one-time passcodes for copying with one click, reads and sends SMS,
+      browses the phone's photo library, mirrors the screen or an individual
+      app in its own window, presents a phone camera as an ordinary webcam,
+      keeps Do Not Disturb in step between phone and desktop, and starts the
+      phone's hotspot.
+    </p>
+    <p>
+      Most features need the Tessera companion app on the phone, which pushes
+      events rather than being polled, so it costs little battery.
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.tessera.Tessera.desktop</launchable>
+  <url type="homepage">https://github.com/risen/tessera</url>
+  <provides><binary>tessera</binary></provides>
+  <categories>
+    <category>Network</category>
+    <category>RemoteAccess</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.10.0" date="2026-09-11"/>
+    <release version="1.9.1" date="2026-09-11"/>
+    <release version="1.9.0" date="2026-09-11"/>
+    <release version="1.8.0" date="2026-09-11"/>
+    <release version="1.7.0" date="2026-09-11"/>
+    <release version="1.6.0" date="2026-09-11"/>
+    <release version="1.5.0" date="2026-09-10"/>
+    <release version="1.4.0" date="2026-09-10"/>
+    <release version="1.3.0" date="2026-09-10"/>
+    <release version="1.2.0" date="2026-09-10"/>
+    <release version="1.1.0" date="2026-09-10"/>
+    <release version="1.0.0" date="2026-09-10"/>
+  </releases>
+</component>

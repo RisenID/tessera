@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tessera
+GenericName=Phone Companion
+Comment=Notifications, messages, photos, screen and webcam from your Android phone
+Exec=tessera
+Icon=dev.tessera.Tessera
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=android;phone;notifications;sms;webcam;mirror;hotspot;
+StartupNotify=true
+SingleMainWindow=true

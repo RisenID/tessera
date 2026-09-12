@@ -1,0 +1,101 @@
+plugins {
+    // Kotlin support is built into AGP 9; applying the Kotlin plugin here is
+    // an error.
+    id("com.android.application")
+}
+
+// The two halves ship as one thing, so they carry one version number.
+//
+// The RPM spec is where it is written down -- it is the file that has to be
+// edited for a release anyway -- and this reads it rather than keeping a second
+// copy in sync by hand. A phone running 1.9 against a desktop on 1.10 is worth
+// being able to see, and that is impossible when the APK says "1.0" forever.
+//
+// Read through the provider API so Gradle treats the spec as a build input:
+// changing the version there rebuilds the APK instead of silently reusing one
+// stamped with the old number.
+val specFile = layout.projectDirectory.file("../../packaging/tessera.spec")
+val tesseraVersion: String = run {
+    val text = providers.fileContents(specFile).asText.orNull
+        ?: throw GradleException("cannot read ${specFile.asFile}, which holds the version")
+    Regex("""(?m)^Version:\s*(\S+)""").find(text)?.groupValues?.get(1)
+        ?: throw GradleException("no Version: line in ${specFile.asFile}")
+}
+
+// Android wants one integer that only ever grows, so the three parts are
+// packed with room for 999 of each. 1.10.0 becomes 1_010_000.
+val tesseraVersionCode: Int = tesseraVersion.split(".").let { parts ->
+    fun part(index: Int) = parts.getOrNull(index)?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0
+    part(0) * 1_000_000 + part(1) * 1_000 + part(2)
+}
+
+android {
+    namespace = "dev.tessera.companion"
+    compileSdk = 37        // Android 17
+
+    defaultConfig {
+        applicationId = "dev.tessera.companion"
+        minSdk = 29        // Android 10: MediaStore and Camera2 behave consistently from here
+
+        // Deliberately 36, not 37, while compiling against 37.
+        //
+        // Apps targeting API 37 have SMS containing a one-time passcode withheld
+        // for three hours: the SMS_RECEIVED broadcast is suppressed and SMS
+        // provider queries are filtered. Google documents an exemption for
+        // "connected device companion apps" but does not say what grants it, so
+        // relying on it would be a guess. Targeting 36 opts out of that
+        // behaviour entirely and the app still runs natively on Android 17.
+        //
+        // This only matters for a sideloaded personal build; Play Store uploads
+        // must target 37 from August 2027. Raise this to 37 if you publish, and
+        // expect OTP-bearing messages to be delayed in the Messages tab -- the
+        // OTP panel itself keeps working either way, because it reads
+        // notifications rather than the SMS database.
+        targetSdk = 36
+
+        versionCode = tesseraVersionCode
+        versionName = tesseraVersion
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        // AGP 9 disables these by default; we bind views in MainActivity.
+        viewBinding = true
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    // Material 3, for dynamic colour (Monet) and the M3 component set.
+    implementation("com.google.android.material:material:1.14.0")
+    // enableEdgeToEdge(); at targetSdk 35+ the system draws edge-to-edge whether
+    // the app asks or not, so insets must be handled explicitly.
+    implementation("androidx.activity:activity-ktx:1.13.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Shizuku: lets the app run commands as the shell user after the user
+    // starts the Shizuku service once (via adb or wireless debugging). This is
+    // the only route to hotspot control for a non-system app -- see
+    // features/PrivilegedShell.kt.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // Reflecting on @SystemApi framework classes (TetheringManager,
+    // SoftApConfiguration) is blocked by the non-SDK interface restrictions
+    // from Android 9 onwards; this lifts that for our process only.
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+}

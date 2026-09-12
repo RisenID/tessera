@@ -1,0 +1,294 @@
+"""Notification mirror, with a one-time passcode strip pinned to the top."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ...core.hub import Hub
+from ...core.models import Notification
+from ..theme import SPACE, Palette
+from ..widgets import Avatar, Card, EmptyState, Pill, Toast, divider, heading
+
+
+class OtpCard(Card):
+    """A passcode, big and copyable. The whole point is one click."""
+
+    copied = Signal(str)
+
+    def __init__(self, code: str, source: str, palette: Palette, parent: QWidget | None = None):
+        super().__init__(parent, flat=True, padding=SPACE["md"])
+        self.code = code
+        layout = QHBoxLayout()
+        layout.setSpacing(SPACE["md"])
+
+        text = QVBoxLayout()
+        text.setSpacing(0)
+        value = QLabel(code)
+        value.setStyleSheet(
+            f"font-size: 30px; font-weight: 700; letter-spacing: 4px; color: {palette.text};"
+            "font-family: 'JetBrains Mono', monospace;"
+        )
+        value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text.addWidget(value)
+
+        origin = QLabel(source)
+        origin.setObjectName("Muted")
+        text.addWidget(origin)
+        layout.addLayout(text, 1)
+
+        button = QPushButton("Copy")
+        button.setObjectName("Copy")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(self._copy)
+        layout.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.body().addLayout(layout)
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.code)
+        self.copied.emit(self.code)
+
+
+class NotificationCard(Card):
+    """One notification, with dismiss and inline reply where available."""
+
+    dismissed = Signal(str)
+    replied = Signal(str, str)
+
+    def __init__(
+        self,
+        note: Notification,
+        palette: Palette,
+        icons=None,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent, flat=True, padding=SPACE["md"])
+        self.note = note
+
+        top = QHBoxLayout()
+        top.setSpacing(SPACE["md"])
+
+        # Fall back to initials until the phone sends the real icon.
+        self.avatar = Avatar(note.app or "?", 38)
+        if icons is not None and note.package:
+            pixmap = icons.get(note.package)
+            if pixmap is not None:
+                self.avatar.set_pixmap_rounded(pixmap)
+        top.addWidget(self.avatar, 0, Qt.AlignmentFlag.AlignTop)
+
+        body = QVBoxLayout()
+        body.setSpacing(2)
+
+        header = QHBoxLayout()
+        app = QLabel(note.app or note.package or "Notification")
+        app.setStyleSheet("font-weight: 650;")
+        header.addWidget(app)
+        header.addStretch(1)
+        when = QLabel(note.time_text)
+        when.setObjectName("Muted")
+        when.setStyleSheet(f"color: {palette.muted}; font-size: 12px;")
+        header.addWidget(when)
+        body.addLayout(header)
+
+        if note.title:
+            title = QLabel(note.title)
+            title.setWordWrap(True)
+            title.setStyleSheet("font-weight: 600;")
+            body.addWidget(title)
+
+        if note.text:
+            text = QLabel(note.text)
+            text.setWordWrap(True)
+            text.setObjectName("Muted")
+            text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            body.addWidget(text)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(SPACE["sm"])
+        actions.addStretch(1)
+
+        if note.repliable:
+            self.reply_box = QLineEdit()
+            self.reply_box.setPlaceholderText("Reply...")
+            self.reply_box.returnPressed.connect(self._send_reply)
+            body.addSpacing(SPACE["xs"])
+            body.addWidget(self.reply_box)
+
+            send = QPushButton("Send")
+            send.setObjectName("Primary")
+            send.clicked.connect(self._send_reply)
+            actions.addWidget(send)
+        else:
+            self.reply_box = None
+
+        if note.clearable:
+            dismiss = QPushButton("Dismiss")
+            dismiss.setObjectName("Ghost")
+            dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
+            dismiss.clicked.connect(lambda: self.dismissed.emit(note.id))
+            actions.addWidget(dismiss)
+
+        body.addLayout(actions)
+        top.addLayout(body, 1)
+        self.body().addLayout(top)
+
+    def _send_reply(self) -> None:
+        if self.reply_box is None:
+            return
+        text = self.reply_box.text().strip()
+        if text:
+            self.replied.emit(self.note.id, text)
+            self.reply_box.clear()
+
+
+class NotificationsPage(QWidget):
+    """The default page: everything happening on the phone right now."""
+
+    def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.hub = hub
+        self.palette_tokens = palette
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
+        outer.setSpacing(SPACE["lg"])
+
+        header = QHBoxLayout()
+        header.addWidget(heading("Notifications", "Mirrored from your phone as they arrive"), 1)
+
+        self.count_pill = Pill("0", "muted")
+        self.count_pill.apply(palette)
+        header.addWidget(self.count_pill, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        clear = QPushButton("Dismiss all")
+        clear.setObjectName("Ghost")
+        clear.clicked.connect(self._dismiss_all)
+        header.addWidget(clear, 0, Qt.AlignmentFlag.AlignVCenter)
+        outer.addLayout(header)
+
+        # -- passcode strip --------------------------------------------------
+        self.otp_section = QWidget()
+        otp_layout = QVBoxLayout(self.otp_section)
+        otp_layout.setContentsMargins(0, 0, 0, 0)
+        otp_layout.setSpacing(SPACE["sm"])
+
+        label = QLabel("One-time passcodes")
+        label.setObjectName("SectionTitle")
+        otp_layout.addWidget(label)
+
+        self.otp_container = QVBoxLayout()
+        self.otp_container.setSpacing(SPACE["sm"])
+        otp_layout.addLayout(self.otp_container)
+        otp_layout.addWidget(divider())
+        outer.addWidget(self.otp_section)
+        self.otp_section.setVisible(False)
+
+        # -- the list --------------------------------------------------------
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self.list_host = QWidget()
+        self.list_layout = QVBoxLayout(self.list_host)
+        self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout.setSpacing(SPACE["sm"])
+        self.list_layout.addStretch(1)
+        self.scroll.setWidget(self.list_host)
+        outer.addWidget(self.scroll, 1)
+
+        self.empty = EmptyState(
+            "🔔",
+            "No notifications",
+            "Anything that arrives on your phone will show up here.",
+        )
+        outer.addWidget(self.empty)
+
+        self.toast = Toast(self)
+
+        self._cards: dict[str, NotificationCard] = {}
+        hub.notificationsChanged.connect(self.refresh)
+        hub.icons.iconReady.connect(self._on_icon)
+        hub.otpArrived.connect(self._on_otp)
+        self.refresh()
+
+    # -- rendering -----------------------------------------------------------
+
+    def refresh(self) -> None:
+        notifications = self.hub.notifications
+        self.count_pill.set_state(str(len(notifications)), "accent" if notifications else "muted")
+
+        self._clear(self.list_layout, keep_stretch=True)
+        self._cards.clear()
+        for note in notifications:
+            card = NotificationCard(note, self.palette_tokens, self.hub.icons)
+            card.dismissed.connect(self.hub.dismiss)
+            card.replied.connect(self._reply)
+            self._cards[note.id] = card
+            self.list_layout.insertWidget(self.list_layout.count() - 1, card)
+
+        has_any = bool(notifications)
+        self.scroll.setVisible(has_any)
+        self.empty.setVisible(not has_any)
+        if not has_any and not self.hub.connected:
+            self.empty.update_text(
+                "No phone connected",
+                "Pair the companion app, or connect your phone with KDE Connect, "
+                "to see notifications here.",
+            )
+        self._refresh_otp()
+
+    def _refresh_otp(self) -> None:
+        self._clear(self.otp_container)
+        codes = self.hub.recent_codes(limit=3)
+        for match, note in codes:
+            card = OtpCard(match.code, f"{note.app} · {note.time_text}", self.palette_tokens)
+            card.copied.connect(self._on_copied)
+            self.otp_container.addWidget(card)
+        self.otp_section.setVisible(bool(codes))
+
+    def _on_icon(self, package: str, pixmap) -> None:
+        """Fill in an icon that arrived after its card was built."""
+        for card in self._cards.values():
+            if card.note.package == package:
+                card.avatar.set_pixmap_rounded(pixmap)
+
+    def _on_otp(self, match, note: Notification) -> None:
+        self._refresh_otp()
+        self.toast.show_message(
+            f"Passcode from {note.app}: {match.code}", self.palette_tokens, "success"
+        )
+
+    def _on_copied(self, code: str) -> None:
+        self.toast.show_message(f"Copied {code}", self.palette_tokens, "success")
+
+    def _reply(self, notification_id: str, text: str) -> None:
+        self.hub.reply(notification_id, text)
+        self.toast.show_message("Reply sent", self.palette_tokens, "success")
+
+    def _dismiss_all(self) -> None:
+        for note in self.hub.notifications:
+            if note.clearable:
+                self.hub.dismiss(note.id)
+
+    @staticmethod
+    def _clear(layout, keep_stretch: bool = False) -> None:
+        limit = layout.count() - (1 if keep_stretch else 0)
+        for index in reversed(range(limit)):
+            item = layout.takeAt(index)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self.toast._reposition()

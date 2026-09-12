@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tessera</string>
+    <string name="app_long_name">Tessera Companion</string>
+    <string name="stop">Stop</string>
+    <string name="start">Start</string>
+
+    <string name="granted">Ready</string>
+    <string name="not_granted">Needs permission</string>
+    <string name="grant">Grant</string>
+    <string name="unknown_ip">no Wi‑Fi address</string>
+
+    <string name="channel_status">Connection status</string>
+    <string name="channel_status_description">Shows whether your computer is connected.</string>
+
+    <!-- Hero -->
+    <string name="status_running">Ready for your computer</string>
+    <string name="status_paired">Connected and ready</string>
+    <string name="status_stopped">Not running</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">Pair a computer</string>
+    <string name="pairing_body">Open Tessera on your computer and choose this phone, then enter this code.</string>
+    <string name="pairing_show">Show pairing code</string>
+    <string name="pairing_hint">Not found automatically? Enter %1$s on your computer.</string>
+    <string name="pairing_expires">This code expires in 60 seconds.</string>
+    <string name="fingerprint_label">Certificate fingerprint</string>
+
+    <!-- Setup checklist -->
+    <string name="setup_title">Setup</string>
+    <string name="setup_body">Each permission unlocks one feature on your computer. Nothing is sent anywhere else.</string>
+
+    <string name="perm_notifications">Notifications</string>
+    <string name="perm_notifications_why">Mirror notifications, reply to them, and read one‑time passcodes.</string>
+    <string name="perm_dnd">Do Not Disturb</string>
+    <string name="perm_dnd_why">Silence both screens together.</string>
+    <string name="perm_messages">Messages</string>
+    <string name="perm_messages_why">Read and send texts from your computer.</string>
+    <string name="perm_photos">Photos</string>
+    <string name="perm_photos_why">Browse your gallery and save photos across.</string>
+    <string name="perm_camera">Camera</string>
+    <string name="perm_camera_why">Use this phone as a webcam.</string>
+
+    <!-- Hotspot -->
+    <string name="hotspot_title">One‑click hotspot</string>
+    <string name="hotspot_body">Android only lets system apps switch tethering on. Shizuku lends this app shell access so your computer can do it without you touching the phone.</string>
+    <string name="shizuku_connect">Connect to Shizuku</string>
+    <string name="shizuku_ready">Ready — one‑click hotspot available</string>
+    <string name="shizuku_needs_permission">Installed, but needs permission</string>
+    <string name="shizuku_missing">Not running — the hotspot panel will open instead</string>
+
+    <plurals name="setup_remaining">
+        <item quantity="one">%d permission still needed</item>
+        <item quantity="other">%d permissions still needed</item>
+    </plurals>
+
+    <plurals name="paired_computers">
+        <item quantity="one">%d computer paired</item>
+        <item quantity="other">%d computers paired</item>
+    </plurals>
+</resources>

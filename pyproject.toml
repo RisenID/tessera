@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tessera"
+version = "1.10.0"
+description = "Android phone companion for Linux: notifications, messages, photos, screen and webcam"
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.11"
+authors = [{ name = "Tessera contributors" }]
+keywords = ["android", "companion", "kde", "notifications", "webcam"]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications",
+]
+
+# PySide6 comes from the distribution package (python3-pyside6) rather than
+# from PyPI: the RPM build must not pull a second copy of Qt into site-packages.
+dependencies = ["PySide6>=6.5"]
+
+[project.gui-scripts]
+tessera = "tessera.app:main"
+
+[project.urls]
+Homepage = "https://github.com/risen/tessera"
+
+[tool.setuptools.packages.find]
+include = ["tessera*"]
+
+[tool.setuptools.package-data]
+tessera = ["py.typed"]

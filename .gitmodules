@@ -1,0 +1,10 @@
+[submodule "third_party/libldacdec"]
+	path = third_party/libldacdec
+	url = https://github.com/hegdi/libldacdec.git
+[submodule "third_party/kdeconnect-kde"]
+	path = third_party/kdeconnect-kde
+	# KDE's own read-only mirror, not invent.kde.org. Reference material only,
+	# and git aborts a recursive submodule fetch when any one of them fails --
+	# so an unreachable host here takes libldacdec, which the LDAC decoder is
+	# actually built from, down with it.
+	url = https://github.com/KDE/kdeconnect-kde.git
