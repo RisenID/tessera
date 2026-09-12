@@ -26,6 +26,7 @@ from ..backends.webcam import CompanionCamera, Webcam, WebcamError
 from ..ui.icons import IconStore
 from . import otp
 from .clipboard import ClipboardSync
+from . import platform
 from .config import Config
 from .models import Notification
 from .proc import submit
@@ -43,6 +44,7 @@ class Hub(QObject):
     statusChanged = Signal(str)
     connectionChanged = Signal(bool)
     notificationsChanged = Signal()
+    notificationArrived = Signal(object)     # Notification, for a desktop popup
     otpArrived = Signal(object, object)      # OtpMatch, Notification
     textMessageArrived = Signal()            # a text landed; reload the thread list
     dndChanged = Signal(str)
@@ -103,7 +105,8 @@ class Hub(QObject):
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
         self._serial_timer = QTimer(self)
         self._serial_timer.timeout.connect(self.refresh_adb)
-        self._serial_timer.timeout.connect(self._watch_bluetooth)
+        if platform.supported("bluetooth_audio"):
+            self._serial_timer.timeout.connect(self._watch_bluetooth)
         self._serial_timer.start(15_000)
 
     # -- persistence ---------------------------------------------------------
@@ -175,6 +178,11 @@ class Hub(QObject):
     def apply_features(self) -> None:
         """Push the feature switches down to the pieces that act on them."""
         features = self.config.features
+        # A feature the platform cannot do is off regardless of the file: the
+        # switch is hidden in Settings, and nothing here should try.
+        for name in ("bluetooth_audio", "webcam"):
+            if not platform.supported(name) and getattr(features, name, False):
+                setattr(features, name, False)
         # "status" carries battery, signal and ringer; the phone sends the whole
         # frame regardless, but the list is what the desktop says it wants.
         topics = ["battery", "status"]
@@ -365,6 +373,8 @@ class Hub(QObject):
         actually changes, which is at most once after an upgrade or a settings
         change.
         """
+        if not platform.supported("bluetooth_audio"):
+            return
         if not self.config.features.bluetooth_audio:
             return
 
@@ -671,14 +681,19 @@ class Hub(QObject):
         if not self.config.features.notifications:
             return
         previous = self._notifications.get(note.id)
+        fresh = previous is None or note.when > previous.when
         self._notifications[note.id] = note
         self._check_otp(note)
         self.notificationsChanged.emit()
+        # Only a new one, or one that has been re-posted with a later time,
+        # is worth a popup; the phone re-sends the whole list on reconnect.
+        if fresh and not note.ongoing:
+            self.notificationArrived.emit(note)
         # A messaging app keeps one notification per conversation and re-posts
         # it with a later time for each message, so the id alone cannot tell a
         # new text from the same notification being repeated -- a reply that
         # continues an open conversation reuses the id. The post time can.
-        if note.is_text_message and (previous is None or note.when > previous.when):
+        if note.is_text_message and fresh:
             self.textMessageArrived.emit()
 
     def remove_notification(self, notification_id: str) -> None:

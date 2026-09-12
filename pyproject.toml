@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tessera"
 version = "1.10.0"
-description = "Android phone companion for Linux: notifications, messages, photos, screen and webcam"
+description = "Android phone companion for Linux and Windows: notifications, messages, photos, screen and webcam"
 readme = "README.md"
 license = "GPL-3.0-only"
 requires-python = ">=3.11"
@@ -13,15 +13,22 @@ authors = [{ name = "Tessera contributors" }]
 keywords = ["android", "companion", "kde", "notifications", "webcam"]
 classifiers = [
     "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
     "Intended Audience :: End Users/Desktop",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Topic :: Communications",
 ]
 
-# PySide6 comes from the distribution package (python3-pyside6) rather than
-# from PyPI: the RPM build must not pull a second copy of Qt into site-packages.
+# On Linux PySide6 comes from the distribution package (python3-pyside6)
+# rather than from PyPI: the RPM build must not pull a second copy of Qt into
+# site-packages. On Windows there is no such package, so pip installs it.
 dependencies = ["PySide6>=6.5"]
+
+[project.optional-dependencies]
+# What building the Windows executable needs, on top of the app itself.
+windows = ["pyinstaller>=6.6"]
 
 [project.gui-scripts]
 tessera = "tessera.app:main"

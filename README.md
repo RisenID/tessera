@@ -1,15 +1,22 @@
 # Tessera
 
-A Windows Phone Link equivalent for Fedora/KDE and a Samsung Galaxy S25:
+A Windows Phone Link equivalent for Linux -- and now for Windows itself:
 notifications, one-time passcodes, messages, photos, Do Not Disturb, screen
-mirroring, per-app windows, phone-as-webcam and one-click hotspot.
+mirroring, per-app windows, phone-as-webcam and one-click hotspot. Written
+against Fedora/KDE and a Samsung Galaxy S25.
 
 Two halves:
 
 | | |
 | --- | --- |
-| `tessera/` | The Fedora desktop app (Python + PySide6/Qt6) |
+| `tessera/` | The desktop app (Python + PySide6/Qt6), Linux and Windows |
 | `android/` | The companion app for the phone (Kotlin) |
+
+On Windows everything works except the three things Windows itself will not
+allow -- Bluetooth audio *into* the computer, a virtual webcam, and setting
+Focus Assist -- and those are hidden with the reason rather than left to fail.
+See [docs/WINDOWS.md](docs/WINDOWS.md) for the detail, the installer and how to
+build it.
 
 ## Why a companion app
 

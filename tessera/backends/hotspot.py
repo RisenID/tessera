@@ -6,7 +6,9 @@ Two halves:
   documented route, but vendor ROMs (Samsung's One UI included) frequently
   restrict or rename it, so several strategies are tried in order and USB
   tethering is kept as a fallback that essentially always works.
-* the laptop -- join the resulting network with NetworkManager.
+* the laptop -- join the resulting network, with NetworkManager on Linux and
+  netsh on Windows. Both answer the same four questions, so the page above
+  does not know which one it is talking to.
 
 Everything blocks; callers dispatch through :func:`tessera.core.proc.submit`.
 """
@@ -18,9 +20,10 @@ import re
 import time
 from dataclasses import dataclass
 
+from ..core import platform
 from ..core.config import HotspotConfig
 from ..core.proc import have, run
-from . import adb
+from . import adb, wifi_win
 
 log = logging.getLogger(__name__)
 
@@ -178,6 +181,9 @@ def set_usb_tethering(serial: str, enabled: bool) -> None:
 
 
 def nm_available() -> bool:
+    """Whether this computer can join a network from here at all."""
+    if platform.IS_WINDOWS:
+        return wifi_win.available()
     return have(NMCLI)
 
 
@@ -192,6 +198,8 @@ def enable_wifi_radio() -> None:
 
 def active_ssid() -> str:
     """SSID of the Wi-Fi network currently joined, or ''."""
+    if platform.IS_WINDOWS:
+        return wifi_win.active_ssid()
     result = run([NMCLI, "-t", "-f", "ACTIVE,SSID", "device", "wifi"], timeout=15.0)
     if not result.ok:
         return ""
@@ -204,6 +212,8 @@ def active_ssid() -> str:
 
 def scan_for(ssid: str, timeout: float = 30.0) -> bool:
     """Rescan until *ssid* is visible or *timeout* elapses."""
+    if platform.IS_WINDOWS:
+        return wifi_win.scan_for(ssid, timeout)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         run([NMCLI, "device", "wifi", "rescan"], timeout=20.0)
@@ -215,12 +225,19 @@ def scan_for(ssid: str, timeout: float = 30.0) -> bool:
 
 
 def has_saved_connection(ssid: str) -> bool:
+    if platform.IS_WINDOWS:
+        return wifi_win.has_profile(ssid)
     result = run([NMCLI, "-t", "-f", "NAME", "connection", "show"], timeout=15.0)
     return result.ok and any(line.strip() == ssid for line in result.stdout.splitlines())
 
 
 def connect_wifi(ssid: str, passphrase: str, scan_timeout: float = 30.0) -> str:
     """Join *ssid*, reusing a saved profile when one exists."""
+    if platform.IS_WINDOWS:
+        try:
+            return wifi_win.connect(ssid, passphrase, scan_timeout)
+        except RuntimeError as exc:
+            raise HotspotError(str(exc)) from exc
     if not nm_available():
         raise HotspotError("NetworkManager (nmcli) is not available.")
     if not wifi_radio_on():
@@ -251,6 +268,9 @@ def connect_wifi(ssid: str, passphrase: str, scan_timeout: float = 30.0) -> str:
 
 
 def disconnect_wifi(ssid: str) -> None:
+    if platform.IS_WINDOWS:
+        wifi_win.disconnect(ssid)
+        return
     if ssid and has_saved_connection(ssid):
         run([NMCLI, "connection", "down", ssid], timeout=30.0)
 
@@ -334,6 +354,18 @@ def reachable_address(addresses: "list[str]", port: int, timeout: float = 1.5,
 
 def usb_tether_interface_up(timeout: float = 25.0) -> str:
     """Wait for a USB tethering interface to get an address; return its name."""
+    if platform.IS_WINDOWS:
+        # Windows names the RNDIS adapter itself and brings it up without being
+        # asked; there is nothing to wait for beyond the address appearing.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if any(a.startswith("192.168.42.") for a in wifi_win.addresses()):
+                return "USB tethering"
+            time.sleep(1.5)
+        raise HotspotError(
+            "USB tethering was switched on, but Windows did not get an address "
+            "from the phone. Check that the cable carries data."
+        )
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = run(

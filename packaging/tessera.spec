@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        17%{?dist}
+Release:        18%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -145,7 +145,7 @@ print('all modules import')"
 
 %files
 %license LICENSE
-%doc README.md docs/PROTOCOL.md
+%doc README.md docs/PROTOCOL.md docs/WINDOWS.md
 %{python3_sitelib}/tessera/
 %{_bindir}/tessera
 %{_datadir}/applications/%{appid}.desktop
@@ -157,6 +157,27 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-18
+- Tessera now builds and runs on Windows. One module decides the platform --
+  where files go, which features can work -- and everything else asks it, so
+  this RPM is unaffected beyond the new files it carries.
+- Windows keeps: pairing, notifications with real toasts, passcodes, messages,
+  calls, photos, apps, screen mirroring, clipboard, the hotspot (joined with
+  netsh rather than NetworkManager), battery and signal, ringer control, and
+  start-at-login through the registry.
+- Windows cannot do three things, which are hidden with the reason rather than
+  left to fail: Bluetooth audio into the computer (Windows has no sink
+  profile), the phone as a webcam (needs a signed driver), and setting Focus
+  Assist (no API), so Do Not Disturb there silences Tessera's own popups only.
+- Desktop popups are now implemented rather than merely configurable: each
+  notification is repeated through the tray, which is a Qt toast on Windows and
+  libnotify on Linux, and a silenced phone silences them.
+- The app draws its own icons where there is no icon theme, which is Windows;
+  the application icon is drawn from the same code at build time.
+- packaging/windows/ has the PyInstaller spec and an Inno Setup installer;
+  scripts/build-windows.ps1 builds all three artefacts, and
+  scripts/check-platform.py exercises the Windows paths from a Linux checkout.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-17
 - The webcam and mirror switches are outlines again rather than solid blocks.
   Recolouring an icon to match the text beside it turns line art the right

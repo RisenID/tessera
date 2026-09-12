@@ -2,7 +2,7 @@
 
 Two flavours are used throughout the app:
 
-* :func:`run` -- blocking, for short commands (adb queries, nmcli, modprobe).
+* :func:`run` -- blocking, for short commands (adb queries, nmcli, netsh).
   Always called from a worker thread via :func:`submit`, never from the GUI
   thread.
 * :class:`ManagedProcess` -- a QProcess wrapper for long-running children
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -28,6 +27,8 @@ from PySide6.QtCore import (
     Slot,
 )
 
+from . import platform
+
 log = logging.getLogger(__name__)
 
 # Commands inherit a sanitised environment: we never want a stray LD_PRELOAD or
@@ -37,6 +38,10 @@ _BASE_ENV = {
     "LC_ALL": "C",
     "LANG": "C",
 }
+
+#: A windowed build has no console of its own, so every short helper would
+#: flash one. Zero everywhere but Windows.
+_NO_WINDOW = platform.no_window_flags()
 
 
 @dataclass(frozen=True)
@@ -72,8 +77,20 @@ class CommandError(RuntimeError):
 
 
 def have(program: str) -> bool:
-    """True when *program* is on PATH."""
-    return shutil.which(program) is not None
+    """True when *program* can be found.
+
+    Not merely PATH: on Windows the tools this app drives are routinely
+    installed somewhere that is not on it. See core.platform.find_tool.
+    """
+    return bool(platform.find_tool(program))
+
+
+def tool_path(program: str) -> str:
+    """Where *program* is, or its bare name if it was not found.
+
+    Callers build argv with this so a tool off PATH still runs.
+    """
+    return platform.find_tool(program) or platform.tool(program)
 
 
 def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) -> Result:
@@ -84,6 +101,10 @@ def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) ->
     error path to handle.
     """
     argv = [str(a) for a in argv]
+    # The first word is a tool name, which on Windows may be neither on PATH
+    # nor suffixed. Resolve it once, here, so no caller has to.
+    if argv and not os.path.isabs(argv[0]):
+        argv[0] = tool_path(argv[0])
     log.debug("run: %s", " ".join(argv))
     try:
         proc = subprocess.run(
@@ -94,6 +115,7 @@ def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) ->
             timeout=timeout,
             env=_BASE_ENV,
             check=False,
+            creationflags=_NO_WINDOW,
         )
     except FileNotFoundError:
         return Result(tuple(argv), 127, "", f"{argv[0]}: not found")
@@ -228,6 +250,10 @@ class ManagedProcess(QObject):
         if self.running:
             raise RuntimeError("process is already running")
         argv = [str(a) for a in argv]
+        # Same as run(): the first word may be a tool that is installed but
+        # not on PATH, which is the normal state of adb on Windows.
+        if argv and not os.path.isabs(argv[0]):
+            argv[0] = tool_path(argv[0])
         log.info("spawn: %s", " ".join(argv))
 
         self._buffer = ""

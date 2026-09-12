@@ -15,7 +15,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from PySide6.QtCore import QObject
-from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBusVariant
+
+from ..core import platform
+from .dbus import HAVE_QTDBUS, QDBusMessage, QDBusVariant, session
 
 from ..core.proc import ManagedProcess, have, run
 
@@ -72,14 +74,17 @@ class MprisPlayer(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._bus = QDBusConnection.sessionBus()
+        #: MPRIS is a desktop bus interface. Where there is none, the phone's
+        #: own media state -- which the companion app reports anyway -- is all
+        #: there is, and every method here answers "nothing playing".
+        self._usable = HAVE_QTDBUS and platform.supported("mpris")
+        self._bus = session()
         self._proxy = ManagedProcess(self)
 
     # -- the bluez bridge ----------------------------------------------------
 
-    @staticmethod
-    def proxy_available() -> bool:
-        return have("mpris-proxy")
+    def proxy_available(self) -> bool:
+        return self._usable and have("mpris-proxy")
 
     @property
     def proxy_running(self) -> bool:
@@ -106,7 +111,7 @@ class MprisPlayer(QObject):
     # -- discovery -----------------------------------------------------------
 
     def _services(self) -> list[str]:
-        if not self._bus.isConnected():
+        if not self._usable or not self._bus.isConnected():
             return []
         reply = self._bus.interface().registeredServiceNames()
         names = reply.value() if hasattr(reply, "value") else []

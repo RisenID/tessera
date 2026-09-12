@@ -18,11 +18,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from PySide6.QtCore import SLOT, QObject, Signal, Slot
-from PySide6.QtDBus import (
-    QDBusConnection,
+
+from ..core import platform
+from .dbus import (
+    HAVE_QTDBUS,
     QDBusMessage,
     QDBusServiceWatcher,
     QDBusVariant,
+    session,
 )
 
 log = logging.getLogger(__name__)
@@ -131,10 +134,15 @@ class KdeConnect(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._bus = QDBusConnection.sessionBus()
+        self._bus = session()
         self._device_id = ""
         self._subscribed_path = ""
-
+        #: Nothing to watch and nothing to call without a bus, which is the
+        #: normal state on Windows rather than an error.
+        self._usable = HAVE_QTDBUS and platform.supported("kdeconnect")
+        if not self._usable:
+            log.info("KDE Connect is not available on this platform")
+            return
         if not self._bus.isConnected():
             log.error("no session bus; KDE Connect features are unavailable")
 
@@ -190,7 +198,7 @@ class KdeConnect(QObject):
 
     @property
     def available(self) -> bool:
-        if not self._bus.isConnected():
+        if not self._usable or not self._bus.isConnected():
             return False
         return self._bus.interface().isServiceRegistered(SERVICE).value()
 

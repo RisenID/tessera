@@ -23,22 +23,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import glyphs
 from .theme import RADIUS, SPACE, Palette
 
 
 def themed_icon(*names: str) -> QIcon:
-    """The first of *names* the desktop's icon theme has, symbolic for choice.
+    """The first of *names* this system can draw, symbolic for choice.
 
     A "-symbolic" icon is single-colour line art meant to be recoloured, which
     is exactly what small UI icons here are for. The full-colour version of the
     same name is a picture: recolouring `camera-photo` or `smartphone` turned
     them into solid white rectangles.
+
+    Where there is no icon theme at all -- Windows -- the app draws its own;
+    see ui/glyphs.py. Without that fallback the whole interface came out in
+    emoji.
     """
     for name in names:
         for candidate in (f"{name}-symbolic", name):
             icon = QIcon.fromTheme(candidate)
             if not icon.isNull():
                 return icon
+    for name in names:
+        if glyphs.available(name):
+            return glyphs.icon(name)
     return QIcon()
 
 

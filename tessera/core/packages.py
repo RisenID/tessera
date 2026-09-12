@@ -28,6 +28,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import platform
+
 log = logging.getLogger(__name__)
 
 
@@ -42,16 +44,42 @@ class Manager:
     #: Extra argument that makes it non-interactive, for a pkexec run.
     assume_yes: str = "-y"
 
+    #: Windows installers need no root, and there is no pkexec to ask.
+    elevated: bool = True
+    #: Arguments that go immediately before the package names, like winget's
+    #: --id, which only means anything in that position.
+    before_names: tuple[str, ...] = ()
+    #: winget installs one package per invocation; the others take a list.
+    one_at_a_time: bool = False
+
+    def _words(self, packages: list[str], interactive: bool) -> list[list[str]]:
+        """One command per invocation this manager needs."""
+        args = [*self.install]
+        if not interactive and self.assume_yes:
+            args.append(self.assume_yes)
+        args += self.before_names
+        groups = [[name] for name in packages] if self.one_at_a_time else [packages]
+        return [[self.program, *args, *group] for group in groups]
+
     def command(self, packages: list[str]) -> str:
         """The line to show the user, to run themselves."""
-        return " ".join(["sudo", self.program, *self.install, *packages])
+        prefix = ["sudo "] if self.elevated else [""]
+        return "; ".join(
+            prefix[0] + " ".join(words)
+            for words in self._words(packages, interactive=True)
+        )
 
     def argv(self, packages: list[str]) -> list[str]:
-        """The same install through polkit, for running from the app."""
-        args = [*self.install]
-        if self.assume_yes:
-            args.append(self.assume_yes)
-        return ["pkexec", self.program, *args, *packages]
+        """The same install, for running from the app."""
+        commands = self._words(packages, interactive=False)
+        if self.elevated:
+            return ["pkexec", *commands[0][0:1], *commands[0][1:]]
+        if len(commands) == 1:
+            return commands[0]
+        # More than one invocation and no shell to chain them: PowerShell is
+        # the one interpreter every Windows install has.
+        joined = "; ".join(" ".join(words) for words in commands)
+        return ["powershell", "-NoProfile", "-Command", joined]
 
 
 MANAGERS: dict[str, Manager] = {
@@ -63,6 +91,14 @@ MANAGERS: dict[str, Manager] = {
     "xbps": Manager("xbps", "xbps-install", ("-S",), "-y"),
     "emerge": Manager("emerge", "emerge", ("--ask=n",), ""),
     "eopkg": Manager("eopkg", "eopkg", ("install",), "-y"),
+    # Windows. winget ships with Windows 11 and recent 10; the other two are
+    # what people who install command-line tools already have.
+    "winget": Manager(
+        "winget", "winget", ("install",), "--accept-package-agreements",
+        elevated=False, before_names=("--exact", "--id"), one_at_a_time=True,
+    ),
+    "choco": Manager("choco", "choco", ("install",), "-y", elevated=False),
+    "scoop": Manager("scoop", "scoop", ("install",), "", elevated=False),
 }
 
 #: Which manager each distribution uses, by os-release ID and ID_LIKE.
@@ -87,14 +123,19 @@ PACKAGES: dict[str, dict[str, str]] = {
     "adb": {
         "dnf": "android-tools", "apt": "adb", "pacman": "android-tools",
         "zypper": "android-tools", "apk": "android-tools", "xbps": "android-tools",
+        # Google ships adb inside the platform-tools bundle, which is also
+        # what scrcpy for Windows carries; either satisfies this.
+        "winget": "Google.PlatformTools", "choco": "adb", "scoop": "adb",
     },
     "scrcpy": {
         "dnf": "scrcpy", "apt": "scrcpy", "pacman": "scrcpy",
         "zypper": "scrcpy", "apk": "scrcpy", "xbps": "scrcpy",
+        "winget": "Genymobile.scrcpy", "choco": "scrcpy", "scoop": "scrcpy",
     },
     "ffmpeg": {
         "dnf": "ffmpeg", "apt": "ffmpeg", "pacman": "ffmpeg",
         "zypper": "ffmpeg", "apk": "ffmpeg", "xbps": "ffmpeg",
+        "winget": "Gyan.FFmpeg", "choco": "ffmpeg", "scoop": "ffmpeg",
     },
     # Out-of-tree kernel module, so the package is the DKMS build almost
     # everywhere. It has to rebuild for each kernel, which is why the name
@@ -199,6 +240,16 @@ def detect() -> Manager | None:
     system with several managers installed; the presence of a binary is the
     fallback for a distribution not listed above.
     """
+    if platform.IS_WINDOWS:
+        # In preference order: winget is on the machine already, the others
+        # are only there if the user put them there -- but if they did, that
+        # is where their tools live.
+        for key in ("scoop", "choco", "winget"):
+            if platform.have_tool(MANAGERS[key].program):
+                return MANAGERS[key]
+        return MANAGERS["winget"]
+    if platform.IS_MACOS:
+        return None
     release = _os_release()
     candidates = [release.get("ID", "")] + release.get("ID_LIKE", "").split()
     for candidate in candidates:
@@ -215,6 +266,8 @@ def detect() -> Manager | None:
 
 def distribution() -> str:
     """A readable name for this system, for a message that needs one."""
+    if not platform.IS_LINUX:
+        return platform.describe()
     release = _os_release()
     return release.get("PRETTY_NAME") or release.get("NAME") or "this system"
 

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core import platform
 from ..core.hub import Hub
 from .pages.apps import AppsPage
 from .pages.audio import AudioPage
@@ -30,8 +31,10 @@ from .pages.notifications import NotificationsPage
 from .pages.photos import PhotosPage
 from .pages.screen import ScreenPage
 from .pages.settings import SettingsPage
+from .pages.unavailable import UnavailablePage
 from .pages.webcam import WebcamPage
 from .panel import MAX_WIDTH, MIN_WIDTH, DevicePanel
+from .popups import Popups
 from .theme import SPACE, Palette, tab_stylesheet
 from .widgets import themed_icon, tinted_icon
 
@@ -54,6 +57,13 @@ PAGES = [
     ("Hotspot", "network-wireless-hotspot", "📶", HotspotPage, "hotspot"),
     ("Settings", "settings-configure", "⚙", SettingsPage, None),
 ]
+
+#: Pages whose feature this platform cannot do at all. Hidden rather than
+#: broken: see core/platform.py for the reasons, which Settings shows.
+IMPOSSIBLE = frozenset(
+    name for name, _i, _g, _p, feature in PAGES
+    if feature and not platform.supported(feature)
+)
 
 #: The ones that earn a permanent tab: the phone's content. Everything else is
 #: a device feature reached from the More menu -- ten worded tabs in one row
@@ -121,7 +131,14 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self._build_strip())
 
         self.stack = QStackedWidget()
-        for _name, _icon, _glyph, page_class, _feature in PAGES:
+        for name, _icon, _glyph, page_class, feature in PAGES:
+            if name in IMPOSSIBLE:
+                # Never built: a page for a feature this platform lacks would
+                # probe for Linux machinery the moment it was constructed.
+                self.stack.addWidget(
+                    UnavailablePage(name, platform.reason(feature), palette)
+                )
+                continue
             page = page_class(hub, palette)
             self.stack.addWidget(page)
             if isinstance(page, SettingsPage):
@@ -161,6 +178,9 @@ class MainWindow(QMainWindow):
         self._change_page(0)
 
         self._build_tray()
+        #: The phone's notifications, repeated on this desktop. Qt's tray is
+        #: the one route that works on every platform.
+        self.popups = Popups(hub, self.tray, self)
 
         hub.statusChanged.connect(self._set_status)
         hub.errorOccurred.connect(self._set_status)
@@ -261,11 +281,12 @@ class MainWindow(QMainWindow):
     def _rebuild_more_menu(self) -> None:
         """The pages with no tab of their own, minus the ones switched off."""
         self.more_menu.clear()
-        features = self.hub.config.features
-        for name, icon_name, _glyph, _page, feature in PAGES:
+        for name, icon_name, _glyph, _page, _feature in PAGES:
             if name in PRIMARY or name == "Settings":
                 continue
-            if feature and not getattr(features, feature, True):
+            # One rule for the menu, the strip and show_page, so a page that
+            # cannot be opened is never offered.
+            if not self._enabled(name):
                 continue
             action = QAction(name, self.more_menu)
             icon = themed_icon(icon_name)
@@ -283,6 +304,8 @@ class MainWindow(QMainWindow):
         )
 
     def _enabled(self, name: str) -> bool:
+        if name in IMPOSSIBLE:
+            return False
         feature = next((f for n, _i, _g, _p, f in PAGES if n == name), None)
         return not feature or bool(getattr(self.hub.config.features, feature, True))
 

@@ -1,4 +1,4 @@
-"""Persistent settings, stored as JSON under XDG_CONFIG_HOME."""
+"""Persistent settings, stored as JSON in the platform's config directory."""
 
 from __future__ import annotations
 
@@ -10,19 +10,17 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, get_args, get_origin, get_type_hints
 
+from . import platform
+
 log = logging.getLogger(__name__)
 
 APP_ID = "tessera"
 
 
-def config_dir() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
-    return Path(base) / APP_ID
-
-
-def state_dir() -> Path:
-    base = os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state"
-    return Path(base) / APP_ID
+#: Re-exported so nothing outside core has to know which platform it is on.
+config_dir = platform.config_dir
+state_dir = platform.state_dir
+cache_dir = platform.cache_dir
 
 
 @dataclass

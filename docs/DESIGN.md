@@ -199,6 +199,33 @@ messaging app posts is unaffected. `core/otp.py` scores candidates on the
 words around them and shows nothing below the threshold, because a wrong code
 pasted into a login form is worse than no code.
 
+## One place knows the platform
+
+`tessera/core/platform.py` decides what this computer is, where its files go,
+and -- the part that matters -- which features cannot work here at all, each
+with a sentence saying why. Nothing else in the app is allowed to test for an
+operating system.
+
+Everything reads that table. A page whose feature is impossible is never built:
+its slot in the stack holds an `UnavailablePage` with the reason, so a Linux
+page cannot run Linux probes on Windows merely by existing -- which is exactly
+what happened first, `modinfo v4l2loopback` at construction. Its tab and menu
+entry are never offered, its sidebar switch never appears, and Settings shows
+the reason in place of a checkbox that cannot be ticked.
+
+The three D-Bus backends -- KDE Connect, MPRIS, the desktop's Do Not Disturb --
+import QtDBus through `backends/dbus.py`, which substitutes a bus that is never
+connected when the module is absent. They then behave exactly as they do on a
+Linux box with no session bus, which is a state they already handled.
+
+`TESSERA_PLATFORM` moves the app's idea of the platform without pretending the
+kernel changed: `platform.NAME` decides policy, `platform.REAL` decides the
+handful of things that would break if they disagreed -- a Windows
+process-creation flag on a Linux kernel raises. That variable is what makes
+`scripts/check-platform.py` possible, and it is the only way any of the Windows
+work has been tested. See docs/WINDOWS.md for what that does and does not
+cover.
+
 ## Settings apply themselves
 
 There is no Save button. Every control writes the config as soon as it is

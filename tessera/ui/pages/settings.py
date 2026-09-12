@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...backends import btcodecs, companion, ldacdec
-from ...core import autostart
+from ...core import autostart, platform
 from ...core.clipboard import MODE_LABELS as CLIPBOARD_LABELS
 from ...core.hub import Hub
 from ...core.proc import ManagedProcess, submit
@@ -250,10 +250,18 @@ class SettingsPage(QWidget):
         self.feature_boxes: dict[str, QCheckBox] = {}
         for key, label, hint in FEATURE_SWITCHES:
             box = QCheckBox(label)
-            box.setToolTip(hint)
-            box.setChecked(bool(getattr(hub.config.features, key)))
+            impossible = platform.reason(key)
+            box.setToolTip(impossible or hint)
+            box.setChecked(bool(getattr(hub.config.features, key)) and not impossible)
+            # Not the user's choice to make: the platform has already made it.
+            box.setEnabled(not impossible)
             self.feature_boxes[key] = box
             features.add(box)
+            if impossible:
+                note = QLabel(impossible)
+                note.setObjectName("Muted")
+                note.setWordWrap(True)
+                features.add(note)
 
         outer.addWidget(features)
 
@@ -273,13 +281,17 @@ class SettingsPage(QWidget):
         clip_note.setWordWrap(True)
         screen.add(clip_note)
 
+        # Bluetooth audio and the LDAC decoder are PipeWire and BlueZ
+        # machinery, so the whole card belongs to the platforms that have them.
+        self.audio_card = Card(self)
+        audio = self.audio_card
         audio_title = QLabel("Bluetooth audio")
         audio_title.setObjectName("SectionTitle")
-        screen.add(audio_title)
+        audio.add(audio_title)
 
         self.codec_choice = QComboBox()
         self._fill_codecs()
-        screen.add(self._labelled("Quality", self.codec_choice))
+        audio.add(self._labelled("Quality", self.codec_choice))
 
         codec_note = QLabel(
             "Forcing a codec the phone cannot manage drops it to plain SBC. "
@@ -287,7 +299,7 @@ class SettingsPage(QWidget):
         )
         codec_note.setObjectName("Muted")
         codec_note.setWordWrap(True)
-        screen.add(codec_note)
+        audio.add(codec_note)
 
         # -- LDAC ------------------------------------------------------------
         ldac_header = QHBoxLayout()
@@ -298,12 +310,12 @@ class SettingsPage(QWidget):
         self.ldac_pill = Pill("", "muted")
         self.ldac_pill.apply(palette)
         ldac_header.addWidget(self.ldac_pill)
-        screen.add(self._bar(ldac_header))
+        audio.add(self._bar(ldac_header))
 
         self.ldac_note = QLabel()
         self.ldac_note.setObjectName("Muted")
         self.ldac_note.setWordWrap(True)
-        screen.add(self.ldac_note)
+        audio.add(self.ldac_note)
 
         buttons = QHBoxLayout()
         self.ldac_action = QPushButton()
@@ -314,7 +326,7 @@ class SettingsPage(QWidget):
         self.ldac_remove.clicked.connect(self._ldac_uninstall)
         buttons.addWidget(self.ldac_remove)
         buttons.addStretch(1)
-        screen.add(self._bar(buttons))
+        audio.add(self._bar(buttons))
 
         # Hidden until something runs. The build takes a while and downloads
         # the PipeWire sources on its first run, so a silent spinner would look
@@ -323,7 +335,7 @@ class SettingsPage(QWidget):
         self.ldac_log.setReadOnly(True)
         self.ldac_log.setMaximumHeight(150)
         self.ldac_log.setVisible(False)
-        screen.add(self.ldac_log)
+        audio.add(self.ldac_log)
 
         #: Which step is running: "tools", "setup" or "remove". Chaining the
         #: build onto a package install needs this -- without it a Remove,
@@ -337,6 +349,8 @@ class SettingsPage(QWidget):
         self._refresh_ldac()
 
         outer.addWidget(screen)
+        self.audio_card.setVisible(platform.supported("bluetooth_audio"))
+        outer.addWidget(self.audio_card)
         outer.addStretch(1)
 
         self.toast = Toast(self)

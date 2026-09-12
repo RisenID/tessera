@@ -7,8 +7,9 @@ import signal
 import sys
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QStyleFactory
 
+from .core import platform
 from .core.config import Config, state_dir
 from .core.hub import Hub
 from .core.proc import wait_for_idle
@@ -33,6 +34,22 @@ def configure_logging(verbose: bool = False) -> None:
     )
 
 
+def _register_with_windows() -> None:
+    """Give the taskbar an application identity of our own.
+
+    Without it Windows groups the window under the Python interpreter, which
+    also means the pinned icon and the notifications are attributed to it.
+    """
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            platform.APP_ID
+        )
+    except Exception as exc:      # not Windows, or an old shell32
+        log.debug("could not set the app id: %s", exc)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv)
     verbose = "-v" in argv or "--verbose" in argv
@@ -42,10 +59,22 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("Tessera")
     app.setApplicationDisplayName("Tessera")
     app.setDesktopFileName("dev.tessera.Tessera")
+    if platform.IS_WINDOWS:
+        # Qt's own Windows style; Breeze is not there, and Fusion looks like
+        # neither platform. Also tell the shell this is its own application so
+        # the taskbar groups it and the tray icon gets a name.
+        for style in ("windows11", "windowsvista", "windows"):
+            if style in {s.lower() for s in QStyleFactory.keys()}:
+                app.setStyle(style)
+                break
+        _register_with_windows()
     # Closing the window hides to the tray, so Qt must not quit with it.
     app.setQuitOnLastWindowClosed(False)
 
-    log.info("Tessera starting (Qt %s)", __import__("PySide6").QtCore.qVersion())
+    log.info(
+        "Tessera starting on %s (Qt %s)",
+        platform.describe(), __import__("PySide6").QtCore.qVersion(),
+    )
 
     palette = detect_palette(app)
     app.setStyleSheet(stylesheet(palette))

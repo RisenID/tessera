@@ -20,7 +20,9 @@ from enum import IntEnum
 from typing import Any
 
 from PySide6.QtCore import SLOT, QObject, QTimer, Signal, Slot
-from PySide6.QtDBus import QDBusConnection, QDBusMessage, QDBusVariant
+
+from ..core import platform
+from .dbus import HAVE_QTDBUS, QDBusMessage, QDBusVariant, session
 
 from ..core.config import DndConfig
 from ..core.proc import have, run, submit
@@ -111,7 +113,7 @@ class DndSync(QObject):
         super().__init__(parent)
         self._config = config
         self._serial = ""
-        self._bus = QDBusConnection.sessionBus()
+        self._bus = session()
 
         self._cookie: int | None = None        # our own inhibition, if any
         #: Whether this notification server implements Plasma's Inhibit, which

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..backends.mpris import MprisPlayer
-from ..core import otp
+from ..core import otp, platform
 from ..core.hub import Hub
 from ..core.models import Notification
 from .theme import SPACE, Palette
@@ -626,13 +626,19 @@ class DevicePanel(QWidget):
         self.tile_grid.setColumnStretch(columns, 1)
 
     def apply_tiles(self) -> None:
-        """Show the switches the user chose, minus any whose feature is off."""
+        """Show the switches the user chose, minus any that cannot work.
+
+        A feature switched off in Settings hides its switch; so does one this
+        platform cannot do at all, which is not the user's choice to make.
+        """
         chosen = [key for key in self.hub.config.panel.tiles if key in TILES]
         features = self.hub.config.features
         for key, button in self.tiles.items():
             feature = TILES[key][4]
             on = key in chosen and (
-                not feature or bool(getattr(features, feature, True))
+                not feature
+                or (platform.supported(feature)
+                    and bool(getattr(features, feature, True)))
             )
             button.setProperty("feature_off", not on)
             button.setVisible(on)
