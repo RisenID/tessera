@@ -1,23 +1,28 @@
 """Repeating the phone's notifications on this desktop.
 
-Through the tray icon, which is the one notification route Qt offers on every
-platform: libnotify on Linux, a real toast on Windows. That matters most on
-Windows, where the phone's notifications appearing on screen is the whole point
-of the app being open.
+Two routes, and the difference matters:
 
-The phone's Do Not Disturb is honoured: a phone that is silenced silences its
-echo here too, which on Windows is the only "silence the desktop" anyone can
-offer -- Focus Assist cannot be set by another program.
+* **the desktop's own notification server**, over D-Bus, which can carry
+  actions -- and on KDE and GNOME a reply box inside the popup itself. A
+  message from the phone is exactly the moment a reply is worth one keystroke,
+  and the phone half already works: the companion app sends replies through the
+  notification's own RemoteInput, the same thing the phone's shade uses.
+* **the tray icon**, which is all Qt offers everywhere else. Windows gets a
+  real toast out of it, but a toast with nothing to press.
+
+The phone's Do Not Disturb is honoured either way: a phone that is silenced
+silences its echo here too, which on Windows is the only "silence the desktop"
+anyone can offer -- Focus Assist cannot be set by another program.
 """
 
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QSystemTrayIcon
 
-from ..backends import silence
+from ..backends import notify, silence
 from ..core.hub import Hub
 from ..core.models import Notification
 
@@ -34,16 +39,45 @@ QUIET_PACKAGES = frozenset({
     "com.android.systemui",
 })
 
+#: Never track more than this many live popups. A busy group chat replaces its
+#: own popup, so this only grows with the number of distinct conversations.
+MAX_TRACKED = 64
+
 
 class Popups(QObject):
     """Raises a desktop notification for each one that arrives."""
+
+    #: The user pressed the popup itself rather than an action: show them the
+    #: notification in the app.
+    opened = Signal(str)              # the phone's notification id
 
     def __init__(self, hub: Hub, tray: QSystemTrayIcon,
                  parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.hub = hub
         self.tray = tray
+
+        self.notifier = notify.Notifier(self)
+        #: The desktop server's id -> the phone's notification id, so a reply
+        #: typed into a popup reaches the right conversation.
+        self._live: dict[int, str] = {}
+        #: And back, so a second message in one chat replaces its own popup
+        #: instead of stacking another identical one.
+        self._by_phone: dict[str, int] = {}
+
+        if self.notifier.available:
+            self.notifier.replied.connect(self._on_replied)
+            self.notifier.activated.connect(self._on_action)
+            self.notifier.closed.connect(self._on_closed)
+            log.info(
+                "using the desktop's notification server%s",
+                " with inline replies" if self.notifier.can_reply else "",
+            )
+
         hub.notificationArrived.connect(self.show)
+        hub.notificationsChanged.connect(self._prune)
+
+    # -- what to show --------------------------------------------------------
 
     def wanted(self, note: Notification) -> bool:
         """Whether this one should appear on the desktop."""
@@ -61,7 +95,40 @@ class Popups(QObject):
         return bool(note.title or note.text)
 
     def show(self, note: Notification) -> None:
-        if not self.wanted(note) or not self.tray.isVisible():
+        if not self.wanted(note):
+            return
+        if self.notifier.available:
+            self._show_rich(note)
+        else:
+            self._show_tray(note)
+
+    def _show_rich(self, note: Notification) -> None:
+        """Through the desktop's own server, with something to press."""
+        summary = note.title or note.app or "Phone"
+        body = note.text or ""
+        if note.title and note.app:
+            # The app's name belongs somewhere: as a prefix in the body rather
+            # than crowding the title, which is usually the sender.
+            body = f"{body}\n{note.app}" if body else note.app
+
+        given = self.notifier.send(
+            summary[:120],
+            body[:400],
+            icon=self._icon_for(note),
+            replace=self._by_phone.get(note.id, 0),
+            repliable=note.repliable,
+            clearable=note.clearable,
+            reply_placeholder=f"Reply to {note.title}" if note.title else "Reply",
+        )
+        if not given:
+            self._show_tray(note)
+            return
+        self._live[given] = note.id
+        self._by_phone[note.id] = given
+        self._trim()
+
+    def _show_tray(self, note: Notification) -> None:
+        if not self.tray.isVisible():
             return
         title = note.app or "Phone"
         if note.title:
@@ -75,3 +142,54 @@ class Popups(QObject):
             )
         except Exception as exc:      # a tray that went away mid-call
             log.debug("could not show a popup: %s", exc)
+
+    def _icon_for(self, note: Notification) -> str:
+        """The sending app's own icon, where the phone has sent us one."""
+        if not note.package:
+            return ""
+        path = self.hub.icons.path_for(note.package)
+        return str(path) if path else ""
+
+    # -- what the user pressed -----------------------------------------------
+
+    def _on_replied(self, given: int, text: str) -> None:
+        phone_id = self._live.get(given)
+        if not phone_id or not text.strip():
+            return
+        log.info("replying to %s from the popup", phone_id)
+        self.hub.reply(phone_id, text)
+
+    def _on_action(self, given: int, key: str) -> None:
+        phone_id = self._live.get(given)
+        if not phone_id:
+            return
+        if key == notify.DISMISS:
+            self.hub.dismiss(phone_id)
+        elif key == notify.OPEN:
+            self.opened.emit(phone_id)
+
+    def _on_closed(self, given: int) -> None:
+        phone_id = self._live.pop(given, None)
+        if phone_id is not None and self._by_phone.get(phone_id) == given:
+            self._by_phone.pop(phone_id, None)
+
+    def _prune(self) -> None:
+        """Drop popups for notifications the phone no longer has.
+
+        A notification cleared on the phone should not leave a popup here
+        offering to reply to it.
+        """
+        current = {note.id for note in self.hub.notifications}
+        for phone_id in list(self._by_phone):
+            if phone_id in current:
+                continue
+            given = self._by_phone.pop(phone_id, 0)
+            self._live.pop(given, None)
+            self.notifier.close(given)
+
+    def _trim(self) -> None:
+        while len(self._live) > MAX_TRACKED:
+            given = next(iter(self._live))
+            phone_id = self._live.pop(given, None)
+            if phone_id is not None:
+                self._by_phone.pop(phone_id, None)

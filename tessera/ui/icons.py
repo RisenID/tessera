@@ -38,6 +38,22 @@ class IconStore(QObject):
         digest = hashlib.sha1(package.encode("utf-8")).hexdigest()[:16]
         return cache_dir() / f"{digest}.png"
 
+    def path_for(self, package: str) -> Path | None:
+        """The cached icon file, for something that wants a path not a pixmap.
+
+        Desktop notifications take a file path rather than image data, and an
+        app's own icon is most of what makes a popup recognisable. Missing is
+        normal -- the icon is fetched in the background -- so this asks for it
+        and leaves the popup plain this once.
+        """
+        if not package:
+            return None
+        path = self._path(package)
+        if path.exists():
+            return path
+        self.request(package)
+        return None
+
     def get(self, package: str) -> QPixmap | None:
         """Return the icon if known, otherwise request it and return None."""
         if not package:

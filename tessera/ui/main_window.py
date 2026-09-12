@@ -182,9 +182,11 @@ class MainWindow(QMainWindow):
         self._change_page(0)
 
         self._build_tray()
-        #: The phone's notifications, repeated on this desktop. Qt's tray is
-        #: the one route that works on every platform.
+        #: The phone's notifications, repeated on this desktop: through the
+        #: desktop's own notification server where there is one, so a message
+        #: can be answered from the popup, and the tray everywhere else.
         self.popups = Popups(hub, self.tray, self)
+        self.popups.opened.connect(self._on_popup_opened)
 
         hub.statusChanged.connect(self._set_status)
         hub.errorOccurred.connect(self._set_status)
@@ -359,6 +361,13 @@ class MainWindow(QMainWindow):
     @property
     def current_page_name(self) -> str:
         return self.tabs.tabData(self.tabs.currentIndex()) or ""
+
+    def _on_popup_opened(self, _notification_id: str) -> None:
+        """A popup was clicked rather than answered: show the full list."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self.show_page("Notifications")
 
     def _set_status(self, message: str) -> None:
         self.panel.set_status(message)
