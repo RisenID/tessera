@@ -1,10 +1,4 @@
-"""App icons fetched from the phone.
-
-Notifications and the app launcher both identify an app by its package name.
-The phone can render that package's launcher icon as PNG bytes, so this asks
-for each one once and caches it: in memory for the session, and on disk so a
-restart does not re-fetch a hundred icons.
-"""
+"""App icons fetched from the phone, cached on disk by package name."""
 
 from __future__ import annotations
 

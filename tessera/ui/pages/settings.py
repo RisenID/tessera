@@ -154,9 +154,7 @@ class SettingsPage(QWidget):
         features.add(features_title)
 
         features_note = QLabel(
-            "Turn off what you do not use. Each one costs something on the "
-            "phone — a permission, a poll or a subscription — so switching it "
-            "off here stops the work rather than just hiding the page."
+            "Turning one off stops the work on the phone, not just the page here."
         )
         features_note.setObjectName("Muted")
         features_note.setWordWrap(True)
@@ -183,12 +181,7 @@ class SettingsPage(QWidget):
         self.clipboard_mode.setCurrentIndex(max(index, 0))
         screen.add(self._labelled("Sharing", self.clipboard_mode))
 
-        clip_note = QLabel(
-            "Copying on either device makes the text available on the other. "
-            "The phone needs Shizuku for this: Android does not let a background "
-            "app read the clipboard, so Tessera reads it with shell access, the "
-            "same way it starts the hotspot."
-        )
+        clip_note = QLabel("Needs Shizuku on the phone.")
         clip_note.setObjectName("Muted")
         clip_note.setWordWrap(True)
         screen.add(clip_note)
@@ -202,16 +195,8 @@ class SettingsPage(QWidget):
         screen.add(self._labelled("Quality", self.codec_choice))
 
         codec_note = QLabel(
-            "The phone picks from what this computer offers, and offered "
-            "everything it does not pick the best one — a Galaxy S25 settles "
-            "on aptX even with LDAC available. So “best the phone offers” "
-            "offers one codec and SBC, choosing it from the list the phone "
-            "sends when it connects. Picking a codec by hand forces it, and a "
-            "phone that cannot manage it falls back to plain SBC — worse than "
-            "anything it would have chosen itself.\n\n"
-            "The Audio page shows which codec is actually in use while the "
-            "phone is playing. Saving a change restarts the audio service, "
-            "which silences this computer for about a second."
+            "Forcing a codec the phone cannot manage drops it to plain SBC. "
+            "Saving silences this computer for a second."
         )
         codec_note.setObjectName("Muted")
         codec_note.setWordWrap(True)
@@ -323,8 +308,7 @@ class SettingsPage(QWidget):
         if not ldacdec.available():
             self.ldac_action.setVisible(False)
             self.ldac_note.setText(
-                "The setup script did not come with this copy of Tessera, so "
-                "LDAC cannot be set up from here."
+                "The setup script is not installed with this copy of Tessera."
             )
             return
 
@@ -339,36 +323,22 @@ class SettingsPage(QWidget):
         if installed:
             self.ldac_action.setText("Rebuild")
             self.ldac_note.setText(
-                "This computer can receive LDAC: 909 kbit/s at up to 96 kHz, "
-                "against aptX's 352 at 44.1. If the phone still picks something "
-                "else the choice is its own — open Developer options → Bluetooth "
-                "audio codec on the phone while it is connected.\n\n"
-                "Rebuild after a PipeWire update. The codec plugin is tied to "
-                "the release it was built from and is simply ignored if they "
-                "stop matching, which shows up as LDAC quietly disappearing."
+                "909 kbit/s at up to 96 kHz, against aptX's 352 at 44.1. "
+                "Rebuild after a PipeWire update."
             )
         elif missing:
             self.ldac_action.setText("Install build tools")
             self.ldac_note.setText(
-                "PipeWire ships an LDAC encoder and no decoder, so this computer "
-                "can send LDAC to headphones and cannot receive it from a phone. "
-                "Tessera can build one — PipeWire's own decode path is already "
-                "written, it is only ever compiled out for want of a library.\n\n"
-                "Building needs " + ", ".join(missing) + ", which installing "
-                "asks for your password. The same thing in a terminal is:\n"
+                "No distribution ships an LDAC decoder; Tessera can build one. "
+                "Installing the build tools asks for your password:\n"
                 + ldacdec.install_command(missing)
             )
         else:
             self.ldac_action.setText("Set up LDAC")
             self.ldac_note.setText(
-                "PipeWire ships an LDAC encoder and no decoder, so this computer "
-                "can send LDAC to headphones and cannot receive it from a phone. "
-                "Setting it up compiles a decoder and rebuilds PipeWire's LDAC "
-                "plugin against the release you are running, installing both "
-                "under your home directory — nothing the package manager owns "
-                "is touched, and Remove puts it all back.\n\n"
-                "The first run downloads the PipeWire sources, so give it a "
-                "minute. Your audio stops for a moment at the end."
+                "No distribution ships an LDAC decoder; Tessera can build one "
+                "under your home directory. The first run takes a minute and "
+                "ends with a brief silence."
             )
 
     def _ldac_action(self) -> None:

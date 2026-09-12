@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        9%{?dist}
+Release:        10%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,26 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-10
+- The interface follows the desktop instead of imposing its own look. Colours
+  and the accent come from the platform palette, icons from the icon theme,
+  font sizes from the desktop font. Buttons, checkboxes, combo boxes, text
+  fields and scrollbars are drawn by the platform style -- the old stylesheet
+  restyled all of them, and its checkbox rule dropped the checkmark, so a
+  checked box was a blue square indistinguishable from an unchecked one.
+- Cards are a shade lighter than the window rather than taking Breeze's view
+  colour, which is darker and made them look like holes in the page.
+- One-time passcodes are copyable wherever they appear, not only on the
+  notifications page: the overview shows the newest one with a Copy button,
+  and a message carrying a code gets a copy button inside the chain.
+- Notifications gained the Refresh every other data page already had, and a
+  phone number on the calls page can be copied like any other text.
+- The quick row no longer mixes toggles and actions indistinguishably --
+  toggles are checkable and get the platform's checked state, and the two
+  groups are separated.
+- In-app explanations are one or two sentences. The reasoning moved to
+  docs/DESIGN.md, where it can be read rather than crowding the window.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-9
 - Install advice now names the right package and the right command for the
   distribution it is running on. It said "sudo dnf install android-tools" and

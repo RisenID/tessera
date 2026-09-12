@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -85,6 +86,20 @@ class CallRow(Card):
         row.addLayout(text, 1)
 
         if number:
+            copy = QPushButton()
+            copy.setObjectName("Ghost")
+            copy.setToolTip(f"Copy {number}")
+            copy.setCursor(Qt.CursorShape.PointingHandCursor)
+            icon = QIcon.fromTheme("edit-copy")
+            if icon.isNull():
+                copy.setText("Copy")
+            else:
+                copy.setIcon(icon)
+            copy.clicked.connect(
+                lambda _c=False, value=number: QGuiApplication.clipboard().setText(value)
+            )
+            row.addWidget(copy, 0, Qt.AlignmentFlag.AlignVCenter)
+
             call = QPushButton("Call")
             call.setObjectName("Ghost")
             call.clicked.connect(lambda: on_dial(number))
@@ -94,13 +109,7 @@ class CallRow(Card):
 
 
 class CallsPage(QWidget):
-    """The live call, and the ones before it.
-
-    Answering and hanging up go through Telecom on the phone, which needs only
-    an ordinary runtime permission. Call audio arrives on this computer through
-    Bluetooth, so the two features are separate: a call can be controlled here
-    while its audio stays on the phone.
-    """
+    """The live call, and the ones before it."""
 
     def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
         super().__init__(parent)

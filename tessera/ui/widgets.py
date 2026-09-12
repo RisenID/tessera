@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -16,6 +23,27 @@ from PySide6.QtWidgets import (
 )
 
 from .theme import RADIUS, SPACE, Palette
+
+
+def ghost_button(label: str, icon_name: str = "") -> QPushButton:
+    """A quiet header action, with the desktop's icon when it has one."""
+    button = QPushButton(label)
+    button.setObjectName("Ghost")
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    if icon_name:
+        from PySide6.QtGui import QIcon
+
+        icon = QIcon.fromTheme(icon_name)
+        if not icon.isNull():
+            button.setIcon(icon)
+    return button
+
+
+def _scaled(factor: float) -> str:
+    """A font size relative to the desktop's own, as a QSS value."""
+    app = QGuiApplication.instance()
+    base = app.font().pointSizeF() if app else 10.0
+    return f"{(base if base > 0 else 10.0) * factor:.1f}pt"
 
 
 class Card(QFrame):
@@ -221,13 +249,7 @@ class Toast(QLabel):
 
 
 class Tile(Card):
-    """A dashboard block: a titled card with an optional action in the corner.
-
-    The dashboard exists so the things people check constantly -- what just
-    arrived, who called, what is playing -- are visible without navigating.
-    Each tile therefore shows a handful of rows and defers the rest to its full
-    page rather than trying to be that page.
-    """
+    """A dashboard block: a titled card with an optional action in the corner."""
 
     actionClicked = Signal()
 
@@ -349,3 +371,46 @@ def divider() -> QFrame:
     line.setFixedHeight(1)
     line.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     return line
+
+
+class OtpCard(Card):
+    """A passcode, big and copyable in one click.
+
+    Shared, not owned by the notifications page: a code is just as useful from
+    the overview and from the message it arrived in.
+    """
+
+    copied = Signal(str)
+
+    def __init__(self, code: str, source: str, palette: Palette, parent: QWidget | None = None):
+        super().__init__(parent, flat=True, padding=SPACE["md"])
+        self.code = code
+        layout = QHBoxLayout()
+        layout.setSpacing(SPACE["md"])
+
+        text = QVBoxLayout()
+        text.setSpacing(0)
+        value = QLabel(code)
+        value.setStyleSheet(
+            f"font-size: {_scaled(2.1)}; font-weight: 700; letter-spacing: 4px;"
+            f"color: {palette.text}; font-family: monospace;"
+        )
+        value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        text.addWidget(value)
+
+        origin = QLabel(source)
+        origin.setObjectName("Muted")
+        text.addWidget(origin)
+        layout.addLayout(text, 1)
+
+        button = QPushButton("Copy")
+        button.setObjectName("Copy")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(self._copy)
+        layout.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.body().addLayout(layout)
+
+    def _copy(self) -> None:
+        QGuiApplication.clipboard().setText(self.code)
+        self.copied.emit(self.code)

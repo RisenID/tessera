@@ -17,46 +17,17 @@ from PySide6.QtWidgets import (
 from ...core.hub import Hub
 from ...core.models import Notification
 from ..theme import SPACE, Palette
-from ..widgets import Avatar, Card, EmptyState, Pill, Toast, divider, heading
-
-
-class OtpCard(Card):
-    """A passcode, big and copyable. The whole point is one click."""
-
-    copied = Signal(str)
-
-    def __init__(self, code: str, source: str, palette: Palette, parent: QWidget | None = None):
-        super().__init__(parent, flat=True, padding=SPACE["md"])
-        self.code = code
-        layout = QHBoxLayout()
-        layout.setSpacing(SPACE["md"])
-
-        text = QVBoxLayout()
-        text.setSpacing(0)
-        value = QLabel(code)
-        value.setStyleSheet(
-            f"font-size: 30px; font-weight: 700; letter-spacing: 4px; color: {palette.text};"
-            "font-family: 'JetBrains Mono', monospace;"
-        )
-        value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        text.addWidget(value)
-
-        origin = QLabel(source)
-        origin.setObjectName("Muted")
-        text.addWidget(origin)
-        layout.addLayout(text, 1)
-
-        button = QPushButton("Copy")
-        button.setObjectName("Copy")
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.clicked.connect(self._copy)
-        layout.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        self.body().addLayout(layout)
-
-    def _copy(self) -> None:
-        QGuiApplication.clipboard().setText(self.code)
-        self.copied.emit(self.code)
+from ..widgets import (
+    Avatar,
+    Card,
+    EmptyState,
+    OtpCard,
+    Pill,
+    Toast,
+    divider,
+    ghost_button,
+    heading,
+)
 
 
 class NotificationCard(Card):
@@ -170,8 +141,11 @@ class NotificationsPage(QWidget):
         self.count_pill.apply(palette)
         header.addWidget(self.count_pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        clear = QPushButton("Dismiss all")
-        clear.setObjectName("Ghost")
+        refresh = ghost_button("Refresh", "view-refresh")
+        refresh.clicked.connect(self.hub.refresh_notifications)
+        header.addWidget(refresh, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        clear = ghost_button("Dismiss all", "edit-clear-all")
         clear.clicked.connect(self._dismiss_all)
         header.addWidget(clear, 0, Qt.AlignmentFlag.AlignVCenter)
         outer.addLayout(header)

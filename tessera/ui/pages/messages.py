@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QSizePolicy,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...core import otp
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
 
@@ -116,6 +118,10 @@ class DaySeparator(QWidget):
         layout.addStretch(1)
 
 
+def _copy_code(code: str) -> None:
+    QGuiApplication.clipboard().setText(code)
+
+
 class Bubble(QWidget):
     """One message, aligned by direction.
 
@@ -131,6 +137,7 @@ class Bubble(QWidget):
         outgoing: bool,
         palette: Palette,
         show_time: bool = True,
+        code: str = "",
         grouped: bool = False,
         parent=None,
     ):
@@ -190,6 +197,26 @@ class Bubble(QWidget):
         if not outgoing:
             row.addStretch(1)
         outer.addLayout(row)
+
+        # A passcode in the message itself is copyable here, not only from the
+        # notifications page -- the same code, the same click, wherever you
+        # happen to be reading it.
+        if code:
+            copy_row = QHBoxLayout()
+            copy_row.setContentsMargins(0, 2, 0, 0)
+            copy = QPushButton(f"Copy {code}")
+            copy.setObjectName("Ghost")
+            copy.setCursor(Qt.CursorShape.PointingHandCursor)
+            icon = QIcon.fromTheme("edit-copy")
+            if not icon.isNull():
+                copy.setIcon(icon)
+            copy.clicked.connect(lambda _c=False, value=code: _copy_code(value))
+            if outgoing:
+                copy_row.addStretch(1)
+            copy_row.addWidget(copy)
+            if not outgoing:
+                copy_row.addStretch(1)
+            outer.addLayout(copy_row)
 
         if show_time and when:
             stamp = QLabel(datetime.fromtimestamp(when / 1000).strftime("%H:%M"))
@@ -413,14 +440,18 @@ class MessagesPage(QWidget):
             # is not repeated six times over.
             show_time = not same_run(following, when)
 
+            body = message.get("body", "")
+            # Only what arrived: a code you sent is not one you need back.
+            found = None if outgoing else otp.find_code(body)
             self.transcript.addWidget(
                 Bubble(
-                    message.get("body", ""),
+                    body,
                     when,
                     outgoing,
                     self.palette_tokens,
                     show_time=show_time,
                     grouped=grouped,
+                    code=found.code if found else "",
                 ),
             )
 

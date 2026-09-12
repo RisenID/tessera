@@ -73,8 +73,7 @@ class DndPage(QWidget):
         desktop_card.body().addLayout(row)
 
         note = QLabel(
-            "Plasma notifications are silenced through the standard inhibition "
-            "interface, so anything you set here shows up in the system tray too."
+            "Changes here show up in the desktop's own notification controls."
         )
         note.setObjectName("Muted")
         note.setWordWrap(True)

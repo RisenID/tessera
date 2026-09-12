@@ -16,12 +16,7 @@ from ..widgets import Card, Pill, Toast, heading
 
 
 class AudioPage(QWidget):
-    """One page for both Bluetooth audio roles, because they share a radio.
-
-    Music and calls cannot run at once: Bluetooth carries either the high
-    quality one-way stream or the two-way telephone-quality one, never both.
-    The page makes that trade-off visible rather than hiding it.
-    """
+    """One page for both Bluetooth audio roles, because they share a radio."""
 
     #: The phone's state changes from the phone's side, so poll while visible.
     REFRESH_MS = 4000
@@ -95,12 +90,8 @@ class AudioPage(QWidget):
         mode.add(mode_title)
 
         explain = QLabel(
-            "Connecting on its own does not move any audio — track details and "
-            "call control work without it, so nothing already playing is "
-            "interrupted. Start a stream only when you want the sound here.\n\n"
-            "Bluetooth carries one at a time: music is high quality and one-way, "
-            "calls are two-way at telephone quality with this computer's "
-            "microphone live."
+            "Connecting moves no audio on its own. Music and calls cannot run "
+            "at once — Bluetooth carries one at a time."
         )
         explain.setObjectName("Muted")
         explain.setWordWrap(True)
@@ -195,11 +186,9 @@ class AudioPage(QWidget):
     def _read_state(self) -> tuple:
         """Gather Bluetooth and audio state off the GUI thread.
 
-        The audio state is read from what is actually happening -- whether the
-        media profile is connected, and whether a stream is flowing -- rather
-        than from PipeWire's profile. The profile is now always left ready to
-        receive, so reading it would claim the phone was playing here from the
-        moment it connected.
+        Read from what is happening -- is the media profile connected, is a
+        stream flowing -- not from PipeWire's profile, which is always left
+        ready to receive and so would claim playback the moment it connected.
         """
         device = bluetooth.find_phone(
             preferred_address=self.hub.config.bluetooth.address,
@@ -279,11 +268,9 @@ class AudioPage(QWidget):
     def _park(self) -> None:
         """Stop moving audio without disconnecting the phone.
 
-        Only the Bluetooth profile is dropped. Selecting PipeWire's silent
-        profile would also work for the moment, but WirePlumber remembers it
-        and restores it on the next connection, leaving the card unable to
-        accept the stream the phone offers -- which is what kept the audio
-        from ever arriving.
+        Only the Bluetooth profile is dropped; PipeWire's silent profile is
+        never selected -- WirePlumber remembers it and restores it on every
+        later connection, which is what stopped the audio arriving at all.
         """
         if self._device is None:
             return
@@ -500,11 +487,8 @@ class AudioPage(QWidget):
     def _explain_silence(self) -> str:
         """Say why no sound is arriving, distinguishing the causes.
 
-        Guessing here is what produced the wrong advice before: the app told
-        the user to switch the phone's output over when the phone had already
-        been switched over and simply was not playing anything. BlueZ knows
-        which case it is — a media transport exists only once the phone has
-        this computer as an output — so ask it instead of assuming.
+        A media transport exists only once the phone has this computer as an
+        output, so BlueZ can tell "not selected" from "selected but paused".
         """
         self._watch_for_stream()
         state = bluetooth.audio_transport(self._address)

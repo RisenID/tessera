@@ -207,9 +207,7 @@ class ScreenPage(QWidget):
             )
         elif not self.hub.serial:
             self.mirror_status.setText(
-                "No phone reachable over adb. Screen control needs adb, because "
-                "injecting touches requires a permission Android does not give "
-                "ordinary apps."
+                "No phone reachable over adb, which screen control needs."
             )
         else:
             open_windows = len(self.hub.mirrors.sessions)

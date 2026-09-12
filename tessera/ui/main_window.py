@@ -34,20 +34,24 @@ from .pages.webcam import WebcamPage
 from .theme import SPACE, Palette
 from .widgets import Pill
 
-#: name, icon, page class, and the feature switch that governs it. Settings has
-#: no switch, because it is where the switches live.
+#: name, icon theme name, text fallback, page class, and the feature switch
+#: that governs it. Settings has no switch: it is where the switches live.
+#:
+#: Icon names are the freedesktop ones, so the desktop's own icon theme draws
+#: them. The emoji are only for a system with no usable theme.
 PAGES = [
-    ("Overview", "▦", HomePage, None),
-    ("Notifications", "🔔", NotificationsPage, "notifications"),
-    ("Calls", "📞", CallsPage, "calls"),
-    ("Messages", "💬", MessagesPage, "messages"),
-    ("Photos", "🖼", PhotosPage, "photos"),
-    ("Screen", "📱", ScreenPage, "screen"),
-    ("Webcam", "🎥", WebcamPage, "webcam"),
-    ("Audio", "🎧", AudioPage, "bluetooth_audio"),
-    ("Do Not Disturb", "🌙", DndPage, "dnd_sync"),
-    ("Hotspot", "📶", HotspotPage, "hotspot"),
-    ("Settings", "⚙", SettingsPage, None),
+    ("Overview", "go-home", "▦", HomePage, None),
+    ("Notifications", "notifications", "🔔",
+     NotificationsPage, "notifications"),
+    ("Calls", "call-start", "📞", CallsPage, "calls"),
+    ("Messages", "mail-message", "💬", MessagesPage, "messages"),
+    ("Photos", "folder-pictures", "🖼", PhotosPage, "photos"),
+    ("Screen", "smartphone", "📱", ScreenPage, "screen"),
+    ("Webcam", "camera-web", "🎥", WebcamPage, "webcam"),
+    ("Audio", "audio-headphones", "🎧", AudioPage, "bluetooth_audio"),
+    ("Do Not Disturb", "notifications-disabled", "🌙", DndPage, "dnd_sync"),
+    ("Hotspot", "network-wireless-hotspot", "📶", HotspotPage, "hotspot"),
+    ("Settings", "settings-configure", "⚙", SettingsPage, None),
 ]
 
 
@@ -71,7 +75,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_sidebar())
 
         self.stack = QStackedWidget()
-        for _name, _icon, page_class, _feature in PAGES:
+        for _name, _icon, _glyph, page_class, _feature in PAGES:
             page = page_class(hub, palette)
             self.stack.addWidget(page)
             if isinstance(page, SettingsPage):
@@ -130,8 +134,14 @@ class MainWindow(QMainWindow):
         self.nav = QListWidget()
         self.nav.setObjectName("Nav")
         self.nav.setIconSize(QSize(18, 18))
-        for name, icon, _page, _feature in PAGES:
-            self.nav.addItem(QListWidgetItem(f"{icon}   {name}"))
+        for name, icon_name, glyph, _page, _feature in PAGES:
+            icon = QIcon.fromTheme(icon_name)
+            item = QListWidgetItem(name)
+            if icon.isNull():
+                item.setText(f"{glyph}   {name}")
+            else:
+                item.setIcon(icon)
+            self.nav.addItem(item)
         self.nav.currentRowChanged.connect(self._change_page)
         layout.addWidget(self.nav, 1)
 
@@ -164,7 +174,7 @@ class MainWindow(QMainWindow):
         obvious bug report, so the nav reflects what is actually available.
         """
         features = self.hub.config.features
-        for index, (_name, _icon, _page, feature) in enumerate(PAGES):
+        for index, (_name, _icon, _glyph, _page, feature) in enumerate(PAGES):
             item = self.nav.item(index)
             if item is None:
                 continue
@@ -180,7 +190,7 @@ class MainWindow(QMainWindow):
 
     def show_page(self, name: str) -> None:
         """Switch to a page by name, ignoring one that is switched off."""
-        for index, (page_name, _icon, _page, _feature) in enumerate(PAGES):
+        for index, (page_name, _icon, _glyph, _page, _feature) in enumerate(PAGES):
             if page_name != name:
                 continue
             item = self.nav.item(index)
@@ -252,7 +262,7 @@ class MainWindow(QMainWindow):
 
     def _mirror_from_tray(self) -> None:
         self.nav.setCurrentRow(
-            [name for name, _i, _p, _f in PAGES].index("Screen")
+            [name for name, _i, _g, _p, _f in PAGES].index("Screen")
         )
         self._restore()
 

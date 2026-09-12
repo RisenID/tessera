@@ -1,8 +1,7 @@
-"""Visual design tokens and the application stylesheet.
+"""Colours, spacing and the application stylesheet.
 
-Kept in one place so every page draws from the same palette, spacing scale and
-radius set. Colours are defined as tokens rather than sprinkled through widget
-code, which is what keeps the light and dark variants honest.
+Colours come from the platform palette; standard controls are left to the
+platform style. See docs/DESIGN.md.
 """
 
 from __future__ import annotations
@@ -71,15 +70,58 @@ LIGHT = Palette(
 
 #: 4px base spacing scale, referenced by name so layouts stay consistent.
 SPACE = {"xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "xxl": 32}
-RADIUS = {"sm": 6, "md": 10, "lg": 14, "pill": 999}
+#: Breeze rounds at 4px; matching it is most of looking native.
+RADIUS = {"sm": 3, "md": 5, "lg": 8, "pill": 999}
+
+
+#: Breeze's semantic colours, used when the platform reports none. These read
+#: correctly on light and dark alike.
+_POSITIVE = "#27AE60"
+_NEUTRAL = "#F67400"
+_NEGATIVE = "#DA4453"
+
+
+def _luminance(colour: QColor) -> float:
+    return (0.299 * colour.red() + 0.587 * colour.green() + 0.114 * colour.blue()) / 255
+
+
+def _hex(colour: QColor) -> str:
+    return colour.name()
 
 
 def detect_palette(app: QApplication) -> Palette:
-    """Follow the desktop's light/dark preference."""
-    window = app.palette().color(QPalette.ColorRole.Window)
-    # Perceived luminance; anything dim enough gets the dark palette.
-    luminance = (0.299 * window.red() + 0.587 * window.green() + 0.114 * window.blue()) / 255
-    return DARK if luminance < 0.5 else LIGHT
+    """Build a palette from the desktop's own colours, accent included."""
+    system = app.palette()
+    window = system.color(QPalette.ColorRole.Window)
+    if not window.isValid():
+        return DARK
+    dark = _luminance(window) < 0.5
+    fallback = DARK if dark else LIGHT
+
+    text = system.color(QPalette.ColorRole.WindowText)
+
+    accent = system.color(QPalette.ColorRole.Highlight)
+    disabled = system.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText)
+
+    return Palette(
+        name="dark" if dark else "light",
+        bg=_hex(window),
+        # A shade lighter than the window, so cards read as raised. The view
+        # colour would be wrong: Breeze makes it *darker* than the window, and
+        # cards drawn in it looked like holes punched in the page.
+        surface=mix(_hex(window), _hex(text), 0.05),
+        surface_alt=mix(_hex(window), _hex(text), 0.06),
+        surface_hover=mix(_hex(window), _hex(text), 0.11),
+        border=mix(_hex(window), _hex(text), 0.18),
+        text=_hex(text),
+        muted=_hex(disabled) if disabled.isValid() else fallback.muted,
+        accent=_hex(accent) if accent.isValid() else fallback.accent,
+        accent_text=_hex(system.color(QPalette.ColorRole.HighlightedText)),
+        success=_POSITIVE,
+        warning=_NEUTRAL,
+        danger=_NEGATIVE,
+        shadow="rgba(0, 0, 0, 90)" if dark else "rgba(0, 0, 0, 28)",
+    )
 
 
 def mix(colour: str, other: str, amount: float) -> str:
@@ -94,16 +136,20 @@ def mix(colour: str, other: str, amount: float) -> str:
 
 
 def stylesheet(p: Palette) -> str:
-    """The whole application's QSS, generated from *p*."""
-    accent_hover = mix(p.accent, "#FFFFFF" if p.dark else "#000000", 0.12)
-    accent_soft = mix(p.surface, p.accent, 0.16)
-    return f"""
-* {{
-    font-family: "Inter", "Cantarell", "Noto Sans", sans-serif;
-    font-size: 14px;
-    color: {p.text};
-}}
+    """The application's QSS: the sidebar, cards and semantic labels only.
 
+    Standard controls are left to the platform style. See docs/DESIGN.md.
+    """
+    app = QApplication.instance()
+    base = app.font().pointSizeF() if app else 10.0
+    if base <= 0:
+        base = 10.0
+    accent_soft = mix(p.bg, p.accent, 0.18)
+
+    def pt(scale: float) -> str:
+        return f"{base * scale:.1f}pt"
+
+    return f"""
 QWidget#Root, QMainWindow {{
     background: {p.bg};
 }}
@@ -111,58 +157,47 @@ QWidget#Root, QMainWindow {{
 /* ---------- sidebar ---------- */
 
 QWidget#Sidebar {{
-    background: {p.surface};
+    background: {p.surface_alt};
+    border: none;
     border-right: 1px solid {p.border};
 }}
 
-QLabel#BrandName {{
-    font-size: 17px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
-}}
-
-QLabel#BrandSub {{
-    color: {p.muted};
-    font-size: 12px;
-}}
+QLabel#BrandName {{ font-size: {pt(1.2)}; font-weight: 700; }}
+QLabel#BrandSub {{ color: {p.muted}; font-size: {pt(0.85)}; }}
 
 QListWidget#Nav {{
     background: transparent;
     border: none;
     outline: none;
-    padding: {SPACE['sm']}px;
+    padding: {SPACE['xs']}px;
 }}
 
 QListWidget#Nav::item {{
-    padding: 10px 12px;
-    margin: 2px 0;
-    border-radius: {RADIUS['md']}px;
-    color: {p.muted};
-}}
-
-QListWidget#Nav::item:hover {{
-    background: {p.surface_hover};
+    padding: 7px 10px;
+    margin: 1px 0;
+    border-radius: {RADIUS['sm']}px;
     color: {p.text};
 }}
 
+QListWidget#Nav::item:hover {{ background: {p.surface_hover}; }}
+
 QListWidget#Nav::item:selected {{
-    background: {accent_soft};
-    color: {p.accent};
-    font-weight: 600;
+    background: {p.accent};
+    color: {p.accent_text};
 }}
 
-/* ---------- cards and surfaces ---------- */
+/* ---------- cards ---------- */
 
 QFrame#Card {{
     background: {p.surface};
     border: 1px solid {p.border};
-    border-radius: {RADIUS['lg']}px;
+    border-radius: {RADIUS['md']}px;
 }}
 
 QFrame#CardFlat {{
     background: {p.surface_alt};
     border: 1px solid transparent;
-    border-radius: {RADIUS['md']}px;
+    border-radius: {RADIUS['sm']}px;
 }}
 
 QFrame#Divider {{
@@ -171,141 +206,62 @@ QFrame#Divider {{
     border: none;
 }}
 
-QLabel#Title {{ font-size: 22px; font-weight: 700; }}
-QLabel#Subtitle {{ color: {p.muted}; font-size: 13px; }}
-QLabel#SectionTitle {{ font-size: 15px; font-weight: 650; }}
+/* ---------- semantic labels ---------- */
+
+QLabel#Title {{ font-size: {pt(1.55)}; font-weight: 700; }}
+QLabel#Subtitle {{ color: {p.muted}; font-size: {pt(0.95)}; }}
+QLabel#SectionTitle {{ font-size: {pt(1.1)}; font-weight: 650; }}
 QLabel#Muted {{ color: {p.muted}; }}
-QLabel#Mono {{ font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 12px; }}
+QLabel#Mono {{ font-family: monospace; }}
 
-/* ---------- buttons ---------- */
-
-QPushButton {{
-    background: {p.surface_alt};
-    border: 1px solid {p.border};
-    border-radius: {RADIUS['md']}px;
-    padding: 8px 14px;
-    color: {p.text};
-}}
-
-QPushButton:hover {{ background: {p.surface_hover}; }}
-QPushButton:pressed {{ background: {mix(p.surface_alt, p.accent, 0.2)}; }}
-QPushButton:disabled {{ color: {p.muted}; background: {p.surface}; }}
+/* ---------- the three buttons that carry meaning ---------- */
 
 QPushButton#Primary {{
+    padding: 6px 14px;
+    border-radius: {RADIUS['sm']}px;
     background: {p.accent};
     border: 1px solid {p.accent};
     color: {p.accent_text};
     font-weight: 600;
 }}
-QPushButton#Primary:hover {{ background: {accent_hover}; border-color: {accent_hover}; }}
-QPushButton#Primary:disabled {{ background: {mix(p.surface, p.accent, 0.35)}; border-color: transparent; }}
+QPushButton#Primary:hover {{
+    background: {mix(p.accent, p.text, 0.15)};
+    border-color: {mix(p.accent, p.text, 0.15)};
+}}
+QPushButton#Primary:disabled {{
+    background: {mix(p.bg, p.accent, 0.3)};
+    border-color: transparent;
+    color: {p.muted};
+}}
 
-QPushButton#Danger {{ color: {p.danger}; border-color: {mix(p.border, p.danger, 0.4)}; }}
-QPushButton#Danger:hover {{ background: {mix(p.surface, p.danger, 0.12)}; }}
+QPushButton#Danger {{ color: {p.danger}; }}
+QPushButton#Danger:hover {{ background: {mix(p.surface, p.danger, 0.15)}; }}
 
-QPushButton#Ghost {{ background: transparent; border: none; color: {p.muted}; padding: 6px 8px; }}
+QPushButton#Ghost {{ background: transparent; border: none; color: {p.muted}; }}
 QPushButton#Ghost:hover {{ background: {p.surface_hover}; color: {p.text}; }}
 
 QPushButton#Copy {{
     background: {p.accent};
+    border: 1px solid {p.accent};
     color: {p.accent_text};
-    border: none;
-    border-radius: {RADIUS['md']}px;
-    padding: 10px 18px;
     font-weight: 700;
+    padding: 7px 16px;
 }}
-QPushButton#Copy:hover {{ background: {accent_hover}; }}
-
-/* ---------- inputs ---------- */
-
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {{
-    background: {p.surface_alt};
-    border: 1px solid {p.border};
-    border-radius: {RADIUS['md']}px;
-    padding: 8px 10px;
-    selection-background-color: {p.accent};
-    selection-color: {p.accent_text};
+QPushButton#Copy:hover {{
+    background: {mix(p.accent, p.text, 0.15)};
+    border-color: {mix(p.accent, p.text, 0.15)};
 }}
 
-QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
-    border-color: {p.accent};
-}}
+/* ---------- scroll areas ---------- */
 
-QComboBox::drop-down {{ border: none; width: 22px; }}
-QComboBox QAbstractItemView {{
-    background: {p.surface};
-    border: 1px solid {p.border};
-    border-radius: {RADIUS['md']}px;
-    selection-background-color: {accent_soft};
-    selection-color: {p.accent};
-    padding: 4px;
-}}
-
-/* ---------- lists ---------- */
-
-QListWidget, QListView, QScrollArea {{
-    background: transparent;
-    border: none;
-    outline: none;
-}}
-
-/* The viewport is a separate child widget and keeps the default palette
-   background unless told otherwise, which leaves a pale panel inside a dark
-   window. */
+/* Cards must sit on the window colour, and a scroll area's viewport is a
+   separate child that keeps its own background unless told otherwise. */
+QScrollArea {{ background: transparent; border: none; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QAbstractScrollArea::viewport {{ background: transparent; }}
 
-QScrollBar:vertical {{
-    background: transparent;
-    width: 10px;
-    margin: 2px;
+QComboBox QAbstractItemView {{
+    selection-background-color: {p.accent};
+    selection-color: {p.accent_text};
 }}
-QScrollBar::handle:vertical {{
-    background: {mix(p.surface, p.text, 0.18)};
-    border-radius: 5px;
-    min-height: 30px;
-}}
-QScrollBar::handle:vertical:hover {{ background: {mix(p.surface, p.text, 0.3)}; }}
-QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
-
-QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
-QScrollBar::handle:horizontal {{
-    background: {mix(p.surface, p.text, 0.18)};
-    border-radius: 5px;
-    min-width: 30px;
-}}
-
-/* ---------- misc ---------- */
-
-QToolTip {{
-    background: {p.surface_alt};
-    color: {p.text};
-    border: 1px solid {p.border};
-    border-radius: {RADIUS['sm']}px;
-    padding: 6px 8px;
-}}
-
-QCheckBox::indicator, QRadioButton::indicator {{
-    width: 17px; height: 17px;
-    border: 1px solid {p.border};
-    border-radius: 5px;
-    background: {p.surface_alt};
-}}
-QCheckBox::indicator:checked {{
-    background: {p.accent};
-    border-color: {p.accent};
-    image: none;
-}}
-
-QProgressBar {{
-    background: {p.surface_alt};
-    border: none;
-    border-radius: 4px;
-    height: 6px;
-    text-align: center;
-}}
-QProgressBar::chunk {{ background: {p.accent}; border-radius: 4px; }}
-
-QSplitter::handle {{ background: {p.border}; width: 1px; }}
 """

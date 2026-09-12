@@ -1,19 +1,14 @@
-"""The dashboard: everything worth glancing at, without navigating.
-
-Phone Link and Sefirah both put the frequently-checked things on one surface —
-what just arrived, who called, what is playing, and the handful of switches
-people actually toggle. Detail lives on the dedicated pages; this is the
-overview, so a tile shows a few rows and hands off rather than duplicating a
-whole page.
-"""
+"""The overview: everything worth glancing at, without navigating."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
+from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -26,7 +21,7 @@ from PySide6.QtWidgets import (
 from ...backends.mpris import MprisPlayer
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
-from ..widgets import Card, Tile, Toast, heading, line_row
+from ..widgets import Card, OtpCard, Tile, Toast, heading, line_row
 
 
 def _ago(millis: int) -> str:
@@ -41,32 +36,18 @@ def _ago(millis: int) -> str:
     return moment.strftime("%d %b")
 
 
-class QuickToggle(QPushButton):
-    """A chip-sized switch for the things people flip constantly."""
-
-    def __init__(self, label: str, palette: Palette, parent=None):
-        super().__init__(label, parent)
-        self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._palette = palette
-        self.toggled.connect(self._restyle)
-        self._restyle(False)
-
-    def _restyle(self, on: bool) -> None:
-        palette = self._palette
-        if on:
-            style = (
-                f"background: {palette.accent}; color: {palette.accent_text};"
-                f"border: 1px solid {palette.accent};"
-            )
-        else:
-            style = (
-                f"background: {palette.surface_alt}; color: {palette.muted};"
-                f"border: 1px solid {palette.border};"
-            )
-        self.setStyleSheet(
-            style + f"border-radius: {RADIUS['pill']}px; padding: 7px 16px; font-weight: 600;"
-        )
+def quick_button(label: str, icon_name: str, checkable: bool = False) -> QPushButton:
+    """A button for the quick row; checkable ones get the platform's own
+    checked state, so a toggle never looks like a plain action."""
+    button = QPushButton(label)
+    icon = QIcon.fromTheme(icon_name)
+    if not icon.isNull():
+        button.setIcon(icon)
+    button.setCheckable(checkable)
+    button.setCursor(Qt.CursorShape.PointingHandCursor)
+    if checkable:
+        button.setToolTip(f"{label} — on or off")
+    return button
 
 
 class HomePage(QWidget):
@@ -103,6 +84,13 @@ class HomePage(QWidget):
 
         outer.addWidget(self._build_quick_row())
 
+        # The newest passcode, copyable without leaving the overview. It used
+        # to exist only on the notifications page.
+        self.otp_card: OtpCard | None = None
+        self.otp_slot = QVBoxLayout()
+        self.otp_slot.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self.otp_slot)
+
         grid = QGridLayout()
         grid.setSpacing(SPACE["lg"])
         grid.setColumnStretch(0, 1)
@@ -136,6 +124,7 @@ class HomePage(QWidget):
         self.toast = Toast(self)
 
         hub.notificationsChanged.connect(self.refresh_notifications)
+        hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.callChanged.connect(lambda _c: self.refresh_calls())
         hub.connectionChanged.connect(lambda _c: self.refresh_all())
         hub.dndChanged.connect(self._sync_toggles)
@@ -165,11 +154,13 @@ class HomePage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(SPACE["sm"])
 
-        self.dnd_toggle = QuickToggle("Do Not Disturb", self.palette_tokens)
+        # Toggles first, then a separator, then the actions -- so the two
+        # kinds are not silently mixed in one undifferentiated row.
+        self.dnd_toggle = quick_button("Do Not Disturb", "notifications-disabled", True)
         self.dnd_toggle.clicked.connect(self._toggle_dnd)
         row.addWidget(self.dnd_toggle)
 
-        self.clipboard_toggle = QuickToggle("Clipboard", self.palette_tokens)
+        self.clipboard_toggle = quick_button("Clipboard", "edit-paste", True)
         self.clipboard_toggle.setChecked(
             self.hub.config.features.clipboard
             and self.hub.config.clipboard.mode != "off"
@@ -177,15 +168,22 @@ class HomePage(QWidget):
         self.clipboard_toggle.clicked.connect(self._toggle_clipboard)
         row.addWidget(self.clipboard_toggle)
 
-        for label, page in (("Hotspot", "Hotspot"), ("Mirror screen", "Screen"),
-                            ("Webcam", "Webcam")):
-            button = QPushButton(label)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.VLine)
+        separator.setObjectName("Divider")
+        separator.setFixedWidth(1)
+        row.addWidget(separator)
+
+        for label, icon_name, page in (
+            ("Hotspot", "network-wireless-hotspot", "Hotspot"),
+            ("Mirror screen", "smartphone", "Screen"),
+            ("Webcam", "camera-web", "Webcam"),
+        ):
+            button = quick_button(label, icon_name)
             button.clicked.connect(lambda _c=False, p=page: self.openPage.emit(p))
             row.addWidget(button)
 
-        ring = QPushButton("Ring phone")
-        ring.setCursor(Qt.CursorShape.PointingHandCursor)
+        ring = quick_button("Ring phone", "audio-volume-high")
         ring.clicked.connect(self._ring)
         row.addWidget(ring)
 
@@ -240,9 +238,19 @@ class HomePage(QWidget):
         controls = QWidget()
         layout = QHBoxLayout(controls)
         layout.setContentsMargins(0, 0, 0, 0)
-        for label, action in (("⏮", "Previous"), ("⏯", "PlayPause"), ("⏭", "Next")):
-            button = QPushButton(label)
-            button.setFixedWidth(52)
+        for icon_name, glyph, action, tip in (
+            ("media-skip-backward", "⏮", "Previous", "Previous track"),
+            ("media-playback-start", "⏯", "PlayPause", "Play or pause"),
+            ("media-skip-forward", "⏭", "Next", "Next track"),
+        ):
+            button = QPushButton()
+            icon = QIcon.fromTheme(icon_name)
+            if icon.isNull():
+                button.setText(glyph)
+            else:
+                button.setIcon(icon)
+            button.setToolTip(tip)
+            button.setFixedWidth(44)
             button.clicked.connect(lambda _c=False, a=action: self._control(a))
             layout.addWidget(button)
         layout.addStretch(1)
@@ -287,7 +295,28 @@ class HomePage(QWidget):
 
     # -- tiles ---------------------------------------------------------------
 
+    def refresh_otp(self) -> None:
+        """Show the newest passcode, or nothing when there is none."""
+        if self.otp_card is not None:
+            self.otp_slot.removeWidget(self.otp_card)
+            self.otp_card.deleteLater()
+            self.otp_card = None
+        if not self.hub.config.features.otp:
+            return
+        codes = self.hub.recent_codes(limit=1)
+        if not codes:
+            return
+        match, note = codes[0]
+        self.otp_card = OtpCard(
+            match.code, f"{note.app} · {note.time_text}", self.palette_tokens
+        )
+        self.otp_card.copied.connect(
+            lambda _c: self.toast.show_message("Passcode copied", self.palette_tokens, "success")
+        )
+        self.otp_slot.addWidget(self.otp_card)
+
     def refresh_all(self) -> None:
+        self.refresh_otp()
         self.refresh_notifications()
         self.refresh_media()
         self.refresh_calls()

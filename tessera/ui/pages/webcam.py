@@ -1,9 +1,6 @@
 """Use the phone as a webcam.
 
-Every choice on this page is enumerated from the phone rather than hardcoded:
-the lenses it actually has, the resolutions its encoder accepts, and the frame
-rates each resolution can sustain. A fixed list would both hide what the phone
-can do (4K) and offer combinations it cannot honour (4K at 60fps).
+Every choice is enumerated from the phone rather than hardcoded.
 """
 
 from __future__ import annotations
@@ -137,11 +134,8 @@ class WebcamPage(QWidget):
 
         info = Card(self)
         note = QLabel(
-            "The stream is written to a v4l2loopback device, so it appears in "
-            "Firefox, Chrome, OBS, Zoom and anything else that lists cameras.\n\n"
-            "With the companion app connected the phone encodes video itself and "
-            "sends it over the existing link. Without it, scrcpy over adb is used "
-            "and only the fallback resolutions are available."
+            "Appears as an ordinary camera in Firefox, Chrome, OBS and Zoom. "
+            "Without the companion app only the fallback resolutions work."
         )
         note.setObjectName("Muted")
         note.setWordWrap(True)

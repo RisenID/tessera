@@ -126,10 +126,8 @@ class HotspotPage(QWidget):
         supported = [b for b in ("2.4", "5", "6") if b in bands] or ["2.4"]
         if "6" in supported or "5" in supported:
             self.band_hint.setText(
-                "The hotspot shares one radio with the phone's own Wi-Fi, so it "
-                "follows whichever band that connection uses. To hold 5 or 6 GHz, "
-                "turn the phone's Wi-Fi off first, or connect it to a network on "
-                "the same band."
+                "The band follows the phone's own Wi-Fi connection. Turn that "
+                "off to hold 5 or 6 GHz."
             )
             self.band_hint.setVisible(True)
         saved = self.hub.config.hotspot.band
@@ -146,13 +144,9 @@ class HotspotPage(QWidget):
 
     def _explainer(self) -> QLabel:
         label = QLabel(
-            "Android only lets system apps switch tethering on, which is why "
-            "Windows' Instant Hotspot works: Samsung ships Link to Windows as a "
-            "privileged app.\n\n"
-            "This app gets the same result two ways. If Shizuku is running on "
-            "your phone, the companion app borrows shell access and turns the "
-            "hotspot on with no interaction. Otherwise it falls back to adb, or "
-            "to opening the tethering panel for a single tap."
+            "With Shizuku running the phone takes the command directly. "
+            "Without it, Tessera opens tethering settings and joins once the "
+            "hotspot appears. See docs/DESIGN.md."
         )
         label.setObjectName("Muted")
         label.setWordWrap(True)
@@ -210,9 +204,8 @@ class HotspotPage(QWidget):
         """Open the tethering panel, then carry on once the hotspot appears."""
         if not self.hub.config.hotspot.ssid:
             self.status.setText(
-                "Fill in your hotspot's network name and password above first. "
-                "Your phone will not tell this computer what they are unless "
-                "Shizuku is running, and joining the network needs both."
+                "Fill in the network name and password above first — without "
+                "Shizuku the phone cannot tell this computer what they are."
             )
             return
 
@@ -236,9 +229,8 @@ class HotspotPage(QWidget):
             return
         self.hub.companion.send({"t": "hotspot_panel"})
         self.status.setText(
-            "Tethering settings are open on your phone — tap the hotspot "
-            "toggle. This computer will join on its own once it comes up. "
-            "Press Stop to give up waiting."
+            "Tap the hotspot toggle on your phone. Joining follows "
+            "automatically; Stop cancels."
         )
         self._waiting.start()
 
@@ -371,13 +363,9 @@ class HotspotPage(QWidget):
     # -- picking the link back up ------------------------------------------
 
     def _find_phone_again(self) -> None:
-        """Reconnect over the hotspot without the user doing anything.
+        """Reconnect over the hotspot: probe the addresses the phone gave.
 
-        Without this, joining the hotspot drops the companion link and it only
-        comes back when the usual search happens to guess right -- the address
-        it was paired on is gone, and mDNS frequently does not cross a soft AP.
-        The phone has already said where it is; this finds which of those
-        addresses this computer can actually reach.
+        See docs/PROTOCOL.md for why the phone has to send them first.
         """
         if not self._addresses:
             return
@@ -390,9 +378,8 @@ class HotspotPage(QWidget):
                 # Not a failure of the hotspot: the network is up and working,
                 # only the companion link has not come back. Say which.
                 self.status.setText(
-                    "Joined the hotspot, but the companion app did not answer on "
-                    "any of the addresses the phone gave. Check it is still "
-                    "running; the link will also come back on its own."
+                    "Joined, but the companion app did not answer. It will "
+                    "reconnect on its own."
                 )
                 return
             self.hub.companion.connect_to_phone(address, port)
