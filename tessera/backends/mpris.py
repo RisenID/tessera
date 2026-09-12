@@ -17,6 +17,7 @@ from typing import Any
 from PySide6.QtCore import QObject
 
 from ..core import platform
+from . import mpris_server
 from .dbus import HAVE_QTDBUS, QDBusMessage, QDBusVariant, session
 
 from ..core.proc import ManagedProcess, have, run
@@ -115,7 +116,13 @@ class MprisPlayer(QObject):
             return []
         reply = self._bus.interface().registeredServiceNames()
         names = reply.value() if hasattr(reply, "value") else []
-        return [n for n in names if n.startswith(MPRIS_PREFIX)]
+        # Not our own: Tessera publishes the phone as a player too, and reading
+        # that back would be this app talking to itself -- a transport button
+        # that sends a command to the thing that sent it.
+        return [
+            n for n in names
+            if n.startswith(MPRIS_PREFIX) and n != mpris_server.SERVICE
+        ]
 
     def find_player(self, address: str = "", device_name: str = "") -> str:
         """The MPRIS service for the phone, or '' when none is present.

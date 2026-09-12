@@ -32,9 +32,9 @@ for free.
 | Clipboard | Shizuku, polled every 2 s on the phone | **improve** — poll only with the screen on |
 | ~~Ring the phone~~ | Companion, alarm stream | **done** |
 | ~~adb never reconnects~~ | Remembered address, mDNS, the companion's own | **done** |
-| **Now playing on the desktop** | Read from BlueZ via mpris-proxy | **improve** — publish an MPRIS player |
-| **Desktop popups** | Tray balloon, no actions | **improve** — real notifications with reply |
-| **Screen mirroring, app windows** | scrcpy over adb | **improve** — auto-reconnect; long-term, over the link |
+| ~~Now playing on the desktop~~ | Published as our own MPRIS player | **done** |
+| ~~Desktop popups~~ | The desktop's server, with inline reply | **done** |
+| Screen mirroring, app windows | scrcpy over adb, reconnecting on its own | **partly done** — over the link is the remaining half |
 | **File transfer** | absent | **add** — the link already carries binaries |
 
 ---

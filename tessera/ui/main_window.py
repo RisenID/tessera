@@ -187,6 +187,8 @@ class MainWindow(QMainWindow):
         #: can be answered from the popup, and the tray everywhere else.
         self.popups = Popups(hub, self.tray, self)
         self.popups.opened.connect(self._on_popup_opened)
+        # The desktop's media applet has an "open this player" button.
+        hub.raiseRequested.connect(self._raise_window)
 
         hub.statusChanged.connect(self._set_status)
         hub.errorOccurred.connect(self._set_status)
@@ -362,11 +364,15 @@ class MainWindow(QMainWindow):
     def current_page_name(self) -> str:
         return self.tabs.tabData(self.tabs.currentIndex()) or ""
 
-    def _on_popup_opened(self, _notification_id: str) -> None:
-        """A popup was clicked rather than answered: show the full list."""
+    def _raise_window(self) -> None:
+        """Bring the window forward, from wherever it was asked for."""
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def _on_popup_opened(self, _notification_id: str) -> None:
+        """A popup was clicked rather than answered: show the full list."""
+        self._raise_window()
         self.show_page("Notifications")
 
     def _set_status(self, message: str) -> None:

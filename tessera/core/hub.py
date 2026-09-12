@@ -23,6 +23,7 @@ from ..backends import audio as bt_audio
 from ..backends import bluetooth, btcodecs
 from ..backends.companion import CompanionClient, PairedPhone, b64decode
 from ..backends.dnd import MODE_OFF, DndSync, ZenMode
+from ..backends import mpris_server
 from ..backends.kdeconnect import KdeConnect
 from ..backends.phone_audio import PhoneAudio
 from ..backends.webcam import CompanionCamera, Webcam, WebcamError
@@ -70,6 +71,8 @@ class Hub(QObject):
     errorOccurred = Signal(str)
     #: Whether a phone is reachable over adb, which mirroring and apps need.
     adbChanged = Signal(bool)
+    #: The desktop's media applet asked to see the app.
+    raiseRequested = Signal()
 
     #: How often to try bringing adb back. A failed connect costs seconds, and
     #: the phone is usually simply not listening, so this is deliberately slow.
@@ -116,12 +119,16 @@ class Hub(QObject):
         #: round of connection attempts every fifteen seconds.
         self._adb_next_try = 0.0
         self._phone_dnd = "off"
+        #: The phone published to this desktop as an MPRIS player, where the
+        #: desktop has a session bus to publish it on.
+        self.media_player: mpris_server.MprisServer | None = None
 
         self._wire_companion()
         self._wire_kdeconnect()
         self._wire_dnd()
         self._wire_camera()
         self._wire_phone_audio()
+        self._wire_media_player()
         self._apply_codec_preference()
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
@@ -824,6 +831,29 @@ class Hub(QObject):
             self.errorOccurred.emit("No phone connected.")
             return
         self.companion.send({"t": "media_command", "action": action})
+
+    def _wire_media_player(self) -> None:
+        """Offer the phone to this desktop as a player of its own.
+
+        The phone's track then appears in the desktop's media applet and under
+        the keyboard's media keys, without Bluetooth -- which matters more now
+        that the audio itself can play here over the link: the sound comes out
+        of this computer, so the controls for it should be where every other
+        player's are.
+        """
+        if not mpris_server.available():
+            return
+        self.media_player = mpris_server.MprisServer(parent=self)
+        self.media_player.commanded.connect(self.media_command)
+        self.media_player.raiseRequested.connect(self.raiseRequested)
+        if not self.media_player.publish():
+            self.media_player = None
+            return
+        self.mediaChanged.connect(self.media_player.update)
+        # Whatever the phone last said, so the applet is right immediately
+        # rather than after the next track change.
+        if self._media:
+            self.media_player.update(self._media)
 
     # -- calls -----------------------------------------------------------------
 
