@@ -157,6 +157,7 @@ class Session(
         add("net_addresses")
         // Battery, signal and ringer state for the desktop's device panel.
         add("status")
+        add("ringer")
         // The desktop can wait for a hotspot switched on by hand, because the
         // phone can tell it has come up without any privilege at all.
         add("hotspot_wait")
@@ -372,6 +373,16 @@ class Session(
             }
 
             "call_state" -> reply(id, CallMonitor.snapshot(context))
+
+            "ringer_set" -> {
+                if (!PhoneStatus.setRinger(context, message.optString("mode"))) {
+                    fail(
+                        id,
+                        "The ringer could not be changed. Silencing needs " +
+                            "notification access, which is granted on the phone."
+                    )
+                }
+            }
 
             "media_state" -> reply(id, NowPlaying.snapshot())
 

@@ -152,6 +152,22 @@ class HotspotPage(QWidget):
         label.setWordWrap(True)
         return label
 
+    def quick_toggle(self) -> None:
+        """Start the hotspot and join it, or leave it if we are already on it.
+
+        The panel's tile calls this so one click does the whole sequence, which
+        is why it lives here rather than being reimplemented there: starting a
+        hotspot means asking the phone, waiting for the AP, joining it and then
+        finding the phone again on the new network.
+        """
+        if self._busy:
+            self.status.setText("Already working on it...")
+            return
+        if self.hub.hotspot_joined:
+            self._stop()
+            return
+        self._connect()
+
     def _save(self) -> None:
         cfg = self.hub.config.hotspot
         cfg.ssid = self.ssid.text().strip()
@@ -400,6 +416,10 @@ class HotspotPage(QWidget):
         if self.hub.companion.connected and self.hub.companion.supports("hotspot"):
             self.hub.companion.send({"t": "hotspot_stop"})
             self.status.setText("Asked your phone to switch the hotspot off.")
+            # The link drops with the network, so the pill and the panel's tile
+            # are refreshed from what NetworkManager says rather than from the
+            # reply, which may never arrive.
+            QTimer.singleShot(3000, self._refresh)
             return
         serial = self.hub.serial
         if not serial:
@@ -419,6 +439,10 @@ class HotspotPage(QWidget):
             self.state_pill.set_state(ssid, "success")
         else:
             self.state_pill.set_state("Not connected", "muted")
+        # Only the phone's own network counts as joined; any other Wi-Fi is
+        # just Wi-Fi. The panel's tile reads this.
+        wanted = self.hub.config.hotspot.ssid.strip()
+        self.hub.set_hotspot_joined(bool(ssid) and bool(wanted) and ssid == wanted)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

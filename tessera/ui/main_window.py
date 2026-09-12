@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.hub import Hub
+from .pages.apps import AppsPage
 from .pages.audio import AudioPage
 from .pages.home import HomePage
 from .pages.calls import CallsPage
@@ -43,6 +44,7 @@ PAGES = [
     ("Calls", "call-start", "📞", CallsPage, "calls"),
     ("Messages", "mail-message", "💬", MessagesPage, "messages"),
     ("Photos", "folder-pictures", "🖼", PhotosPage, "photos"),
+    ("Apps", "view-list-icons", "▦", AppsPage, "apps"),
     ("Notifications", "notifications", "🔔", NotificationsPage, "notifications"),
     ("Screen", "smartphone", "📱", ScreenPage, "screen"),
     ("Webcam", "camera-web", "🎥", WebcamPage, "webcam"),
@@ -52,10 +54,10 @@ PAGES = [
     ("Settings", "settings-configure", "⚙", SettingsPage, None),
 ]
 
-#: The four that earn a permanent tab. Everything else is a device feature
-#: reached from the More menu -- ten worded tabs in one row was unreadable,
-#: and Phone Link itself shows four.
-PRIMARY = ("Overview", "Calls", "Messages", "Photos")
+#: The ones that earn a permanent tab: the phone's content. Everything else is
+#: a device feature reached from the More menu -- ten worded tabs in one row
+#: was unreadable, and these are the five Phone Link puts up there.
+PRIMARY = ("Overview", "Calls", "Messages", "Photos", "Apps")
 
 
 class PageTabs(QTabBar):
@@ -104,6 +106,7 @@ class MainWindow(QMainWindow):
         self.panel = DevicePanel(hub, palette)
         self.panel.pageRequested.connect(self.show_page)
         self.panel.statusMessage.connect(self._set_status)
+        self.panel.hotspotRequested.connect(self._hotspot_from_panel)
         layout.addWidget(self.panel)
 
         # Content area: tabs across the top, the selected page beneath.
@@ -119,6 +122,9 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(page)
             if isinstance(page, SettingsPage):
                 page.featuresChanged.connect(self._apply_feature_visibility)
+                page.featuresChanged.connect(self.panel.apply_features)
+            if isinstance(page, HotspotPage):
+                self.hotspot_page = page
             if isinstance(page, HomePage):
                 # Tiles hand off to their full page rather than duplicating it.
                 page.openPage.connect(self.show_page)
@@ -126,6 +132,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(content, 1)
 
         self.setCentralWidget(root)
+        self.panel.set_window_width(self.width())
         self._apply_feature_visibility()
         self.tabs.setCurrentIndex(0)
         self._change_page(0)
@@ -305,6 +312,23 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, message: str) -> None:
         self.panel.set_status(message)
+
+    def _hotspot_from_panel(self) -> None:
+        """One click for the whole hotspot sequence, with the page to watch it.
+
+        Starting a hotspot is not instant -- the phone brings up the AP, this
+        computer joins it, then the phone has to be found again on the new
+        network -- so the page comes forward to report on it.
+        """
+        if not self._enabled("Hotspot"):
+            self._set_status("Hotspot is switched off in Settings.")
+            return
+        self.show_page("Hotspot")
+        self.hotspot_page.quick_toggle()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().resizeEvent(event)
+        self.panel.set_window_width(self.width())
 
     # -- tray ----------------------------------------------------------------
 

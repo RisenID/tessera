@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        13%{?dist}
+Release:        14%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,29 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-14
+- Apps is a tab of its own in the strip rather than the bottom half of the
+  Screen page, which is now only the mirror. It has its own feature switch.
+- Six switches in the device panel, reflowing to however many fit: Do Not
+  Disturb, the ringer, clipboard sharing, ring the phone, the hotspot, and the
+  phone's camera as a webcam.
+- The ringer switch steps the phone between normal, vibrate and silent, and
+  shows which mode it is in. The companion app takes a "ringer_set" command
+  for it; silencing needs the same notification access Do Not Disturb uses,
+  and says so when it has not been granted.
+- One click on the hotspot switch starts the phone's hotspot and joins it,
+  bringing the Hotspot page forward to report on the sequence.
+- Do Not Disturb is drawn as the Do Not Disturb roundel rather than a
+  crossed-out bell, which reads as "notifications off".
+- The panel grows with the window -- 23.5% of its width, between 300 and 480
+  pixels -- and its icons, switches and avatars scale with it. A fixed rail
+  left 16-pixel icons on a large screen.
+- The notification feed holds the newest eight, with a button to the full page
+  and a line saying how many more are there, rather than growing without limit.
+- Page titles stay at the top of the page. A header row grew into whatever
+  height the page had spare, so a page showing an empty state had its title
+  and subtitle drifting apart in the middle of the window.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-13
 - The device panel now shows the phone's complications in one line -- Bluetooth,
   Wi-Fi, cellular signal and network type, ringer mode, battery -- drawn with

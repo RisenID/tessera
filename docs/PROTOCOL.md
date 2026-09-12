@@ -109,6 +109,12 @@ platform's own signal scale rather than a percentage, because that is what a
 status bar draws. It supersedes `battery`, which only KDE Connect still
 sends.
 
+`ringer_set` changes the mode rather than reporting it. Going silent needs the
+same notification policy access Do Not Disturb uses, so the phone answers with
+an error rather than throwing when that has not been granted. The change is
+announced by the `status` frame the ringer broadcast triggers, so a caller does
+not have to ask again.
+
 ### Commands
 
 | Message | Effect |
@@ -116,6 +122,7 @@ sends.
 | `{"t":"notif_dismiss","id"}` | Dismiss on the phone |
 | `{"t":"notif_reply","id","text"}` | Inline reply |
 | `{"t":"dnd_set","mode"}` | Set the interruption filter |
+| `{"t":"ringer_set","mode":"normal\|vibrate\|silent"}` | Set the ringer; answered with an error if refused |
 | `{"t":"sms_threads","limit"}` | Conversation list |
 | `{"t":"sms_messages","thread","limit"}` | One transcript |
 | `{"t":"sms_send","address","text"}` | Send an SMS |

@@ -24,6 +24,41 @@ Everything in it is about the phone, and all of it is visible on every tab --
 which is the point of Phone Link's panel. The feed is why the overview has no
 notifications tile any more: two copies of the same list drifted apart.
 
+The rail **grows with the window** -- 23.5% of its width, between 300 and 480
+pixels -- and what is drawn inside scales with it: icons, switches, the phone
+tile, the feed avatars and the name. A fixed rail is either cramped on a small
+screen or a column of 16-pixel icons on a large one. The scale is quantised to
+one decimal place, because re-laying out on every pixel of a window drag would
+rebuild the feed dozens of times over for no visible difference.
+
+### The switches
+
+Six squares, reflowing to however many fit across the rail: Do Not Disturb,
+the ringer, clipboard sharing, ring the phone, the hotspot, and the phone's
+camera as a webcam. Each hides itself when its feature is switched off.
+
+- **Do Not Disturb** is the roundel (`process-stop`), not a crossed-out bell.
+  A bell with a line through it reads as "notifications off", which is a
+  different switch.
+- **The ringer** shows the mode the phone is in and steps normal -> vibrate ->
+  silent. All three, though only two were asked for: a button that can put the
+  phone on silent has to be able to take it off again.
+- **Ring the phone** is a bell, because the ringer square beside it shows a
+  phone while the phone is on vibrate, and two phone glyphs side by side read
+  as one control.
+- **The hotspot** and **the camera** are actions with state, so they report
+  what is happening rather than what was clicked: the hotspot tile follows
+  `Hub.hotspot_joined`, the camera tile follows `Hub.camera_running`.
+
+Which squares are showing is read from a flag on each button rather than from
+`isHidden()`: before the window is first shown every child reports itself
+hidden, and filtering on that left half the tiles out of the grid for good.
+
+A hotspot is not an instant thing -- the phone brings up the AP, this computer
+joins it, then the phone has to be found again on the new network -- so the
+tile calls `HotspotPage.quick_toggle()` and the window brings that page
+forward to report on it, rather than reimplementing the sequence in the panel.
+
 **Complications** are the small readings in one line: Bluetooth, Wi-Fi,
 cellular, ringer, battery. Each hides itself when the phone has not reported
 it, so the strip never shows a value that is only a guess -- and they clear
@@ -40,12 +75,20 @@ dark panel the originals were invisible.
 Battery detail comes from the phone in one `status` frame: charging state and
 supply, time to full, current, temperature, and health when it is not good.
 
+The feed holds the newest eight with a button to the full page beside the
+count, and a line under it saying how many more are there. A rail that grows
+without limit is not a glance.
+
 ### The tab strip
 
-Four tabs -- Overview, Calls, Messages, Photos -- then **More** for the device
-features (Notifications, Screen, Webcam, Audio, Do Not Disturb, Hotspot) and
-the gear for Settings. Ten worded tabs in one row was unreadable, and Phone
-Link itself shows four.
+Five tabs -- Overview, Calls, Messages, Photos, Apps -- then **More** for the
+device features (Notifications, Screen, Webcam, Audio, Do Not Disturb,
+Hotspot) and the gear for Settings. Ten worded tabs in one row was unreadable.
+What earns a tab is the phone's *content*; everything else is a device feature.
+
+Apps is a tab rather than the bottom half of the Screen page, which is where
+the launcher used to live: it is the one thing up there people open repeatedly,
+and Phone Link puts it in the same place. Screen is now only the mirror.
 
 A page opened from More takes the strip's last tab, so the selected tab always
 names the page on screen. Selecting a page that has no tab of its own is worse

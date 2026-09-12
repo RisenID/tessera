@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
-from ..widgets import Card, EmptyState, Toast, heading
+from ..widgets import Card, EmptyState, Toast, header_row, heading
 
 
 class Thumb(Card):
@@ -88,7 +88,7 @@ class PhotosPage(QWidget):
         refresh.setObjectName("Ghost")
         refresh.clicked.connect(self.load)
         header.addWidget(refresh, 0, Qt.AlignmentFlag.AlignVCenter)
-        outer.addLayout(header)
+        outer.addWidget(header_row(header))
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)

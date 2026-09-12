@@ -90,7 +90,8 @@ class FeatureConfig:
     clipboard: bool = True
     dnd_sync: bool = True
     webcam: bool = True
-    screen: bool = True          # mirroring and per-app windows
+    screen: bool = True          # mirroring
+    apps: bool = True            # the launcher, opening one app per window
     hotspot: bool = True
     bluetooth_audio: bool = True
     calls: bool = True

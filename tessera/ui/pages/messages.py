@@ -31,7 +31,7 @@ MAX_BUBBLE_WIDTH = 460
 BUBBLE_PADDING = 52
 #: Width available to a conversation preview once the row's padding is removed.
 PREVIEW_WIDTH = 215
-from ..widgets import EmptyState, Toast, heading
+from ..widgets import EmptyState, Toast, header_row, heading
 
 
 class ThreadRow(QWidget):
@@ -263,7 +263,7 @@ class MessagesPage(QWidget):
         refresh.setObjectName("Ghost")
         refresh.clicked.connect(self.load)
         header.addWidget(refresh, 0, Qt.AlignmentFlag.AlignVCenter)
-        outer.addLayout(header)
+        outer.addWidget(header_row(header))
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 

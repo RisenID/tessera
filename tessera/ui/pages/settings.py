@@ -38,7 +38,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("clipboard", "Clipboard sharing", "Needs Shizuku; polls the phone while connected"),
     ("dnd_sync", "Do Not Disturb sync", "Keep both screens silenced together"),
     ("webcam", "Webcam", "Use a phone camera as a virtual webcam"),
-    ("screen", "Screen and app windows", "Mirroring through scrcpy over adb"),
+    ("screen", "Screen mirroring", "The whole phone in a window, through scrcpy over adb"),
+    ("apps", "Apps", "Launch one app into its own window"),
     ("hotspot", "Hotspot", "Start the phone's hotspot and join it"),
     ("bluetooth_audio", "Calls and music", "Bluetooth audio to and from the phone"),
 )

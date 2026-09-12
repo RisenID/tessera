@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from ...core.hub import Hub
 from ..theme import SPACE, Palette
-from ..widgets import Avatar, Card, EmptyState, Pill, Toast, heading
+from ..widgets import Avatar, Card, EmptyState, Pill, Toast, header_row, heading
 
 #: How each kind of call reads in the list, and the colour it earns.
 KINDS = {
@@ -127,7 +127,7 @@ class CallsPage(QWidget):
         refresh.setObjectName("Ghost")
         refresh.clicked.connect(self.load)
         header.addWidget(refresh, 0, Qt.AlignmentFlag.AlignVCenter)
-        outer.addLayout(header)
+        outer.addWidget(header_row(header))
 
         # -- the live call ----------------------------------------------------
         self.live = Card(self)

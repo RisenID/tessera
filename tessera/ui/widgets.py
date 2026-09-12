@@ -373,8 +373,14 @@ def row(*widgets: QWidget, spacing: int = SPACE["sm"], stretch_last: bool = Fals
 
 
 def heading(title: str, subtitle: str = "") -> QWidget:
-    """The standard page header."""
+    """The standard page header.
+
+    Vertically fixed: in a header row beside a search box, and on a page whose
+    list is hidden behind an empty state, a growable header soaked up the spare
+    height and left the subtitle floating half a page below the title.
+    """
     container = QWidget()
+    container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     layout = QVBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(2)
@@ -389,6 +395,19 @@ def heading(title: str, subtitle: str = "") -> QWidget:
         sub.setWordWrap(True)
         layout.addWidget(sub)
     return container
+
+
+def header_row(layout) -> QWidget:
+    """Wrap a page's header layout so it keeps its own height.
+
+    A bare layout row grows into whatever space the page has spare, which
+    pushed titles into the middle of the page whenever the list below them was
+    hidden behind an empty state.
+    """
+    holder = QWidget()
+    holder.setLayout(layout)
+    holder.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+    return holder
 
 
 def divider() -> QFrame:

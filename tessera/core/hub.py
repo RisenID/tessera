@@ -56,6 +56,7 @@ class Hub(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     bluetoothStreamingChanged = Signal(bool)
+    hotspotChanged = Signal(bool)            # joined the phone's hotspot
     errorOccurred = Signal(str)
 
     def __init__(self, config: Config, parent: QObject | None = None) -> None:
@@ -87,6 +88,7 @@ class Hub(QObject):
         self._bluetooth_streaming = False
         self._media: dict[str, Any] = {}
         self._phone_status: dict[str, Any] = {}
+        self._hotspot_joined = False
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -509,6 +511,37 @@ class Hub(QObject):
         Empty until the phone reports; only the companion app sends it.
         """
         return dict(self._phone_status)
+
+    def set_ringer(self, mode: str) -> None:
+        """Put the phone on normal, vibrate or silent."""
+        if not self.companion.connected or not self.companion.supports("ringer"):
+            self.errorOccurred.emit(
+                "Changing the ringer needs the companion app on the phone."
+            )
+            return
+        self.companion.send({"t": "ringer_set", "mode": mode})
+
+    @property
+    def ringer(self) -> str:
+        value = self._phone_status.get("ringer")
+        return value if isinstance(value, str) else ""
+
+    # -- hotspot ---------------------------------------------------------------
+
+    @property
+    def hotspot_joined(self) -> bool:
+        """Whether this computer is on the phone's hotspot.
+
+        Held here rather than on the page so the panel's tile and the page
+        agree; the page is what actually starts and stops it.
+        """
+        return self._hotspot_joined
+
+    def set_hotspot_joined(self, joined: bool) -> None:
+        if joined == self._hotspot_joined:
+            return
+        self._hotspot_joined = joined
+        self.hotspotChanged.emit(joined)
 
     def _on_phone_status(self, message: dict) -> None:
         self._phone_status = {k: v for k, v in message.items() if k != "t"}

@@ -69,6 +69,28 @@ object PhoneStatus {
             .put("volume", mediaVolume(app))
     }
 
+    /**
+     * Sets the ringer to "normal", "vibrate" or "silent".
+     *
+     * Silencing needs notification policy access on API 23+, the same grant
+     * Do Not Disturb uses, so this fails rather than throwing when the user
+     * has not given it. The change is announced by the ringer broadcast we
+     * already listen for, so nothing is published from here.
+     */
+    fun setRinger(context: Context, mode: String): Boolean {
+        val value = when (mode) {
+            "normal" -> AudioManager.RINGER_MODE_NORMAL
+            "vibrate" -> AudioManager.RINGER_MODE_VIBRATE
+            "silent" -> AudioManager.RINGER_MODE_SILENT
+            else -> return false
+        }
+        val audio = context.getSystemService(AudioManager::class.java) ?: return false
+        return runCatching {
+            audio.ringerMode = value
+            audio.ringerMode == value
+        }.onFailure { Log.w(TAG, "could not set the ringer", it) }.getOrDefault(false)
+    }
+
     // -- registration --------------------------------------------------------
 
     private fun register(context: Context) {

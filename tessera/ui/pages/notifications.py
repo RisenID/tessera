@@ -18,6 +18,7 @@ from ...core.hub import Hub
 from ...core.models import Notification
 from ..theme import SPACE, Palette
 from ..widgets import (
+    header_row,
     Avatar,
     Card,
     EmptyState,
@@ -148,7 +149,7 @@ class NotificationsPage(QWidget):
         clear = ghost_button("Dismiss all", "edit-clear-all")
         clear.clicked.connect(self._dismiss_all)
         header.addWidget(clear, 0, Qt.AlignmentFlag.AlignVCenter)
-        outer.addLayout(header)
+        outer.addWidget(header_row(header))
 
         # -- passcode strip --------------------------------------------------
         self.otp_section = QWidget()
