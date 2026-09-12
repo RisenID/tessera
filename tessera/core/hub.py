@@ -47,6 +47,7 @@ class Hub(QObject):
     textMessageArrived = Signal()            # a text landed; reload the thread list
     dndChanged = Signal(str)
     batteryChanged = Signal(int, bool)
+    phoneStatusChanged = Signal(dict)        # battery detail, signal, ringer
     capabilitiesChanged = Signal(list)
     deviceCapsChanged = Signal(dict)         # cameras + hotspot bands
     cameraStarted = Signal(str)              # /dev/videoN
@@ -85,6 +86,7 @@ class Hub(QObject):
         self._codecs_learned = False
         self._bluetooth_streaming = False
         self._media: dict[str, Any] = {}
+        self._phone_status: dict[str, Any] = {}
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -136,6 +138,7 @@ class Hub(QObject):
         self.companion.callChanged.connect(self._on_call)
         self.companion.mediaChanged.connect(self._on_media)
         self.companion.batteryChanged.connect(self.batteryChanged)
+        self.companion.phoneStatusChanged.connect(self._on_phone_status)
         self.companion.statusChanged.connect(self.statusChanged)
         self.companion.errorOccurred.connect(self.errorOccurred)
         self.companion.capabilitiesChanged.connect(self.capabilitiesChanged)
@@ -170,7 +173,9 @@ class Hub(QObject):
     def apply_features(self) -> None:
         """Push the feature switches down to the pieces that act on them."""
         features = self.config.features
-        topics = ["battery"]
+        # "status" carries battery, signal and ringer; the phone sends the whole
+        # frame regardless, but the list is what the desktop says it wants.
+        topics = ["battery", "status"]
         if features.notifications:
             topics.append("notifications")
         if features.dnd_sync:
@@ -246,6 +251,12 @@ class Hub(QObject):
             self.icons.forget_missing()
             self.refresh_notifications()
             self.refresh_device_caps()
+            return
+        # Battery and signal came from the phone; showing the last reading as
+        # if it were current is worse than showing nothing.
+        if self._phone_status:
+            self._phone_status = {}
+            self.phoneStatusChanged.emit({})
 
     # -- adb (scrcpy only) ---------------------------------------------------
 
@@ -480,9 +491,28 @@ class Hub(QObject):
             self.bluetoothStreamingChanged.emit(streaming)
 
     @property
+    def bluetooth_connected(self) -> bool:
+        """Whether the phone is paired and linked over Bluetooth right now."""
+        return bool(self._bluetooth_settled)
+
+    @property
     def bluetooth_streaming(self) -> bool:
         """Whether the phone's audio is currently playing through this computer."""
         return self._bluetooth_streaming
+
+    # -- phone status ----------------------------------------------------------
+
+    @property
+    def phone_status(self) -> dict[str, Any]:
+        """Battery detail, Wi-Fi and cellular signal, ringer mode.
+
+        Empty until the phone reports; only the companion app sends it.
+        """
+        return dict(self._phone_status)
+
+    def _on_phone_status(self, message: dict) -> None:
+        self._phone_status = {k: v for k, v in message.items() if k != "t"}
+        self.phoneStatusChanged.emit(self._phone_status)
 
     # -- media -----------------------------------------------------------------
 

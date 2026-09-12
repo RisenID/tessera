@@ -20,6 +20,7 @@ import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NetworkAddresses
 import dev.tessera.companion.features.NotificationBridge
 import dev.tessera.companion.features.NowPlaying
+import dev.tessera.companion.features.PhoneStatus
 import dev.tessera.companion.features.PrivilegedShell
 import dev.tessera.companion.features.TetheringController
 import dev.tessera.companion.features.SmsRepository
@@ -154,6 +155,8 @@ class Session(
         // Only claim "hotspot" if the phone will actually take the command.
         if (Hotspot.mode() == Hotspot.Mode.PRIVILEGED) add("hotspot") else add("hotspot_panel")
         add("net_addresses")
+        // Battery, signal and ringer state for the desktop's device panel.
+        add("status")
         // The desktop can wait for a hotspot switched on by hand, because the
         // phone can tell it has come up without any privilege at all.
         add("hotspot_wait")
@@ -372,6 +375,7 @@ class Session(
 
             "media_state" -> reply(id, NowPlaying.snapshot())
 
+
             "media_command" -> {
                 if (!NowPlaying.command(message.optString("action"))) {
                     fail(id, "Nothing on the phone is playing, or it refused the command.")
@@ -393,6 +397,7 @@ class Session(
         CallMonitor.addUser(context)
         NowPlaying.activeContext = context
         NowPlaying.addUser(context)
+        PhoneStatus.addUser(context)
 
         // Send current state immediately: a desktop that just connected should
         // not have to wait for the next change to know what is on the phone.
@@ -400,6 +405,7 @@ class Session(
         send(JSONObject().put("t", "dnd").put("mode", DndController.current(context)))
         send(CallMonitor.snapshot(context))
         send(NowPlaying.snapshot())
+        send(PhoneStatus.snapshot(context))
     }
 
     // -- camera --------------------------------------------------------------
@@ -509,6 +515,7 @@ class Session(
             ClipboardWatcher.removeUser()
             CallMonitor.removeUser(context)
             NowPlaying.removeUser()
+            PhoneStatus.removeUser(context)
         }
         subscriber = null
         stopCamera()

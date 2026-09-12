@@ -70,7 +70,7 @@ Errors come back as `{"t":"error","rid":N,"message":"..."}`.
 ## Subscriptions
 
 ```
-desktop -> phone   {"t":"sub","topics":["notifications","dnd","battery"]}
+desktop -> phone   {"t":"sub","topics":["notifications","dnd","battery","status"]}
 ```
 
 The phone then pushes events as they happen. Nothing is polled.
@@ -83,9 +83,31 @@ The phone then pushes events as they happen. Nothing is polled.
 | `{"t":"notification_removed","id"}` | Dismissed on either side |
 | `{"t":"dnd","mode":"off\|priority\|alarms\|none"}` | Interruption filter changed |
 | `{"t":"battery","level","charging"}` | Battery changed |
+| `{"t":"status","battery","wifi","cell","ringer","volume"}` | Battery detail, signal and ringer changed |
 
 `icon` is an id; fetch the bytes with `{"t":"icon_get","icon":"<id>"}`, which
 replies with a JSON header plus a binary PNG frame.
+
+`status` is what the device panel's complications and battery block read, sent
+once on subscribe and then only when something in it changes:
+
+```json
+{"t": "status",
+ "battery": {"level": 18, "charging": false, "status": "discharging",
+             "source": "", "health": "good", "temperature": 31.4,
+             "current": -842, "toFull": 0},
+ "wifi": {"connected": true, "level": 3, "max": 4},
+ "cell": {"operator": "Jio", "level": 3, "max": 4, "type": "5G"},
+ "ringer": "vibrate", "volume": 62}
+```
+
+Every field is optional. The phone leaves out what the platform refuses --
+network type needs `READ_PHONE_STATE`, which the user may have declined -- and
+the desktop shows what it has. `current` is milliamps and signed; `toFull` is
+milliseconds; `temperature` is degrees Celsius. `level`/`max` are the
+platform's own signal scale rather than a percentage, because that is what a
+status bar draws. It supersedes `battery`, which only KDE Connect still
+sends.
 
 ### Commands
 

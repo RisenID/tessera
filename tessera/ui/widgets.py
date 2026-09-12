@@ -7,6 +7,7 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QGuiApplication,
+    QIcon,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -23,6 +24,32 @@ from PySide6.QtWidgets import (
 )
 
 from .theme import RADIUS, SPACE, Palette
+
+
+def themed_icon(*names: str) -> QIcon:
+    """The first of *names* the desktop's icon theme actually has."""
+    for name in names:
+        icon = QIcon.fromTheme(name)
+        if not icon.isNull():
+            return icon
+    return QIcon()
+
+
+def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
+    """Recolour a monochrome icon to *colour*.
+
+    Breeze's status icons are drawn for one background, and Tessera puts them
+    on several -- the window, a lit switch, a tab. Painting them in the colour
+    of the text beside them is what makes them read at 16px on any theme.
+    """
+    if icon.isNull():
+        return icon
+    pixmap = icon.pixmap(size, size)
+    painter = QPainter(pixmap)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), QColor(colour))
+    painter.end()
+    return QIcon(pixmap)
 
 
 def ghost_button(label: str, icon_name: str = "") -> QPushButton:

@@ -135,6 +135,27 @@ def mix(colour: str, other: str, amount: float) -> str:
     return blended.name()
 
 
+def tab_stylesheet(p: Palette) -> str:
+    """The tab strip's QSS: colours and padding only.
+
+    The accent underline is painted by PageTabs instead. A QTabBar does not
+    pick up a border on its tabs from a sheet applied before it is shown, and
+    the selected tab was left with no indicator at all.
+    """
+    return f"""
+QTabBar {{ background: transparent; }}
+QTabBar::tab {{
+    background: transparent;
+    border: none;
+    padding: 7px 14px 9px 14px;
+    margin-right: 2px;
+    color: {p.muted};
+}}
+QTabBar::tab:hover {{ color: {p.text}; background: {p.surface_hover}; }}
+QTabBar::tab:selected {{ color: {p.text}; font-weight: 650; }}
+"""
+
+
 def stylesheet(p: Palette) -> str:
     """The application's QSS: the sidebar, cards and semantic labels only.
 
@@ -165,26 +186,50 @@ QWidget#Sidebar {{
 QLabel#BrandName {{ font-size: {pt(1.2)}; font-weight: 700; }}
 QLabel#BrandSub {{ color: {p.muted}; font-size: {pt(0.85)}; }}
 
-QListWidget#Nav {{
-    background: transparent;
-    border: none;
-    outline: none;
-    padding: {SPACE['xs']}px;
+/* The phone's picture frame at the top of the panel. */
+QLabel#PhoneTile {{
+    background: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {RADIUS['md']}px;
 }}
 
-QListWidget#Nav::item {{
-    padding: 7px 10px;
-    margin: 1px 0;
-    border-radius: {RADIUS['sm']}px;
-    color: {p.text};
+/* The panel's switches: equal squares, lit when on. */
+QPushButton#Quick {{
+    background: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {RADIUS['md']}px;
 }}
-
-QListWidget#Nav::item:hover {{ background: {p.surface_hover}; }}
-
-QListWidget#Nav::item:selected {{
+QPushButton#Quick:hover {{ background: {p.surface_hover}; }}
+QPushButton#Quick:checked {{
     background: {p.accent};
+    border-color: {p.accent};
     color: {p.accent_text};
 }}
+
+/* One notification in the panel feed. */
+QFrame#FeedRow {{
+    background: {p.surface};
+    border: 1px solid {p.border};
+    border-radius: {RADIUS['md']}px;
+}}
+QFrame#FeedRow:hover {{ background: {p.surface_hover}; }}
+
+/* ---------- tab strip ---------- */
+
+QWidget#TabStrip {{
+    background: {p.bg};
+    border-bottom: 1px solid {p.border};
+}}
+
+QToolButton#Strip {{
+    background: transparent;
+    border: none;
+    border-radius: {RADIUS['sm']}px;
+    padding: 6px 8px;
+    color: {p.muted};
+}}
+QToolButton#Strip:hover {{ background: {p.surface_hover}; color: {p.text}; }}
+QToolButton#Strip::menu-indicator {{ width: 0; }}
 
 /* ---------- cards ---------- */
 

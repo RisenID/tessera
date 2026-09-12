@@ -77,30 +77,25 @@ class HomePage(QWidget):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
-        self.notifications_tile = Tile("Notifications", "Open", palette=palette)
-        self.notifications_tile.actionClicked.connect(
-            lambda: self.openPage.emit("Notifications")
-        )
-        grid.addWidget(self.notifications_tile, 0, 0)
-
+        # No notifications tile: the panel shows the live feed on every page,
+        # and two copies of it drifted apart.
         self.messages_tile = Tile("Messages", "Open", palette=palette)
         self.messages_tile.actionClicked.connect(lambda: self.openPage.emit("Messages"))
-        grid.addWidget(self.messages_tile, 0, 1)
+        grid.addWidget(self.messages_tile, 0, 0)
 
         self.calls_tile = Tile("Recent calls", "Open", palette=palette)
         self.calls_tile.actionClicked.connect(lambda: self.openPage.emit("Calls"))
-        grid.addWidget(self.calls_tile, 1, 0)
+        grid.addWidget(self.calls_tile, 0, 1)
 
         self.photos_tile = Tile("Recent photos", "Open", palette=palette)
         self.photos_tile.actionClicked.connect(lambda: self.openPage.emit("Photos"))
-        grid.addWidget(self.photos_tile, 1, 1)
+        grid.addWidget(self.photos_tile, 1, 0, 1, 2)
 
         outer.addLayout(grid)
         outer.addStretch(1)
 
         self.toast = Toast(self)
 
-        hub.notificationsChanged.connect(self.refresh_notifications)
         hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.callChanged.connect(lambda _c: self.refresh_calls())
         hub.connectionChanged.connect(lambda _c: self.refresh_all())
@@ -150,7 +145,6 @@ class HomePage(QWidget):
 
     def refresh_all(self) -> None:
         self.refresh_otp()
-        self.refresh_notifications()
         self.refresh_calls()
         self.refresh_messages()
         self.refresh_photos()
@@ -158,22 +152,6 @@ class HomePage(QWidget):
     def refresh_light(self) -> None:
         """The cheap ones, on a timer; the rest only on a real change."""
         self.refresh_otp()
-
-    def refresh_notifications(self) -> None:
-        tile = self.notifications_tile
-        tile.clear()
-        notifications = self.hub.notifications[:4]
-        tile.set_badge(
-            str(len(self.hub.notifications)) if self.hub.notifications else "",
-            "accent",
-        )
-        if not notifications:
-            tile.add_placeholder("Nothing new.", self.palette_tokens)
-            return
-        for note in notifications:
-            tile.add_row(
-                line_row(note.app or "Notification", note.summary_line, self.palette_tokens)
-            )
 
     def refresh_calls(self) -> None:
         tile = self.calls_tile

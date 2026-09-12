@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        12%{?dist}
+Release:        13%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,28 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-13
+- The device panel now shows the phone's complications in one line -- Bluetooth,
+  Wi-Fi, cellular signal and network type, ringer mode, battery -- drawn with
+  the desktop's own status icons, stepped by level the way a status bar does it.
+  Each hides itself when the phone has not reported it, and all of them clear
+  when the phone disconnects.
+- Battery detail below the bar: charging state and supply, time to full,
+  current, temperature, and health when it is not good. The companion app grew
+  a "status" frame to report it, along with signal and ringer; it is pushed on
+  change, so nothing is polled.
+- The notification feed moved into the panel, visible from every tab. The
+  overview's notifications tile is gone: two copies of the list drifted apart.
+- The top strip is down to four tabs -- Overview, Calls, Messages, Photos --
+  with More for the device features and the gear for settings. A page opened
+  from More takes the last tab, so the selected tab always names the page on
+  screen.
+- The selected tab is underlined in the accent colour, painted rather than
+  styled: a QTabBar polished before the application stylesheet exists never
+  picked up a border on its tabs.
+- Small monochrome icons are repainted in the colour of the text beside them,
+  which is what makes them legible at 16px on either a light or a dark theme.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-12
 - Laid out like Phone Link: a device panel down the left -- which phone, its
   connection, its battery, its switches, what it is playing -- and a tab strip

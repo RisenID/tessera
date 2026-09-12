@@ -312,6 +312,7 @@ class CompanionClient(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     batteryChanged = Signal(int, bool)
+    phoneStatusChanged = Signal(dict)       # battery, wifi, cell, ringer
 
     cameraStarted = Signal(dict)
     cameraFrame = Signal(bytes)
@@ -760,6 +761,19 @@ class CompanionClient(QObject):
 
     def _recv_battery(self, message: dict[str, Any]) -> None:
         self.batteryChanged.emit(int(message.get("level", 0)), bool(message.get("charging")))
+
+    def _recv_status(self, message: dict[str, Any]) -> None:
+        """Battery, signal and ringer state in one frame.
+
+        Also feeds batteryChanged, so a phone reporting status needs no
+        separate battery frame.
+        """
+        self.phoneStatusChanged.emit(message)
+        battery = message.get("battery")
+        if isinstance(battery, dict) and int(battery.get("level", -1)) >= 0:
+            self.batteryChanged.emit(
+                int(battery["level"]), bool(battery.get("charging"))
+            )
 
     def _recv_camera_started(self, message: dict[str, Any]) -> None:
         self.cameraStarted.emit(message)

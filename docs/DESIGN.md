@@ -8,20 +8,59 @@ version and this says the rest.
 
 Phone Link's arrangement, drawn with the desktop's own widgets.
 
-A **device panel** down the left: which phone, whether it is connected, its
-battery, its switches, and what it is playing. A **tab strip** across the top
-of the content area for the pages. Settings is the gear at the end of the
-strip.
+A **device panel** down the left (`ui/panel.py`) and a **tab strip** across
+the top of the content area (`ui/main_window.py`). Navigation lives in exactly
+one place: the strip. Buttons that only opened a page were removed from the
+overview when the tabs arrived, and the panel holds switches, readings and
+media rather than a second set of links.
 
-Navigation lives in exactly one place. Buttons that only opened a page were
-removed from the overview when the tabs arrived, and the device panel holds
-switches and media rather than a second set of links. Settings is a real tab
-rather than a page with no tab, because QTabBar cannot hold "nothing
-selected" while tabs exist -- the first attempt showed Settings while the
-strip pointed at Hotspot.
+### The device panel
 
-Media and the quick toggles belong to the shell, not to the overview, so they
-are visible on every tab -- which is the point of Phone Link's panel.
+Top to bottom: the phone and its model, a row of complications, the link pill
+with a refresh next to it, the switches as squares, battery, the notification
+feed, what is playing, and the last status line.
+
+Everything in it is about the phone, and all of it is visible on every tab --
+which is the point of Phone Link's panel. The feed is why the overview has no
+notifications tile any more: two copies of the same list drifted apart.
+
+**Complications** are the small readings in one line: Bluetooth, Wi-Fi,
+cellular, ringer, battery. Each hides itself when the phone has not reported
+it, so the strip never shows a value that is only a guess -- and they clear
+when the phone disconnects, because a stale battery reading is worse than
+none.
+
+They are drawn with the desktop's own status icons, stepped by level the way
+a status bar does it: `network-wireless-60`, `network-mobile-80-5g`,
+`battery-020-charging`. Breeze draws these in steps of twenty (signal) and ten
+(battery). The icons are monochrome and made for one background, so
+`tinted_icon` repaints each in the colour of the text beside it; at 16px on a
+dark panel the originals were invisible.
+
+Battery detail comes from the phone in one `status` frame: charging state and
+supply, time to full, current, temperature, and health when it is not good.
+
+### The tab strip
+
+Four tabs -- Overview, Calls, Messages, Photos -- then **More** for the device
+features (Notifications, Screen, Webcam, Audio, Do Not Disturb, Hotspot) and
+the gear for Settings. Ten worded tabs in one row was unreadable, and Phone
+Link itself shows four.
+
+A page opened from More takes the strip's last tab, so the selected tab always
+names the page on screen. Selecting a page that has no tab of its own is worse
+than it sounds: `QTabBar` clamps `setCurrentIndex(-1)` while tabs exist, so an
+earlier attempt showed Settings with the Hotspot tab lit.
+
+Two Qt details worth knowing, both found by looking at the rendered pixels:
+
+- The bar takes the strip's leftover width (`addWidget(tabs, 1)`). Beside a
+  stretch it collapses to its scrollable minimum -- one elided tab and two
+  arrows.
+- The accent underline under the selected tab is painted by `PageTabs`, not
+  QSS. A `QTabBar` polished before the application stylesheet exists never
+  picks up a border on its tabs, and a layout can hand the bar fewer pixels
+  than a tab is tall, so the underline is clamped to the widget.
 
 ## Following the desktop, not imposing on it
 
@@ -41,7 +80,8 @@ What is styled is what the platform has no opinion about:
 
 | | |
 | --- | --- |
-| `#Sidebar`, `#Nav` | A navigation rail Qt has no concept of |
+| `#Sidebar`, `#PhoneTile`, `#Quick`, `#FeedRow` | The device panel, which Qt has no concept of |
+| `#TabStrip`, `#Tabs`, `#Strip` | The tab strip and its two buttons |
 | `#Card`, `#CardFlat` | The blocks pages are built from |
 | `#Title`, `#SectionTitle`, `#Subtitle`, `#Muted` | Semantic label roles |
 | `#Primary`, `#Danger`, `#Ghost`, `#Copy` | The four buttons that carry meaning |
