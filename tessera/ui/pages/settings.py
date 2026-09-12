@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...backends import btcodecs, companion, ldacdec
+from ...core import autostart
 from ...core.clipboard import MODE_LABELS as CLIPBOARD_LABELS
 from ...core.hub import Hub
 from ...core.proc import ManagedProcess, submit
@@ -117,6 +118,29 @@ class SettingsPage(QWidget):
         self.pair_status.setWordWrap(True)
         pair.add(self.pair_status)
         outer.addWidget(pair)
+
+        # -- startup ---------------------------------------------------------
+        startup = Card(self)
+        startup_title = QLabel("Startup")
+        startup_title.setObjectName("SectionTitle")
+        startup.add(startup_title)
+
+        self.autostart_box = QCheckBox("Start Tessera when I log in")
+        self.autostart_box.setChecked(autostart.enabled())
+        startup.add(self.autostart_box)
+
+        self.minimised_box = QCheckBox("Start minimised to the tray")
+        self.minimised_box.setChecked(hub.config.start_minimised)
+        startup.add(self.minimised_box)
+
+        startup_note = QLabel(
+            "At login, not at boot — Tessera needs a desktop session to run in. "
+            "Your desktop's own autostart settings list it too."
+        )
+        startup_note.setObjectName("Muted")
+        startup_note.setWordWrap(True)
+        startup.add(startup_note)
+        outer.addWidget(startup)
 
         # -- screen ----------------------------------------------------------
         screen = Card(self)
@@ -481,6 +505,14 @@ class SettingsPage(QWidget):
 
         for key, box in self.feature_boxes.items():
             setattr(self.hub.config.features, key, box.isChecked())
+
+        self.hub.config.start_minimised = self.minimised_box.isChecked()
+        if self.autostart_box.isChecked() != autostart.enabled():
+            if not autostart.set_enabled(self.autostart_box.isChecked()):
+                self.toast.show_message(
+                    "Could not write the autostart entry", self.palette_tokens, "danger"
+                )
+                self.autostart_box.setChecked(autostart.enabled())
 
         codec = self.codec_choice.currentData()
         self.hub.config.bluetooth.codec = codec

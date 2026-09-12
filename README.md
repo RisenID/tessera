@@ -188,6 +188,14 @@ to break system packages, and a virtualenv would want its own copy of Qt.
 
 Either way, launch **Tessera** from the application menu or run `tessera`.
 
+**Settings → Startup** has *Start Tessera when I log in* and *Start minimised
+to the tray*. The first writes an XDG autostart entry, which every desktop
+reads and lists in its own autostart settings, so it can be seen and undone
+there too. At login rather than at boot: the app needs a session to draw in
+and a tray to sit in. Starting minimised falls back to showing the window if
+the desktop has no system tray, so the app can never end up running with no
+way to reach it.
+
 #### The optional extras
 
 Four features need a program Tessera does not bundle. Each is optional, and the

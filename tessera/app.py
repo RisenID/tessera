@@ -54,7 +54,11 @@ def main(argv: list[str] | None = None) -> int:
     hub = Hub(config)
     window = MainWindow(hub, palette)
 
-    if not config.start_minimised:
+    # Minimised means "in the tray", so it needs a tray to be in. A desktop
+    # without one would leave the app running with no way to reach it.
+    if config.start_minimised and window.tray.isSystemTrayAvailable():
+        log.info("starting minimised to the tray")
+    else:
         window.show()
 
     hub.start()

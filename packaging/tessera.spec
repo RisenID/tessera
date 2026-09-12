@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        10%{?dist}
+Release:        11%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,17 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-11
+- Settings has a Startup section: start Tessera at login, and start it
+  minimised to the tray. The minimised setting existed in the config file
+  and was never exposed anywhere.
+- Autostart is an XDG entry in ~/.config/autostart, so every desktop reads it
+  and lists it in its own autostart settings -- visible and undoable there as
+  well as here. An entry a desktop has disabled rather than deleted reads as
+  off, which is how those lists turn things off.
+- Starting minimised shows the window anyway when the desktop has no system
+  tray, so the app cannot end up running with no way to reach it.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-10
 - The interface follows the desktop instead of imposing its own look. Colours
   and the accent come from the platform palette, icons from the icon theme,
