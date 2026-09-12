@@ -92,9 +92,25 @@ none.
 They are drawn with the desktop's own status icons, stepped by level the way
 a status bar does it: `network-wireless-60`, `network-mobile-80-5g`,
 `battery-020-charging`. Breeze draws these in steps of twenty (signal) and ten
-(battery). The icons are monochrome and made for one background, so
-`tinted_icon` repaints each in the colour of the text beside it; at 16px on a
-dark panel the originals were invisible.
+(battery).
+
+Icons are made for one background and the panel has several, so `tinted_icon`
+repaints each in the colour of the text beside it; at 16px on a dark panel the
+originals were invisible. Two rules keep that from doing harm:
+
+- `themed_icon` prefers the **`-symbolic`** name. Symbolic icons are the line
+  art meant to be recoloured; the full-colour version of the same name is a
+  picture, and recolouring `camera-photo` or `smartphone` produced solid white
+  rectangles.
+- `tinted_icon` **refuses a picture**. An icon is tintable if its strokes cover
+  a small part of the box, or if it is one colour throughout however much of
+  the box it fills -- so a red roundel and a solid triangle are recoloured, and
+  a photograph of a camera is left as it is.
+
+An icon with no line-art version is not used at all: `phone-vibrate` and
+`phone-ringing` are full-colour device pictures that vanish into a dark panel,
+so the ringer switch is the speaker family throughout -- muted, low, high --
+and "ring the phone" is a bell.
 
 Battery detail comes from the phone in one `status` frame: charging state and
 supply, time to full, current, temperature, and health when it is not good.

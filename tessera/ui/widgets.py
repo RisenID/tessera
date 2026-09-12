@@ -27,24 +27,88 @@ from .theme import RADIUS, SPACE, Palette
 
 
 def themed_icon(*names: str) -> QIcon:
-    """The first of *names* the desktop's icon theme actually has."""
+    """The first of *names* the desktop's icon theme has, symbolic for choice.
+
+    A "-symbolic" icon is single-colour line art meant to be recoloured, which
+    is exactly what small UI icons here are for. The full-colour version of the
+    same name is a picture: recolouring `camera-photo` or `smartphone` turned
+    them into solid white rectangles.
+    """
     for name in names:
-        icon = QIcon.fromTheme(name)
-        if not icon.isNull():
-            return icon
+        for candidate in (f"{name}-symbolic", name):
+            icon = QIcon.fromTheme(candidate)
+            if not icon.isNull():
+                return icon
     return QIcon()
 
 
-def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
-    """Recolour a monochrome icon to *colour*.
+#: Above this share of opaque pixels an icon is filled rather than stroked.
+#: Measured across the icons this app uses: strokes top out around a quarter of
+#: the box, pictures start above a third.
+_FILLED_COVERAGE = 0.30
 
-    Breeze's status icons are drawn for one background, and Tessera puts them
-    on several -- the window, a lit switch, a tab. Painting them in the colour
-    of the text beside them is what makes them read at 16px on any theme.
+#: How far apart the lightest and darkest parts can be, and how wide a spread
+#: of hues is still one colour, before a filled icon counts as a picture.
+_VALUE_SPREAD, _HUE_SPREAD = 0.45, 40
+
+
+def _tintable(pixmap: QPixmap) -> bool:
+    """Whether *pixmap* is line art or a flat shape rather than a picture.
+
+    Tinting replaces every colour with one. That suits strokes -- including
+    strokes with a coloured accent, like the red slash on a muted speaker --
+    and flat glyphs like a skip-forward triangle. It ruins a picture, which
+    comes back as its own silhouette: that is what turned `camera-photo` and
+    `smartphone` into solid white rectangles.
+
+    Two signals, either of which is enough. A small filled area means strokes
+    whatever colours they use; one colour throughout means a flat glyph however
+    much of the box it fills.
+    """
+    image = pixmap.toImage()
+    if image.isNull():
+        return True
+
+    opaque = 0
+    lightest, darkest = 0.0, 1.0
+    hues: list[int] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            colour = image.pixelColor(x, y)
+            if colour.alpha() < 160:
+                continue
+            opaque += 1
+            value = colour.valueF()
+            lightest, darkest = max(lightest, value), min(darkest, value)
+            if colour.saturationF() > 0.25 and colour.hue() >= 0:
+                hues.append(colour.hue())
+
+    if not opaque:
+        return True
+    if opaque <= _FILLED_COVERAGE * image.width() * image.height():
+        return True
+    if lightest - darkest >= _VALUE_SPREAD:
+        return False
+    if not hues:
+        return True
+    # Hues are a circle, so their spread is the widest gap's complement.
+    hues.sort()
+    gaps = [b - a for a, b in zip(hues, hues[1:])] + [360 - hues[-1] + hues[0]]
+    return 360 - max(gaps) < _HUE_SPREAD
+
+
+def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
+    """Recolour a single-colour icon to *colour*, or leave a picture alone.
+
+    Breeze's line art is drawn for one background and Tessera puts it on
+    several -- the window, a lit switch, a tab -- so painting it in the colour
+    of the text beside it is what makes it read at 16px on any theme.
     """
     if icon.isNull():
         return icon
     pixmap = icon.pixmap(size, size)
+    if not _tintable(pixmap):
+        return icon
     painter = QPainter(pixmap)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
     painter.fillRect(pixmap.rect(), QColor(colour))

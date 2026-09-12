@@ -44,10 +44,12 @@ SCALE_CEILING = 1.6
 #: What the ringer button steps through, in order.
 RINGER_CYCLE = ("normal", "vibrate", "silent")
 
-#: Icon and fallback glyph for each ringer mode.
+#: Icon and fallback glyph for each ringer mode. One family, so the switch
+#: reads as one control: Breeze's phone-vibrate is a full-colour device icon
+#: with no line-art version, and it disappeared into a dark panel.
 RINGER_ICONS = {
     "normal": ("audio-volume-high", "\N{BELL}"),
-    "vibrate": ("phone-vibrate", "\N{MOBILE PHONE}"),
+    "vibrate": ("audio-volume-low", "\N{MOBILE PHONE}"),
     "silent": ("audio-volume-muted", "\N{SPEAKER WITH CANCELLATION STROKE}"),
 }
 
@@ -63,9 +65,10 @@ TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
     "ringer": (("audio-volume-high",), "\N{BELL}", "Ringer", False, ""),
     "clipboard": (("edit-paste",), "\N{CLIPBOARD}", "Clipboard sharing",
                   True, "clipboard"),
-    # A bell, not a handset: the ringer switch shows a phone while the phone is
-    # on vibrate, and two phone glyphs read as one control.
-    "ring": (("notifications", "phone-ringing"), "\N{BELL}", "Ring phone",
+    # A bell, not a handset: the ringer switch next to it is a speaker, and
+    # Breeze's phone-ringing is a full-colour device icon that vanishes on a
+    # dark panel.
+    "ring": (("notifications", "audio-volume-high"), "\N{BELL}", "Ring phone",
              False, ""),
     "hotspot": (("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
                 "Start the phone's hotspot and join it", True, "hotspot"),
@@ -925,7 +928,7 @@ class DevicePanel(QWidget):
             self.comp_ringer.set("audio-volume-muted", text="silent",
                                  tooltip="Ringer silent", tone=p.warning)
         elif ringer == "vibrate":
-            self.comp_ringer.set("phone-vibrate", "audio-volume-low",
+            self.comp_ringer.set("audio-volume-low", "audio-volume-medium",
                                  tooltip="Ringer on vibrate")
         elif ringer == "normal":
             self.comp_ringer.set(

@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        16%{?dist}
+Release:        17%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -157,6 +157,17 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sat Sep 12 2026 Tessera contributors - 1.10.0-17
+- The webcam and mirror switches are outlines again rather than solid blocks.
+  Recolouring an icon to match the text beside it turns line art the right
+  colour and a picture into its own silhouette, which is what camera-photo and
+  smartphone were: pictures. Icons are now taken from the "-symbolic" line-art
+  version where the theme has one, and an icon that is a picture is left in
+  the theme's own colours instead of being flattened.
+- The ringer switch is one family throughout -- muted, low and high speaker --
+  because Breeze's vibrate and ringing icons are full-colour device pictures
+  with no line-art version, and they disappeared into a dark panel.
+
 * Sat Sep 12 2026 Tessera contributors - 1.10.0-16
 - Settings apply as they are made, and the Save button is gone. It used to sit
   inside the "Screen and windows" card at the bottom of a scrolling page, so
