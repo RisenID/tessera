@@ -22,6 +22,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# Before any tessera import: a check must never write the real configuration.
+from sandbox import isolate                                          # noqa: E402
+
+isolate()
+
 from PySide6.QtCore import QEventLoop, QTimer                      # noqa: E402
 from PySide6.QtWidgets import QApplication                         # noqa: E402
 
@@ -87,7 +92,15 @@ def main() -> int:
     player.raiseRequested.connect(lambda: raised.append(True))
 
     print("-- publishing")
-    check("the player takes its bus name", player.publish())
+    if not player.publish():
+        # Almost always the app itself: Tessera publishes this name while it
+        # runs, and a second owner is not allowed. Everything below would then
+        # be reading the *running* app's player and reporting six failures for
+        # one cause, which is what it did.
+        print("\nthe player name is already taken -- Tessera is running.")
+        print("Close it (or run this before starting it) and try again.")
+        return 0
+    check("the player takes its bus name", True)
     player.update(TRACK)
     check("it knows what is playing", player.status == "Playing", player.status)
 

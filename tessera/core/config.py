@@ -117,6 +117,16 @@ class PhoneAudioConfig:
     #: * "bluetooth" -- always the A2DP profile switch
     route: str = "auto"
 
+    #: Whether the phone goes quiet while its audio is playing here.
+    #:
+    #: What the link sends is a copy, so by default the same track comes out of
+    #: the phone and the computer at once, a fraction of a second apart. Most
+    #: people press this button at a desk with the phone next to them, so the
+    #: default is to silence the phone; a phone playing to its own headphones
+    #: is the case for switching it off. Android restores the volume itself,
+    #: and does so even if this app dies while streaming.
+    mute_phone: bool = True
+
     volume: int = 100              # percent
     buffer_ms: int = 120
     #: Where to play it. Empty means the system's default output, which is

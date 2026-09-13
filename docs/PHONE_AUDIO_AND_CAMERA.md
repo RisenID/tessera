@@ -69,6 +69,23 @@ is a plain tray executable doing precisely this. From Python it is
 which ship wheels for 3.11 through 3.14 — so this is Python work in
 `backends/audio_win.py`, with no native code at all.
 
+## Where the copy is taken, and why the phone can be silenced
+
+Playback capture hands over a copy of the media mix, which is what makes it
+safe -- it cannot pull sound off the phone's own headphones the way A2DP does.
+The cost is that both devices play the track at once, a fraction of a second
+apart, which is worse than either alone when the phone is on the desk.
+
+The copy is taken *before* the phone's volume stage, so the phone can be
+silenced without silencing the desktop. Measured on the S25 rather than assumed:
+with the media volume at 8/15 the desktop saw 331 frames above silence and a
+peak of 0.751; with the same track and the volume at 0 it saw 249/249 frames
+above silence and a peak of 0.594 -- the difference is the music, not the
+volume. `MediaMute` uses `AudioManager.ADJUST_MUTE`, which Android releases by
+itself if the process holding it dies, so a crash mid-stream cannot leave the
+phone silent.
+
+
 ## The camera: three paths
 
 **v4l2loopback** — GPL-2, a kernel module, what we already use on Linux. Root

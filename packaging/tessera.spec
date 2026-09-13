@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        19%{?dist}
+Release:        20%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -164,6 +164,22 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-20
+- The phone can be kept quiet while its audio plays here. What the link carries
+  is a copy, so both were playing the same track a fraction of a second apart;
+  a box on the Audio card silences the phone for as long as the stream runs and
+  Android puts its volume back afterwards -- including if this app dies while
+  streaming. It is ticked by default and takes effect the moment it is pressed,
+  mid-stream. The capture is taken before the phone's volume stage, measured on
+  an S25, so silencing the phone costs this side nothing.
+- The Audio page scrolls. With four cards it was taller than the window, and a
+  layout with no room shrinks widgets rather than refusing: wrapped text
+  collapsed to one clipped line and the buttons lost half their height.
+- A check can no longer write the real configuration. Building a default
+  `Config` and touching anything that saves wrote a blank configuration over
+  the user's, pairing included; every check now runs against a throwaway
+  directory.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-19
 - The phone's audio can now play here over the companion link instead of
   Bluetooth. The phone sends a copy of what it is playing, so it keeps playing

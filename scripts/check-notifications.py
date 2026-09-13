@@ -19,6 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# Before any tessera import: a check must never write the real configuration.
+from sandbox import isolate                                          # noqa: E402
+
+isolate()
+
 from PySide6.QtCore import QEventLoop, QTimer                      # noqa: E402
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon        # noqa: E402
 

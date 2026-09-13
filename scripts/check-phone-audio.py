@@ -21,6 +21,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# Before any tessera import: a check must never write the real configuration.
+from sandbox import isolate                                          # noqa: E402
+
+isolate()
+
 from PySide6.QtCore import QTimer                                    # noqa: E402
 from PySide6.QtWidgets import QApplication                           # noqa: E402
 
@@ -206,6 +211,67 @@ def hub_state() -> None:
     hub._on_link_for_audio(False)
     check("losing the link closes the stream", not hub.phone_audio_active)
 
+    # -- keeping the phone quiet ------------------------------------------
+    #
+    # What arrives is a copy, so without this the same track plays on the
+    # phone and here at once. The phone is asked as part of starting, and can
+    # be asked again mid-stream when the box is ticked or unticked.
+    sent: list[dict] = []
+    hub.companion.send = sent.append          # type: ignore[method-assign]
+    # A phone that is connected and offers audio, without one being here.
+    hub.companion._capabilities = ["phone_audio", "phone_audio_mute"]
+    hub.companion._authenticated = True
+    hub.companion._socket = object()
+    hub._on_phone_audio_stopped()
+
+    config.phone_audio.mute_phone = True
+    hub.start_phone_audio()
+    check(
+        "starting asks the phone to go quiet",
+        sent and sent[-1].get("t") == "audio_start" and sent[-1].get("mute") is True,
+        str(sent[-1]) if sent else "nothing sent",
+    )
+
+    config.phone_audio.mute_phone = False
+    hub.stop_phone_audio()
+    sent.clear()
+    hub.start_phone_audio()
+    check(
+        "and leaves it playing when the box is unticked",
+        sent and sent[-1].get("mute") is False,
+        str(sent[-1]) if sent else "nothing sent",
+    )
+
+    # The phone says whether it managed it: Do Not Disturb can refuse.
+    hub._on_phone_audio_started(dict(HEADER, muted=True, muteAsked=True))
+    check("the phone reports that it went quiet", hub.phone_muted)
+
+    sent.clear()
+    hub.set_phone_muted(False)
+    check(
+        "unticking mid-stream reaches the phone",
+        sent and sent[-1] == {"t": "audio_mute", "on": False},
+        str(sent[-1]) if sent else "nothing sent",
+    )
+    check("and is remembered", config.phone_audio.mute_phone is False)
+
+    errors.clear()
+    hub._on_phone_audio_stopped()
+    hub._on_phone_audio_started(dict(HEADER, muted=False, muteAsked=True))
+    # Anywhere in the errors, not the last one: opening the sink can fail in a
+    # check that has already opened and closed several, and that noise is not
+    # what is being tested here.
+    check(
+        "a phone that would not go quiet says so",
+        any("Do Not Disturb" in message for message in errors),
+        "; ".join(errors) or "nothing said",
+    )
+    check("and the page is not told it is silent", not hub.phone_muted)
+
+    hub._on_phone_audio_stopped()
+    check("stopping forgets the mute", not hub.phone_muted)
+    config.phone_audio.mute_phone = True
+
     # Switched off in settings, the button must refuse with the reason.
     config.features.phone_audio = False
     errors.clear()
@@ -270,7 +336,9 @@ def interface() -> None:
     # which only happens here: the app has exactly one player. Let Qt catch up
     # and try once more rather than reporting a failure the app cannot have.
     hub._on_phone_audio_started(HEADER)
-    if not hub.phone_audio_active:
+    for _ in range(4):
+        if hub.phone_audio_active:
+            break
         for _ in range(10):
             QApplication.instance().processEvents()
         hub._on_phone_audio_started(HEADER)

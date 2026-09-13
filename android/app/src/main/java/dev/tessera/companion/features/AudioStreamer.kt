@@ -24,6 +24,10 @@ import kotlin.concurrent.thread
  * audio away from them, which is the whole reason this route was chosen over
  * A2DP -- and it is the same route Phone Link and scrcpy take.
  *
+ * Because it is a copy, the phone plays the track at the same time as the
+ * desktop unless it is asked not to; [MediaMute] is that, switched from the
+ * desktop and never on by itself.
+ *
  * Two consequences worth knowing, both Android's rules rather than ours:
  *
  *  * it needs a MediaProjection, which means the user consents on the phone --
@@ -41,6 +45,15 @@ import kotlin.concurrent.thread
 class AudioStreamer(
     private val context: Context,
     private val projection: MediaProjection,
+    /**
+     * Whether to silence the phone's own speaker while this runs.
+     *
+     * The capture is a copy, so without this the track plays twice at once --
+     * once here and once on the desktop. The desktop decides, because only the
+     * person sitting in front of it knows whether the phone is on the desk or
+     * in their pocket with headphones in. See [MediaMute].
+     */
+    private var mutePhone: Boolean = false,
     private val onStarted: (JSONObject) -> Unit,
     private val onFrame: (ByteArray) -> Unit,
     private val onError: (String) -> Unit,
@@ -116,6 +129,10 @@ class AudioStreamer(
         }
         record = audio
 
+        // Only once the capture is certain to run: muting the phone and then
+        // failing to send it anywhere would be the worst of both.
+        val silenced = mutePhone && MediaMute.mute(context)
+
         onStarted(
             JSONObject()
                 .put("t", "audio_started")
@@ -123,6 +140,11 @@ class AudioStreamer(
                 .put("rate", SAMPLE_RATE)
                 .put("channels", 2)
                 .put("frameBytes", FRAME_BYTES)
+                // Said rather than assumed: Do Not Disturb can refuse the mute,
+                // and the desktop should not claim the phone went quiet if it
+                // did not.
+                .put("muted", silenced)
+                .put("muteAsked", mutePhone)
         )
 
         reader = thread(name = "tessera-audio") { pump(audio) }
@@ -167,8 +189,28 @@ class AudioStreamer(
     val quietSeconds: Int
         get() = quietFrames * FRAME_MS / 1000
 
+    /**
+     * Mute or unmute the phone without interrupting the stream.
+     *
+     * The checkbox is on the desktop and gets pressed while the music is
+     * playing -- most often because the phone is audibly playing the same
+     * track -- so it has to take effect there and then rather than at the next
+     * start.
+     */
+    fun setMuted(on: Boolean): Boolean {
+        mutePhone = on
+        if (!running.get()) return false
+        return if (on) MediaMute.mute(context) else {
+            MediaMute.unmute(context)
+            false
+        }
+    }
+
     fun stop() {
         if (!running.compareAndSet(true, false)) return
+        // Before anything else: the phone must not be left silent because a
+        // later step threw.
+        MediaMute.unmute(context)
         val audio = record
         record = null
         runCatching { audio?.stop() }

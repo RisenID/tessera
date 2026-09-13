@@ -27,6 +27,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Before any tessera import: a check must never write the real configuration.
+from sandbox import isolate                                          # noqa: E402
+
+isolate()
+
 FAILURES: list[str] = []
 
 

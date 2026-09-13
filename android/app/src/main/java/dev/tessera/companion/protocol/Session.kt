@@ -160,6 +160,9 @@ class Session(
         // that can be arranged from the desktop if it cannot.
         if (ProjectionGrant.allowed(context)) add("phone_audio_silent")
         if (ProjectionGrant.grantable()) add("phone_audio_grant")
+        // Whether the phone can be kept quiet while the desktop plays the
+        // copy, so the same track is not coming out of both at once.
+        if (AudioStreamer.supported()) add("phone_audio_mute")
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
@@ -283,8 +286,16 @@ class Session(
                 reply(id, JSONObject().put("ringing", false))
             }
 
-            "audio_start" -> startAudio(id)
+            "audio_start" -> startAudio(id, message.optBoolean("mute", false))
             "audio_stop" -> stopAudio(notify = true)
+
+            // The desktop's "keep the phone quiet" checkbox, pressed while the
+            // music is already playing.
+            "audio_mute" -> {
+                val on = message.optBoolean("on", false)
+                val muted = audio?.setMuted(on) ?: false
+                reply(id, JSONObject().put("muted", muted).put("streaming", audio != null))
+            }
 
             // One-time: stop Android asking before every stream. Runs through
             // the same Shizuku shell the hotspot uses, so it needs nothing on
@@ -525,7 +536,7 @@ class Session(
      * and the stream starts when they answer; the desktop is told to expect
      * that rather than left waiting.
      */
-    private fun startAudio(id: Int?) {
+    private fun startAudio(id: Int?, mute: Boolean) {
         if (!AudioStreamer.supported()) return fail(id, AudioStreamer.UNSUPPORTED)
         if (!AudioStreamer.canCapture(context)) return fail(id, AudioStreamer.NO_PERMISSION)
 
@@ -535,7 +546,7 @@ class Session(
         stopAudio()
         val projection = service.audioProjection()
         if (projection == null) {
-            val quiet = service.askForAudioConsent { if (open.get()) beginAudio(service) }
+            val quiet = service.askForAudioConsent { if (open.get()) beginAudio(service, mute = mute) }
             send(
                 JSONObject()
                     .put("t", "audio_consent")
@@ -550,11 +561,15 @@ class Session(
             )
             return
         }
-        beginAudio(service, projection)
+        beginAudio(service, projection, mute)
     }
 
     /** Second half of [startAudio], also the callback for a late consent. */
-    private fun beginAudio(service: TesseraService, ready: android.media.projection.MediaProjection? = null) {
+    private fun beginAudio(
+        service: TesseraService,
+        ready: android.media.projection.MediaProjection? = null,
+        mute: Boolean = false,
+    ) {
         val projection = ready ?: service.audioProjection() ?: run {
             fail(null, "The phone would not allow its audio to be captured.")
             return
@@ -562,6 +577,7 @@ class Session(
         val streamer = AudioStreamer(
             context = context,
             projection = projection,
+            mutePhone = mute,
             onStarted = { header -> send(header) },
             onFrame = { frame ->
                 sendBinary(JSONObject().put("t", "audio_frame"), frame, null)

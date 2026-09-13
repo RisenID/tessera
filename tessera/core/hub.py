@@ -112,6 +112,9 @@ class Hub(QObject):
         #: True between asking the phone for audio and it starting, so the
         #: interface can say "waiting for the phone" rather than nothing.
         self._phone_audio_pending = False
+        #: Whether the phone is silent because we asked it to be, for the
+        #: stream that is running now.
+        self.phone_muted = False
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -552,13 +555,29 @@ class Hub(QObject):
             return
         self._phone_audio_pending = True
         self.phoneAudioChanged.emit(False)
-        self.companion.send({"t": "audio_start"})
+        self.companion.send({
+            "t": "audio_start",
+            "mute": bool(self.config.phone_audio.mute_phone),
+        })
 
     def stop_phone_audio(self) -> None:
         self._phone_audio_pending = False
         if self.companion.connected:
             self.companion.send({"t": "audio_stop"})
         self.phone_audio.close()
+
+    def set_phone_muted(self, muted: bool) -> None:
+        """Silence the phone while its audio plays here, or let it speak.
+
+        Saved for the next stream, and applied to the one already running:
+        the checkbox gets pressed *because* the phone is audibly playing the
+        same track, so waiting until the next start would answer the wrong
+        question.
+        """
+        self.config.phone_audio.mute_phone = bool(muted)
+        self.config.save()
+        if self.phone_audio.running and self.companion.connected:
+            self.companion.send({"t": "audio_mute", "on": bool(muted)})
 
     def toggle_phone_audio(self) -> None:
         if self.phone_audio.running or self._phone_audio_pending:
@@ -584,10 +603,20 @@ class Hub(QObject):
 
     def _on_phone_audio_started(self, header: dict) -> None:
         self._phone_audio_pending = False
+        #: Whether the phone actually went quiet. It is asked, not told: Do
+        #: Not Disturb makes changing the volume privileged, and this app does
+        #: not hold that access, so the answer can be no.
+        self.phone_muted = bool(header.get("muted"))
+        if header.get("muteAsked") and not self.phone_muted:
+            self.errorOccurred.emit(
+                "The phone would not go quiet -- Do Not Disturb stops an app "
+                "changing the volume. Its own speaker is still playing."
+            )
         self.phone_audio.open(header)
 
     def _on_phone_audio_stopped(self) -> None:
         self._phone_audio_pending = False
+        self.phone_muted = False
         self.phone_audio.close()
 
     def _on_phone_audio_consent(self, message: str) -> None:

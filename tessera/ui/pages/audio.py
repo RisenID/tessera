@@ -5,7 +5,10 @@ Two of them, and they are not equivalent:
 * **over the link** -- the companion app sends a copy of the phone's media mix
   over the connection the app already holds. No pairing, no profile, and it
   cannot take audio away from the phone's own headphones because it is a copy.
-  This is the route Phone Link uses, and it works on every platform.
+  Being a copy also means the phone plays it too, which is why there is a box
+  on the card to keep the phone quiet while it runs -- the capture happens
+  before the phone's volume stage, so silencing the phone costs this side
+  nothing. This is the route Phone Link uses, and it works on every platform.
 * **over Bluetooth** -- the phone becomes an A2DP source, which *does* move its
   audio here, and is the only route that can carry a call's microphone.
 
@@ -20,10 +23,12 @@ import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QCheckBox,
     QHBoxLayout,
     QLabel,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -36,6 +41,17 @@ from ...core.hub import Hub
 from ...core.proc import submit
 from ..theme import SPACE, Palette
 from ..widgets import Card, Pill, Toast, heading
+
+
+def say(label: QLabel, text: str) -> None:
+    """Put *text* on *label*, and take the label away when there is none.
+
+    An empty QLabel is not nothing: it holds its line of height and leaves a
+    band of blank card under the buttons. These three labels are empty most of
+    the time -- they exist for the one sentence that explains a failure.
+    """
+    label.setText(text)
+    label.setVisible(bool(text))
 
 
 class AudioPage(QWidget):
@@ -62,15 +78,31 @@ class AudioPage(QWidget):
         #: Polls spent on the current wait, so it cannot run forever.
         self._waited = 0
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
-        outer.setSpacing(SPACE["lg"])
-        outer.addWidget(
+        # Four cards do not fit in a window this tall, and a layout with no
+        # room shrinks every widget towards its minimum rather than refusing:
+        # word-wrapped text collapses to one clipped line and buttons lose
+        # half their height, which is what this page looked like. It scrolls
+        # now, as every other page of this length already does.
+        page = QVBoxLayout(self)
+        page.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], 0)
+        page.setSpacing(SPACE["lg"])
+        page.addWidget(
             heading(
                 "Audio",
                 "Play the phone's audio here over the link, or use Bluetooth for calls",
             )
         )
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        page.addWidget(scroll, 1)
+
+        host = QWidget()
+        scroll.setWidget(host)
+        outer = QVBoxLayout(host)
+        outer.setContentsMargins(0, 0, SPACE["md"], SPACE["xl"])
+        outer.setSpacing(SPACE["lg"])
 
         outer.addWidget(self._build_link_card(palette))
 
@@ -208,13 +240,23 @@ class AudioPage(QWidget):
 
         note = QLabel(
             "Plays whatever the phone is playing, over the connection this app "
-            "already has. It is a copy of the phone's sound, so the phone keeps "
-            "playing as it was — including through its own headphones, which "
-            "nothing here can take away. No Bluetooth is involved."
+            "already has. No Bluetooth is involved, and because it is a copy of "
+            "the phone's mix, nothing here ever takes the sound away from the "
+            "phone's own headphones."
         )
         note.setObjectName("Muted")
         note.setWordWrap(True)
         card.add(note)
+
+        # A copy means both play it. With the phone on the desk that is the
+        # same track twice, a fraction of a second apart, which is worse than
+        # either on its own -- so the phone is muted by default and this is how
+        # to stop that. It belongs here rather than in Settings: the answer
+        # depends on where the phone is right now, not on how the app is set up.
+        self.mute_phone = QCheckBox("Keep the phone quiet while it plays here")
+        self.mute_phone.setChecked(self.hub.config.phone_audio.mute_phone)
+        self.mute_phone.toggled.connect(self._set_muted)
+        card.add(self.mute_phone)
 
         buttons = QHBoxLayout()
         self.stream_button = QPushButton("Play the phone's audio here")
@@ -242,6 +284,7 @@ class AudioPage(QWidget):
         self.level.setTextVisible(False)
         self.level.setFixedHeight(6)
         self.level.setValue(0)
+        self.level.setVisible(False)
         card.add(self.level)
 
         self.stream_status = QLabel()
@@ -255,6 +298,13 @@ class AudioPage(QWidget):
         self._apply_stream_state()
         return card
 
+    def _set_muted(self, muted: bool) -> None:
+        self.hub.set_phone_muted(muted)
+        # Only worth saying while it is playing; otherwise it is a preference
+        # about something that is not happening.
+        if self.hub.phone_audio_active:
+            self._apply_stream_state()
+
     def _set_volume(self, value: int) -> None:
         self.hub.phone_audio.set_volume(value)
         self.hub.config.phone_audio.volume = int(value)
@@ -266,7 +316,7 @@ class AudioPage(QWidget):
     def _on_stream_waiting(self, message: str) -> None:
         self.stream_pill.setText("Asking the phone")
         self.stream_pill.apply(self.palette_tokens, "warning")
-        self.stream_status.setText(message)
+        say(self.stream_status, message)
         self.stream_button.setText("Cancel")
 
     def _on_level(self, peak: float) -> None:
@@ -279,12 +329,20 @@ class AudioPage(QWidget):
         pending = self.hub.phone_audio_pending
 
         if playing:
+            self.level.setVisible(True)
             self.stream_pill.setText("Playing here")
             self.stream_pill.apply(self.palette_tokens, "success")
             self.stream_button.setText("Stop")
-            self.stream_status.setText(
-                "An app on the phone can refuse to be captured, and most that "
-                "play protected audio do; those arrive as silence."
+            quiet = (
+                "The phone is silent while this plays; its volume comes back "
+                "when it stops. "
+                if self.hub.phone_muted else
+                "The phone is playing this too — tick the box above to silence "
+                "it. "
+            )
+            say(self.stream_status, 
+                quiet + "An app on the phone can refuse to be captured, and "
+                "most that play protected audio do; those arrive as silence."
             )
         elif pending:
             self._on_stream_waiting(
@@ -295,8 +353,9 @@ class AudioPage(QWidget):
             self.stream_pill.setText("Not playing")
             self.stream_pill.apply(self.palette_tokens, "muted")
             self.stream_button.setText("Play the phone's audio here")
-            self.stream_status.setText(self._link_note())
+            say(self.stream_status, self._link_note())
             self.level.setValue(0)
+            self.level.setVisible(False)
 
     def _link_note(self) -> str:
         """Why the button might not work, before it is pressed."""
@@ -321,6 +380,10 @@ class AudioPage(QWidget):
 
     def _apply_availability(self) -> None:
         """Show only the routes this computer and these settings allow."""
+        # An older companion app takes the audio commands but not this one, and
+        # a checkbox that silently does nothing is worse than no checkbox.
+        known = self.hub.companion.capabilities
+        self.mute_phone.setEnabled(not known or "phone_audio_mute" in known)
         bluetooth_possible = (
             platform.supported("bluetooth_audio")
             and self.hub.config.features.bluetooth_audio
@@ -513,7 +576,7 @@ class AudioPage(QWidget):
             self.music_button.setEnabled(False)
             self.call_button.setEnabled(False)
             self.handback_button.setEnabled(False)
-            self.mode_status.setText(
+            say(self.mode_status, 
                 "Connect the phone to play its audio here or take calls."
             )
             return
@@ -523,17 +586,17 @@ class AudioPage(QWidget):
         self.handback_button.setEnabled(claimed)
 
         if streaming:
-            self.mode_status.setText(self._playing_note(stream))
+            say(self.mode_status, self._playing_note(stream))
         elif claimed:
             # The profile is connected and nothing is coming down it, which is
             # what a paused phone looks like. Saying "playing" here was the
             # old bug: it read PipeWire's profile, which is now always left
             # ready, so it announced playback the moment Bluetooth connected.
-            self.mode_status.setText(
+            say(self.mode_status, 
                 "Ready. The phone's audio plays here as soon as it starts."
             )
         else:
-            self.mode_status.setText(
+            say(self.mode_status, 
                 "Connected for track details and call control. No audio is "
                 "being moved, so anything already playing is untouched."
             )
@@ -566,7 +629,7 @@ class AudioPage(QWidget):
             return
         self._busy = True
         connecting = not device.connected
-        self.link_status.setText("Connecting..." if connecting else "Disconnecting...")
+        say(self.link_status, "Connecting..." if connecting else "Disconnecting...")
 
         def work() -> None:
             if not connecting:
@@ -590,13 +653,13 @@ class AudioPage(QWidget):
 
         def done(_result: object) -> None:
             self._busy = False
-            self.link_status.setText("")
+            say(self.link_status, "")
             self.forget_button.setVisible(False)
             self.refresh()
 
         def failed(message: str) -> None:
             self._busy = False
-            self.link_status.setText(message)
+            say(self.link_status, message)
             # A stale pairing is the common failure and needs an explicit fix.
             self.forget_button.setVisible("pair again" in message.lower())
             self.toast.show_message("Bluetooth failed", self.palette_tokens, "danger")
@@ -611,13 +674,13 @@ class AudioPage(QWidget):
             bluetooth.forget,
             device.address,
             on_done=lambda _r: (
-                self.link_status.setText(
+                say(self.link_status, 
                     "Removed. Now pair the phone again from the Bluetooth settings "
                     "on both devices."
                 ),
                 self.refresh(),
             ),
-            on_error=lambda m: self.link_status.setText(m),
+            on_error=lambda m: say(self.link_status, m),
         )
 
     def _set_mode(self, mode: str) -> None:
@@ -784,7 +847,7 @@ class AudioPage(QWidget):
         self._waited += 1
         if self._waited > self.WATCH_TICKS:
             self._stop_watch()
-            self.mode_status.setText(
+            say(self.mode_status, 
                 "Stopped waiting for the phone to play. Press the button again "
                 "when something is playing on it."
             )
@@ -801,7 +864,7 @@ class AudioPage(QWidget):
                 return
             self._stream_node = stream.node  # type: ignore[union-attr]
             self._stop_watch()
-            self.mode_status.setText(self._playing_note(stream))  # type: ignore[arg-type]
+            say(self.mode_status, self._playing_note(stream))  # type: ignore[arg-type]
             self.toast.show_message(
                 "The phone's audio is playing here", self.palette_tokens, "success"
             )
