@@ -1,3 +1,5 @@
+import java.security.KeyStore
+
 plugins {
     // Kotlin support is built into AGP 9; applying the Kotlin plugin here is
     // an error.
@@ -20,6 +22,19 @@ val tesseraVersionCode: Int = tesseraVersion.split(".").let { parts ->
     part(0) * 1_000_000 + part(1) * 1_000 + part(2)
 }
 
+/** The keystore's only (or first) key alias, so it need not be configured. */
+fun firstAlias(keystore: File, password: String): String {
+    val store = listOf("PKCS12", "JKS").firstNotNullOfOrNull { type ->
+        runCatching {
+            KeyStore.getInstance(type).apply {
+                keystore.inputStream().use { load(it, password.toCharArray()) }
+            }
+        }.getOrNull()
+    } ?: throw GradleException("cannot open $keystore: wrong password or format")
+    return store.aliases().toList().firstOrNull { store.isKeyEntry(it) }
+        ?: throw GradleException("$keystore holds no signing key")
+}
+
 android {
     namespace = "dev.tessera.companion"
     compileSdk = 37        // Android 17
@@ -35,10 +50,29 @@ android {
         versionName = tesseraVersion
     }
 
+    // Release signing from ~/.gradle/gradle.properties: TESSERA_KEYSTORE and
+    // TESSERA_KEYSTORE_PASSWORD, optionally TESSERA_KEY_ALIAS and TESSERA_KEY_PASSWORD.
+    val keystorePath = providers.gradleProperty("TESSERA_KEYSTORE").orNull
+    val keystorePassword = providers.gradleProperty("TESSERA_KEYSTORE_PASSWORD").orNull
+    if (keystorePath != null && keystorePassword != null) {
+        val keystoreFile = file(keystorePath)
+        signingConfigs {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = providers.gradleProperty("TESSERA_KEY_ALIAS").orNull
+                    ?: firstAlias(keystoreFile, keystorePassword)
+                keyPassword = providers.gradleProperty("TESSERA_KEY_PASSWORD").orNull
+                    ?: keystorePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 

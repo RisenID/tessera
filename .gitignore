@@ -18,3 +18,7 @@ __pycache__/
 local.properties
 .idea/
 .vscode/
+
+# Signing keys never belong in the repo.
+*.jks
+*.keystore
