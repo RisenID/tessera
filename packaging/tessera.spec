@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        25%{?dist}
+Release:        26%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -167,6 +167,22 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Mon Sep 14 2026 Tessera contributors - 1.10.0-26
+- Clipboard sharing without Shizuku, two ways. With adb connected, Tessera
+  starts a helper out of the companion APK as the shell user -- the way scrcpy
+  starts its server -- which the clipboard service calls back on every change,
+  so nothing on the phone needs granting and nothing polls. Or switch Tessera
+  on under the phone's Accessibility settings, which survives a restart: it
+  waits for a tap on Copy and reads the clipboard through an invisible window
+  for an instant, and never reads the screen.
+- The Shizuku route no longer runs its two-second poll for the other routes.
+- Windows: the build kept out Qt Multimedia, so the phone's audio over the
+  link could not play; it is included now. Received files go to the Downloads
+  known folder wherever it has been moved, "Show in folder" selects the file
+  in Explorer, and a received file raises a tray toast rather than nothing.
+- A flaky audio check now waits in real time for the sound server.
+- Unused imports removed.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-25
 - The phone's storage as a folder. The companion app runs an SFTP server --
   Apache MINA SSHD, with nothing but the SFTP subsystem -- and Tessera mounts it

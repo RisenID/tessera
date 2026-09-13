@@ -236,6 +236,9 @@ class Session(
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
+        // Reading through the accessibility route takes focus for an instant,
+        // so the desktop should not ask for the clipboard idly.
+        if (ClipboardBridge.route() == "accessibility") add("clipboard_accessibility")
         // Files both ways, and the phone's share sheet: MediaStore's Downloads
         // collection needs no permission, so this is always available.
         add("file_transfer")

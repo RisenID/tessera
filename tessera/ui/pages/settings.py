@@ -36,7 +36,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("calls", "Calls", "Answer, decline and dial from the computer"),
     ("messages", "Messages", "Read and send SMS"),
     ("photos", "Photos", "Browse the phone's gallery"),
-    ("clipboard", "Clipboard sharing", "Needs Shizuku; polls the phone while connected"),
+    ("clipboard", "Clipboard sharing",
+     "Through Shizuku, the phone's Accessibility switch, or adb"),
     ("dnd_sync", "Do Not Disturb sync", "Keep both screens silenced together"),
     ("webcam", "Webcam", "Use a phone camera as a virtual webcam"),
     ("screen", "Screen mirroring", "The whole phone in a window, through scrcpy over adb"),
@@ -283,7 +284,12 @@ class SettingsPage(QWidget):
         self.clipboard_mode.setCurrentIndex(max(index, 0))
         screen.add(self._labelled("Sharing", self.clipboard_mode))
 
-        clip_note = QLabel("Needs Shizuku on the phone.")
+        clip_note = QLabel(
+            "Any one of these works, best first: Shizuku running on the phone; "
+            "Tessera switched on under the phone's Accessibility settings, "
+            "which survives a restart; or adb connected to this computer, "
+            "which needs nothing on the phone at all."
+        )
         clip_note.setObjectName("Muted")
         clip_note.setWordWrap(True)
         screen.add(clip_note)

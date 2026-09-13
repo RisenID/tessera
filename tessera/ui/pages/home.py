@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,

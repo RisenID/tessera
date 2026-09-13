@@ -239,6 +239,7 @@
                     <include android:id="@+id/rowAudio" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowProjection" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowStorage" layout="@layout/view_setup_row" />
+                    <include android:id="@+id/rowClipboard" layout="@layout/view_setup_row" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

@@ -17,6 +17,7 @@ import androidx.core.view.updatePadding
 import com.google.android.material.color.DynamicColors
 import dev.tessera.companion.databinding.ActivityMainBinding
 import dev.tessera.companion.databinding.ViewSetupRowBinding
+import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NotificationBridge
@@ -225,6 +226,14 @@ class MainActivity : AppCompatActivity() {
                 // Nothing to grant on a phone too old to have the permission.
                 granted = { !StorageServer.supported() || StorageServer.allowed() },
                 grant = { grantStorage() },
+            ),
+            Row(
+                binding.rowClipboard,
+                R.string.perm_clipboard,
+                R.string.perm_clipboard_why,
+                R.drawable.ic_clipboard,
+                granted = { ClipboardBridge.available() },
+                grant = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
             ),
         )
 

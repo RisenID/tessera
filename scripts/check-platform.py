@@ -226,6 +226,52 @@ def windows_checks() -> None:
     check("and releases", backend.silenced(), False)
 
 
+def windows_parity_checks() -> None:
+    """The later features, on Windows: files, audio, clipboard, storage."""
+    print("-- files, audio, clipboard and storage on Windows --")
+    platform = importlib.import_module("tessera.core.platform")
+    check("still being Windows", platform.IS_WINDOWS, True)
+
+    transfer = importlib.reload(importlib.import_module("tessera.backends.filetransfer"))
+    ran: list[list[str]] = []
+    proc = importlib.import_module("tessera.core.proc")
+    original_run = proc.run
+    proc.run = lambda argv, *args, **kwargs: ran.append(list(argv)) or original_run(["false"])
+    try:
+        folder = transfer.default_directory()
+        transfer.reveal(Path.home() / "Downloads" / "photo.jpg")
+    finally:
+        proc.run = original_run
+    check("received files go to Downloads or home, not an XDG answer",
+          folder in (Path.home() / "Downloads", Path.home()), True)
+    check("and nothing Linux-only is run to find it or show it",
+          [argv[0] for argv in ran if argv[0] in ("xdg-user-dir", "dbus-send", "xdg-open")], [])
+
+    spec = (ROOT / "packaging" / "windows" / "tessera.spec").read_text("utf-8")
+    excluded = spec.split("EXCLUDED_QT = [", 1)[1].split("]", 1)[0]
+    check("the build keeps QtMultimedia, which the phone's audio plays through",
+          '"PySide6.QtMultimedia"' in excluded, False)
+
+    clipboard_adb = importlib.reload(importlib.import_module("tessera.backends.clipboard_adb"))
+    # This machine's own adb would be found by its bare name; on Windows
+    # nothing called "adb" exists, so ask as Windows would, with nothing found.
+    found = platform.find_tool
+    platform.find_tool = lambda _name: ""
+    try:
+        argv = clipboard_adb.argv("192.168.1.5:5555")
+    finally:
+        platform.find_tool = found
+    check("the adb clipboard route asks for adb.exe", Path(argv[0]).name, "adb.exe")
+    contains("with a command for the phone's shell, not Windows'", argv[-1], "app_process")
+    check("clipboard sharing is offered", platform.supported("clipboard"), True)
+
+    storage = importlib.reload(importlib.import_module("tessera.backends.storage"))
+    check("storage has no backend here", storage.backend(), "")
+    contains("and says why", platform.reason("storage"), "WinFsp")
+    check("file transfer is offered", platform.supported("file_transfer"), True)
+    check("the phone's audio over the link is offered", platform.supported("phone_audio"), True)
+
+
 def linux_checks() -> None:
     print("\n== Linux ==")
     home = Path(tempfile.mkdtemp())
@@ -400,6 +446,7 @@ def interface_checks() -> None:
 
 def main() -> int:
     windows_checks()
+    windows_parity_checks()
     linux_checks()
     interface_checks()
     print()

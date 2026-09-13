@@ -354,13 +354,18 @@ def interface() -> None:
 
     # Opening a sink can fail while an earlier one is still being destroyed,
     # which only happens here: the app has exactly one player. Let Qt catch up
-    # and try once more rather than reporting a failure the app cannot have.
+    # and try again rather than reporting a failure the app cannot have. In
+    # real time, not in event-loop turns: the sound server tears the old
+    # stream down on its own schedule, and forty turns with no delay between
+    # them passed or failed depending on how busy the machine was.
+    import time
+
     hub._on_phone_audio_started(HEADER)
-    for _ in range(4):
-        if hub.phone_audio_active:
-            break
-        for _ in range(10):
+    deadline = time.monotonic() + 2.0
+    while not hub.phone_audio_active and time.monotonic() < deadline:
+        for _ in range(5):
             QApplication.instance().processEvents()
+            time.sleep(0.02)
         hub._on_phone_audio_started(HEADER)
     page._apply_stream_state()
     check(

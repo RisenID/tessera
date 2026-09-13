@@ -269,13 +269,42 @@ control itself -- scrcpy's shell-user server does that instead.
 | `{"t":"clipboard_set","text"}` | desktop → phone | Replace the phone's clipboard |
 | `{"t":"clipboard_get"}` | desktop → phone | Read it once, answered with `text` |
 
-The phone announces changes only while a desktop is subscribed. Android gives a
-background app no clipboard callback and no read access at all from Android 10,
-so the value is polled through Shizuku's shell access; the poll stops as soon as
-the last desktop disconnects. Each side records the value it applied from the
-other, so a shared value is not bounced back and forth.
+The phone announces changes only while a desktop is subscribed. Each side
+records the value it applied from the other, so a shared value is not bounced
+back and forth.
 
-Capability `clipboard` is advertised only when Shizuku is available.
+Android gives a background app no read access to the clipboard from Android 10,
+so there are three routes, and the first that works is used:
+
+1. **Shizuku.** The companion app reads through Shizuku's shell access,
+   polling every two seconds while the screen is on. Lost at each reboot until
+   Shizuku is started again.
+2. **The accessibility service.** Switched on once under the phone's
+   Accessibility settings, and it survives a reboot. It never polls: it waits
+   for a tap on *Copy* or a "copied" message, then adds an invisible focusable
+   window for the instant it takes to read, because Android lets a focused app
+   read. It asks for no window content. Advertised as
+   `clipboard_accessibility`, alongside `clipboard`.
+3. **adb, with nothing on the phone.** When the phone offers neither and adb is
+   connected, the desktop starts a helper out of the installed APK as the shell
+   user, the way scrcpy starts its server:
+
+   ```
+   adb shell -T 'CLASSPATH=$(pm path dev.tessera.companion | head -n 1 | cut -d: -f2) \
+       exec app_process / dev.tessera.companion.shell.ClipboardHelper'
+   ```
+
+   The shell user may read the clipboard, and the clipboard service calls the
+   helper back on every change, so this does not poll either. It speaks one
+   JSON object per line: `{"t":"clip","text"}` out, `{"t":"set","text"}` and
+   `{"t":"get"}` in, `{"t":"ready","listening"}` once it is up. It exits with
+   the adb connection.
+
+Android returns nothing from the clipboard while the phone is locked, whichever
+route asks. A change announced then is read again once it can be.
+
+Capability `clipboard` is advertised when route 1 or 2 is available; route 3 is
+the desktop's own, and needs no capability.
 
 ## Calls
 

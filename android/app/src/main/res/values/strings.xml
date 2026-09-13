@@ -14,6 +14,9 @@
     <string name="channel_files_description">Files arriving from a connected computer</string>
     <string name="perm_storage">Files on your computer</string>
     <string name="perm_storage_why">Let your computer open this phone\'s storage as a folder. Android calls this All files access; with Shizuku it is granted without leaving this screen.</string>
+    <string name="perm_clipboard">Clipboard</string>
+    <string name="perm_clipboard_why">Share what you copy with your computer. Shizuku does this on its own; without it, switch on Tessera under Accessibility, which keeps working after a restart.</string>
+    <string name="accessibility_clipboard_description">Shares what you copy with your paired computer. Tessera watches only for taps on Copy and \"copied\" messages, then reads the clipboard once. It never reads what is on the screen.</string>
     <string name="app_long_name">Tessera Companion</string>
     <string name="stop">Stop</string>
     <string name="start">Start</string>

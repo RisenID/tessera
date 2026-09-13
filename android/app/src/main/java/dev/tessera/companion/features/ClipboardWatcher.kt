@@ -33,11 +33,18 @@ object ClipboardWatcher {
     @Volatile
     private var lastSeen: String? = null
 
+    /** Whether a desktop wants clipboard changes at all. */
+    val watching: Boolean
+        get() = users > 0
+
     @Synchronized
     fun addUser(context: Context? = null) {
         users++
         if (context != null) watchScreen(context)
-        if (executor == null && ClipboardBridge.available()) {
+        // Polling is for Shizuku only. The accessibility route reads by taking
+        // focus for an instant, which on a timer would close the keyboard
+        // under the user's fingers; it calls checkNow() when it sees a copy.
+        if (executor == null && ClipboardBridge.viaShizuku()) {
             lastSeen = ClipboardBridge.read()
             executor = Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "tessera-clipboard")
@@ -112,8 +119,18 @@ object ClipboardWatcher {
         lastSeen = text
     }
 
+    /** Reads once, now, and announces a change. Blocks; not on the main thread. */
+    fun checkNow() {
+        if (!watching) return
+        val current = runCatching { ClipboardBridge.read() }.getOrNull() ?: return
+        if (current == lastSeen || current.isEmpty()) return
+        lastSeen = current
+        Bus.publish(JSONObject().put("t", "clipboard").put("text", current))
+    }
+
     private fun poll() {
-        if (!screenOn) return
+        // The screen-on receiver calls this too, and must not take focus.
+        if (!screenOn || !ClipboardBridge.viaShizuku()) return
         val current = runCatching { ClipboardBridge.read() }.getOrNull() ?: return
         if (current == lastSeen || current.isEmpty()) return
         lastSeen = current

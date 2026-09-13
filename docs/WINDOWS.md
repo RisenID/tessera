@@ -17,7 +17,10 @@ machinery, and those are named here rather than left to fail.
 | Photos and videos | Unchanged |
 | Apps: the launcher, one app per window | Needs scrcpy and adb, both of which have Windows builds |
 | Screen mirroring | Same |
-| Clipboard sharing | Qt's clipboard; needs Shizuku on the phone as before |
+| Clipboard sharing | Qt's clipboard, and any of the phone's three routes: Shizuku, the Accessibility switch, or adb (`adb.exe`) with nothing on the phone |
+| File transfer, both ways, and the phone's share sheet | Unchanged; files land in the Downloads known folder, wherever it has been moved, and arrive with a tray toast |
+| The phone's audio over the link | Qt Multimedia's audio output, which the build now keeps |
+| The phone's name and wallpaper in the sidebar | Unchanged |
 | The phone's hotspot | Started on the phone, joined here with `netsh` |
 | Battery, signal, ringer | Unchanged: the phone reports them |
 | Ringer mode, Do Not Disturb on the phone | Unchanged |
@@ -47,6 +50,20 @@ through screen mirroring.
 program; Microsoft exposes no API for it. So the sync runs one way: when the
 phone goes quiet, Tessera's own popups go quiet with it, and Windows keeps its
 own setting. The Do Not Disturb page says exactly this.
+
+**The phone's storage as a drive.** Not written yet. The phone's half is the
+same SFTP server; Windows has no SFTP filesystem of its own, so it needs WinFsp
+and SSHFS-Win (both free, both installable with winget) to show the phone as a
+drive letter. The mount would have to keep the Linux version's one real
+safeguard -- accepting only the host key the phone sent over the paired link --
+which SSHFS-Win's `net use` front end does not offer, so it would drive its
+`sshfs.exe` directly.
+
+**Replying inside a popup, and media controls in the volume flyout.** Not
+written yet. Both are WinRT: a toast with a text box needs the app registered
+with an AppUserModelID, and the flyout's player is
+`SystemMediaTransportControls`. On Windows, popups come from the tray instead,
+with no reply box, and the phone's media is controlled from the Audio page.
 
 **KDE Connect as a fallback source.** Its control interface is D-Bus. The
 companion app covers the same ground and more.

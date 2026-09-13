@@ -21,8 +21,7 @@ from typing import Any
 
 from PySide6.QtCore import SLOT, QObject, QTimer, Signal, Slot
 
-from ..core import platform
-from .dbus import HAVE_QTDBUS, QDBusMessage, QDBusVariant, session
+from .dbus import QDBusMessage, QDBusVariant, session
 
 from ..core.config import DndConfig
 from ..core.proc import have, run, submit

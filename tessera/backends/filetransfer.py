@@ -62,9 +62,18 @@ def default_directory() -> Path:
     XDG's own answer where it has one, because that is the folder the user's
     file manager already calls Downloads in their own language.
     """
+    from ..core import platform
     from ..core.proc import run
 
     home = Path.home()
+    if platform.IS_WINDOWS:
+        # Downloads can be moved (to D:\, to OneDrive), and only the shell's
+        # known-folder table knows where it went.
+        known = _windows_downloads() if platform.REAL == "windows" else None
+        if known is not None and known.is_dir():
+            return known
+        fallback = home / "Downloads"
+        return fallback if fallback.is_dir() else home
     result = run(["xdg-user-dir", "DOWNLOAD"], timeout=3.0)
     if result.ok and result.stdout.strip():
         path = Path(result.stdout.strip()).expanduser()
@@ -75,6 +84,31 @@ def default_directory() -> Path:
             return path
     fallback = home / "Downloads"
     return fallback if fallback.is_dir() else home
+
+
+def _windows_downloads() -> Path | None:                    # pragma: no cover
+    """FOLDERID_Downloads, through SHGetKnownFolderPath."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+    # {374DE290-123F-4565-9164-39C4925E467B}
+    folder = GUID(0x374DE290, 0x123F, 0x4565,
+                  (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B))
+    out = ctypes.c_wchar_p()
+    try:
+        shell32 = ctypes.windll.shell32                     # type: ignore[attr-defined]
+        if shell32.SHGetKnownFolderPath(ctypes.byref(folder), 0, None, ctypes.byref(out)) != 0:
+            return None
+        return Path(out.value) if out.value else None
+    except OSError:
+        return None
+    finally:
+        if out:
+            ctypes.windll.ole32.CoTaskMemFree(out)          # type: ignore[attr-defined]
 
 
 def unique_path(directory: Path, name: str) -> Path:
@@ -632,8 +666,18 @@ class FileTransfers(QObject):
 
 def reveal(path: Path) -> None:
     """Show a file in the desktop's file manager, or open its folder."""
+    from ..core import platform
     from ..core.proc import have, run
 
+    if platform.IS_WINDOWS:
+        # Explorer's own "select this file", one argument, no quotes of ours:
+        # Explorer parses its command line itself. It exits non-zero even when
+        # it worked, so its answer is not worth waiting for.
+        if platform.REAL == "windows":                      # pragma: no cover
+            import subprocess
+            subprocess.Popen(["explorer", f"/select,{path}"],
+                             creationflags=platform.no_window_flags())
+        return
     if have("dbus-send"):
         result = run([
             "dbus-send", "--session", "--print-reply",

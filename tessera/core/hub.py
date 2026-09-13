@@ -32,6 +32,7 @@ from ..backends.phone_audio import PhoneAudio
 from ..backends.webcam import CompanionCamera, Webcam, WebcamError
 from ..ui.icons import IconStore
 from . import otp
+from ..backends.clipboard_adb import AdbClipboard
 from .clipboard import ClipboardSync
 from . import platform
 from .config import Config
@@ -124,7 +125,12 @@ class Hub(QObject):
         self.files = FileTransfers(self.files_link, config, self, fallback=self.companion)
         self.mirrors = mirror.MirrorManager(self)
         self.icons = IconStore(self.companion, self)
-        self.clipboard = ClipboardSync(self.companion, config.clipboard, self)
+        #: The phone's clipboard over adb, for a phone that cannot share it
+        #: itself (no Shizuku, no accessibility switch). Runs only then.
+        self.clipboard_adb = AdbClipboard(self)
+        self.clipboard = ClipboardSync(
+            self.companion, config.clipboard, self, helper=self.clipboard_adb
+        )
 
         self._device_caps: dict[str, Any] = {}
         self._call: dict[str, Any] = {"state": "idle"}
@@ -232,6 +238,9 @@ class Hub(QObject):
         self.companion.notificationRemoved.connect(self.remove_notification)
         self.companion.dndChanged.connect(self._on_phone_dnd)
         self.companion.clipboardChanged.connect(self.clipboard.apply_remote)
+        # Whether the adb route is needed changes with what the phone offers.
+        self.companion.connectedChanged.connect(lambda _c: self.update_clipboard_route())
+        self.companion.capabilitiesChanged.connect(lambda _c: self.update_clipboard_route())
         self.companion.callChanged.connect(self._on_call)
         self.companion.mediaChanged.connect(self._on_media)
         self.companion.batteryChanged.connect(self.batteryChanged)
@@ -288,6 +297,7 @@ class Hub(QObject):
 
         if not features.clipboard:
             self.clipboard.set_mode("off")
+        self.update_clipboard_route()
         if not features.dnd_sync:
             self.dnd.set_mode("off")
         self._update_dnd_source()
@@ -325,6 +335,7 @@ class Hub(QObject):
         self.mirrors.close_all()
         self.stop_camera()
         self.dnd.stop()
+        self.clipboard_adb.stop()
         self.companion.disconnect_from_phone()
 
     @property
@@ -472,6 +483,20 @@ class Hub(QObject):
             self._serial = serial
             self.dnd.set_serial(serial)
             self.adbChanged.emit(bool(serial))
+            self.update_clipboard_route()
+
+    def update_clipboard_route(self) -> None:
+        """Run the adb clipboard helper exactly when it is the only way."""
+        wanted = (
+            self.config.features.clipboard
+            and platform.supported("clipboard")
+            and self.clipboard.wants_helper
+            and bool(self._serial)
+        )
+        if wanted:
+            self.clipboard_adb.start(self._serial)
+        elif self.clipboard_adb.serial:
+            self.clipboard_adb.stop()
 
     # -- webcam ---------------------------------------------------------------
 

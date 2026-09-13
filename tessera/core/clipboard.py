@@ -42,10 +42,15 @@ class ClipboardSync(QObject):
     #: Qt can emit several change signals for one copy; coalesce them.
     DEBOUNCE_MS = 250
 
-    def __init__(self, client, config, parent: QObject | None = None) -> None:
+    def __init__(self, client, config, parent: QObject | None = None, *, helper=None) -> None:
         super().__init__(parent)
         self._client = client
+        #: The adb route (backends.clipboard_adb.AdbClipboard), used only when
+        #: the phone cannot share its clipboard itself.
+        self._helper = helper
         self._config = config
+        if helper is not None:
+            helper.changed.connect(self.apply_remote)
         self._applied: str | None = None      # last value we set locally
         self._last_sent: str | None = None
 
@@ -69,6 +74,25 @@ class ClipboardSync(QObject):
         self._config.mode = mode
 
     @property
+    def route(self) -> str:
+        """"phone" when the companion app shares the clipboard, "adb" when the
+        helper does, "" when nothing can."""
+        if self._client.connected and self._client.supports("clipboard"):
+            return "phone"
+        if self._helper is not None and self._helper.running:
+            return "adb"
+        return ""
+
+    @property
+    def wants_helper(self) -> bool:
+        """Whether the adb route is worth running: sharing is on, and the
+        phone is not already doing it without adb."""
+        return (
+            self._config.mode != MODE_OFF
+            and not (self._client.connected and self._client.supports("clipboard"))
+        )
+
+    @property
     def _sends(self) -> bool:
         return self._config.mode in (MODE_DESKTOP_TO_PHONE, MODE_TWO_WAY)
 
@@ -85,7 +109,8 @@ class ClipboardSync(QObject):
 
     def _push_local(self) -> None:
         clipboard = QGuiApplication.clipboard()
-        if clipboard is None or not self._client.connected:
+        route = self.route
+        if clipboard is None or not route:
             return
 
         text = clipboard.text(QClipboard.Mode.Clipboard)
@@ -98,7 +123,10 @@ class ClipboardSync(QObject):
             return
 
         self._last_sent = text
-        self._client.send({"t": "clipboard_set", "text": text})
+        if route == "phone":
+            self._client.send({"t": "clipboard_set", "text": text})
+        elif not self._helper.send(text):
+            return
         self.sent.emit(text)
 
     # -- phone -> desktop ----------------------------------------------------
@@ -122,8 +150,17 @@ class ClipboardSync(QObject):
 
     def pull(self) -> None:
         """Ask the phone for its clipboard, for an explicit 'paste from phone'."""
-        if not self._client.connected:
-            self.errorOccurred.emit("No phone connected.")
+        route = self.route
+        if route == "adb":
+            # The answer arrives as an ordinary change, through apply_remote.
+            self._helper.pull()
+            return
+        if not route:
+            self.errorOccurred.emit(
+                "The phone's clipboard is out of reach: connect adb, start "
+                "Shizuku, or switch on Tessera under the phone's Accessibility "
+                "settings."
+            )
             return
         self._client.request(
             {"t": "clipboard_get"},

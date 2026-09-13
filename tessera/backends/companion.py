@@ -15,7 +15,7 @@ import re
 import secrets
 import struct
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from PySide6.QtCore import QByteArray, QObject, QTimer, Signal

@@ -216,7 +216,15 @@ class MainWindow(QMainWindow):
         if not self.hub.config.files.notify:
             return
         notifier = getattr(self.popups, "notifier", None)
+        body = f"Saved to {transfer.path.parent}" if transfer.path else "Saved"
         if notifier is None or not notifier.available:
+            # Windows, or a Linux session with no notification server: the
+            # tray's own popup, which is a real toast on Windows. Saying
+            # nothing there meant a file arrived with no sign of it.
+            tray = getattr(self, "tray", None)
+            if tray is not None and tray.isVisible():
+                tray.showMessage(transfer.name, body,
+                                 QSystemTrayIcon.MessageIcon.Information, 6000)
             return
         notifier.send(
             f"{transfer.name}",
