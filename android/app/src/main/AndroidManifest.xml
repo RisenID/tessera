@@ -66,6 +66,11 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- The phone's storage as a folder on the desktop. Android 11 and later
+         show an app the whole of shared storage only with "All files access";
+         it is granted in Settings, or through Shizuku from the desktop, and
+         nothing else in the app needs it. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- Companion association. Beyond being the honest description of what this
          app is, it keeps the service alive in the background without a battery

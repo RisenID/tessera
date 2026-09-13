@@ -17,7 +17,7 @@ from pathlib import Path
 from time import monotonic, sleep
 from typing import Any
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QTimer, Signal
 
 from ..backends import adb, mirror
 from ..backends import audio as bt_audio
@@ -25,6 +25,7 @@ from ..backends import bluetooth, btcodecs
 from ..backends.companion import CompanionClient, PairedPhone, b64decode
 from ..backends.dnd import MODE_OFF, DndSync, ZenMode
 from ..backends import mpris_server
+from ..backends import storage
 from ..backends.filetransfer import FileTransfers
 from ..backends.kdeconnect import KdeConnect
 from ..backends.phone_audio import PhoneAudio
@@ -66,6 +67,8 @@ class Hub(QObject):
     bluetoothStreamingChanged = Signal(bool)
     #: The phone's wallpaper arrived (a path), or its colour (#rrggbb).
     wallpaperChanged = Signal(str, str)
+    #: The phone's storage was mounted, unmounted, or failed to be.
+    storageChanged = Signal()
     #: A file started, progressed, or ended. Carries the Transfer.
     transferChanged = Signal(object)
     #: A file finished arriving, and its path now exists.
@@ -93,12 +96,20 @@ class Hub(QObject):
     #: phone that is off makes bluetoothctl wait for its whole timeout, so
     #: trying on every watch would keep a worker busy for nothing.
     BLUETOOTH_RETRY_SECONDS = 60.0
+    #: How long a fetched wallpaper is trusted before it is asked for again.
+    WALLPAPER_RECHECK_SECONDS = 12 * 3600.0
 
     def __init__(self, config: Config, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.config = config
 
         self.companion = CompanionClient(self._load_phone(), self)
+        #: A second connection to the same phone that carries file transfers
+        #: and nothing else. On the main link a large file queued megabytes
+        #: ahead of audio frames and notifications; on its own socket TCP
+        #: shares the network between them. Opened once the main link is up,
+        #: and only if the phone offers it.
+        self.files_link = CompanionClient(self.companion.phone, self, role="files")
         self.kdeconnect = KdeConnect(self)
         self.dnd = DndSync(config.dnd, self)
         # Two ways to get video: the companion app encodes on the phone and
@@ -110,7 +121,7 @@ class Hub(QObject):
         #: Files both ways. Owns no socket of its own: it sends through the
         #: companion client and is fed the messages that arrive, which is what
         #: lets the whole path be checked without a phone.
-        self.files = FileTransfers(self.companion, config, self)
+        self.files = FileTransfers(self.files_link, config, self, fallback=self.companion)
         self.mirrors = mirror.MirrorManager(self)
         self.icons = IconStore(self.companion, self)
         self.clipboard = ClipboardSync(self.companion, config.clipboard, self)
@@ -146,6 +157,13 @@ class Hub(QObject):
         self.phone_muted = False
         #: The dominant colour of the phone's wallpaper, where it gave one.
         self.wallpaper_colour = ""
+        #: When the wallpaper was last asked for, so a reconnect does not ask
+        #: again. None until the first time.
+        self._wallpaper_asked: float | None = None
+        #: The phone's storage, while it is mounted, and what to say about it.
+        self.storage_mount: storage.Mount | None = None
+        self.storage_state = "idle"          # idle | starting | mounted | error
+        self.storage_message = ""
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -165,6 +183,7 @@ class Hub(QObject):
         self._wire_media_player()
         self._wire_files()
         self._wire_wallpaper()
+        self._wire_storage()
         self._apply_codec_preference()
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
@@ -659,6 +678,15 @@ class Hub(QObject):
         """
         if "wallpaper" not in capabilities:
             return
+        # Once per run, not once per connection. A phone on flaky Wi-Fi
+        # reconnects many times an hour, and a wallpaper does not change that
+        # often; the cached one is shown meanwhile, and a long-running session
+        # checks again after a while in case it did.
+        now = monotonic()
+        if (self._wallpaper_asked is not None
+                and now - self._wallpaper_asked < self.WALLPAPER_RECHECK_SECONDS):
+            return
+        self._wallpaper_asked = now
         self.companion.request({"t": "wallpaper_get"}, self._on_wallpaper)
 
     def _on_wallpaper(self, message: dict) -> None:
@@ -684,9 +712,146 @@ class Hub(QObject):
     # -- files ---------------------------------------------------------------
 
     def _wire_files(self) -> None:
+        self.companion.capabilitiesChanged.connect(self._open_files_link)
+        self.companion.connectedChanged.connect(self._follow_main_link)
         self.files.changed.connect(self.transferChanged)
         self.files.received.connect(self.fileReceived)
         self.files.failed.connect(self.errorOccurred)
+
+    def _open_files_link(self, capabilities: list) -> None:
+        """Open the file connection beside the main link, where the phone can."""
+        address = self.companion.address
+        if "file_channel" not in capabilities or address is None:
+            return
+        if self.files_link.connected:
+            return
+        self.files_link.connect_to_phone(*address)
+
+    def _follow_main_link(self, connected: bool) -> None:
+        # The file connection lives and dies with the main link: on its own it
+        # would retry against a phone the main link already knows is gone.
+        if not connected:
+            self.files_link.disconnect_from_phone()
+
+    # -- the phone's storage ---------------------------------------------------
+
+    def _wire_storage(self) -> None:
+        self.companion.capabilitiesChanged.connect(self._maybe_mount_storage)
+        self.companion.connectedChanged.connect(self._on_link_for_storage)
+        app = QCoreApplication.instance()
+        if app is not None:
+            # A mount left behind when the app quits is a folder that hangs
+            # whatever opens it until the kernel gives up on it.
+            app.aboutToQuit.connect(self._unmount_now)
+
+    def _maybe_mount_storage(self, capabilities: list) -> None:
+        if (
+            self.config.features.storage
+            and self.config.storage.auto_mount
+            and "storage_allowed" in capabilities
+            and storage.backend()
+            and self.storage_mount is None
+            and self.storage_state != "starting"
+        ):
+            self.mount_storage()
+
+    def mount_storage(self) -> None:
+        """Mount the phone's storage as a folder. Only ever after a check or a click."""
+        if not self.config.features.storage:
+            self._storage("idle", "Phone storage is switched off in Settings.")
+            return
+        if self.storage_mount is not None or self.storage_state == "starting":
+            return
+        if not storage.backend():
+            self._storage(
+                "error",
+                "Mounting needs sshfs (the fuse-sshfs package) or GVfs, and this "
+                "computer has neither.",
+            )
+            return
+        address = self.companion.address
+        if address is None:
+            self._storage("error", "The companion app is not connected.")
+            return
+        if "storage" not in self.companion.capabilities:
+            self._storage(
+                "error",
+                "This phone cannot share its storage: it needs Android 11 and a "
+                "companion app new enough to offer it.",
+            )
+            return
+
+        self._storage("starting", "Asking the phone to start its file server...")
+        host = address[0]
+
+        def started(reply: dict) -> None:
+            if reply.get("t") == "error":
+                self._storage("error", str(reply.get("message") or "The phone refused."))
+                return
+            info = storage.ServerInfo.from_reply(host, reply)
+            if info is None:
+                self._storage("error", "The phone's answer about its file server was incomplete.")
+                return
+            name, sidebar = self.phone_name, self.config.storage.sidebar
+            submit(
+                lambda: storage.mount(info, name, sidebar),
+                on_done=self._on_storage_mounted,
+                on_error=self._on_storage_failed,
+            )
+
+        self.companion.request({"t": "storage_start"}, started)
+
+    def _on_storage_mounted(self, mounted: storage.Mount) -> None:
+        if not self.companion.connected:
+            # The phone went away while the mount was being made.
+            submit(lambda: storage.unmount(mounted), on_error=lambda _m: None)
+            self._storage("idle", "")
+            return
+        self.storage_mount = mounted
+        self._storage("mounted", str(mounted.local_path or mounted.location))
+
+    def _on_storage_failed(self, message: str) -> None:
+        if self.companion.connected:
+            self.companion.send({"t": "storage_stop"})
+        self._storage("error", message)
+
+    def unmount_storage(self, tell_phone: bool = True) -> None:
+        mounted, self.storage_mount = self.storage_mount, None
+        if tell_phone and self.companion.connected:
+            self.companion.send({"t": "storage_stop"})
+        if mounted is not None:
+            submit(
+                lambda: storage.unmount(mounted),
+                on_error=lambda message: log.debug("unmount: %s", message),
+            )
+        self._storage("idle", "")
+
+    def grant_storage(self) -> None:
+        """Ask the phone to allow All files access through Shizuku, then mount."""
+        def replied(message: dict) -> None:
+            if message.get("t") == "error":
+                self._storage("error", str(message.get("message") or "The phone refused."))
+                return
+            # Out of "starting" first: mount_storage takes that state to mean a
+            # mount is already under way, and would do nothing.
+            self.storage_state = "idle"
+            self.mount_storage()
+
+        self._storage("starting", "Asking the phone to allow access to its files...")
+        self.companion.request({"t": "storage_grant"}, replied)
+
+    def _on_link_for_storage(self, connected: bool) -> None:
+        if not connected and (self.storage_mount is not None or self.storage_state == "starting"):
+            self.unmount_storage(tell_phone=False)
+
+    def _unmount_now(self) -> None:
+        mounted, self.storage_mount = self.storage_mount, None
+        if mounted is not None:
+            storage.unmount(mounted)
+
+    def _storage(self, state: str, message: str) -> None:
+        self.storage_state, self.storage_message = state, message
+        self.storageChanged.emit()
 
     def send_files(self, paths) -> None:
         """Send files to the phone. Called by the page and by a drop."""

@@ -45,6 +45,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("bluetooth_audio", "Calls and music", "Bluetooth audio to and from the phone"),
     ("file_transfer", "File transfer",
      "Files both ways, and the phone's share sheet"),
+    ("storage", "Phone storage",
+     "The phone's files as a folder in the file manager, over SFTP"),
     ("phone_audio", "Phone audio over the link",
      "The fallback where there is no Bluetooth: a copy of the phone's mix, "
      "which cannot carry a call"),

@@ -109,6 +109,8 @@ class FeatureConfig:
     calls: bool = True
     #: Files in both directions, and the phone's share sheet.
     file_transfer: bool = True
+    #: The phone's storage as a folder in the file manager, over SFTP.
+    storage: bool = True
 
 
 @dataclass
@@ -197,6 +199,18 @@ class FilesConfig:
 
 
 @dataclass
+class StorageConfig:
+    """The phone's storage, mounted as a folder on this computer."""
+
+    #: Mount it whenever the phone connects. The server on the phone costs
+    #: nothing while idle, and a folder that is only there after pressing a
+    #: button is a folder nobody opens.
+    auto_mount: bool = True
+    #: Put it in the file manager's sidebar while it is mounted.
+    sidebar: bool = True
+
+
+@dataclass
 class ClipboardConfig:
     #: off | phone_to_desktop | desktop_to_phone | two_way
     mode: str = "two_way"
@@ -252,6 +266,7 @@ class Config:
     webcam: WebcamConfig = field(default_factory=WebcamConfig)
     phone_audio: PhoneAudioConfig = field(default_factory=PhoneAudioConfig)
     files: FilesConfig = field(default_factory=FilesConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
     hotspot: HotspotConfig = field(default_factory=HotspotConfig)
     panel: PanelConfig = field(default_factory=PanelConfig)
 

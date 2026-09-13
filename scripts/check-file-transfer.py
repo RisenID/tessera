@@ -306,6 +306,60 @@ class _silent_peer(Wire):
             self.fileEvent.emit({"t": "file_accept", "id": message["id"]})
 
 
+def two_connections(app: QApplication) -> None:
+    print("\n-- files on their own connection")
+    with tempfile.TemporaryDirectory() as raw:
+        directory = Path(raw)
+        inbox = directory / "inbox"
+        inbox.mkdir()
+        source = directory / "movie.bin"
+        payload = secrets.token_bytes(CHUNK * 2 + 7)
+        source.write_bytes(payload)
+
+        # The desktop holds two connections to one phone: one for files, and
+        # the main link. The phone end is one engine answering on both.
+        files_desk, files_phone = Wire("desktop-files"), Wire("phone-files")
+        main_desk, main_phone = Wire("desktop-main"), Wire("phone-main")
+        files_desk.peer, files_phone.peer = files_phone, files_desk
+        main_desk.peer, main_phone.peer = main_phone, main_desk
+        phone_config = Config()
+        phone_config.files.save_to = str(inbox)
+
+        desktop = FileTransfers(files_desk, Config(), fallback=main_desk)
+        phone = FileTransfers(files_phone, phone_config, fallback=main_phone)
+
+        desktop.send([source])
+        app.processEvents()
+        check("a file goes down the file connection",
+              any(m.get("t") == "file_offer" for m in files_desk.sent)
+              and not any(m.get("t") == "file_offer" for m in main_desk.sent))
+        check("and arrives whole", (inbox / "movie.bin").read_bytes() == payload)
+
+        # Without the file connection -- an older phone, or one that dropped --
+        # the main link still carries files.
+        files_desk.drop()
+        app.processEvents()
+        desktop.send([source])
+        app.processEvents()
+        check("the main link takes over when the file connection is gone",
+              any(m.get("t") == "file_offer" for m in main_desk.sent))
+        check("and that copy arrives too", (inbox / "movie (2).bin").is_file())
+
+        # Losing one connection only ends what was on it. Larger than the
+        # watermark, so it is still going when the other connection drops.
+        long = directory / "long.bin"
+        long.write_bytes(secrets.token_bytes(CHUNK * 12))
+        main_desk.auto_drain = False
+        desktop.send([long])
+        app.processEvents()
+        on_main = [t for t in desktop.transfers if t.active]
+        check("a transfer is under way on the main link", bool(on_main))
+        files_desk.connectedChanged.emit(False)
+        app.processEvents()
+        check("the other connection dropping leaves it alone",
+              all(t.active for t in on_main), str([t.state for t in on_main]))
+
+
 def refusals(app: QApplication) -> None:
     print("\n-- things that should be refused")
     with tempfile.TemporaryDirectory() as raw:
@@ -329,7 +383,7 @@ def refusals(app: QApplication) -> None:
         right._offered({
             "t": "file_offer", "id": "big", "name": "huge.iso",
             "size": filetransfer.MAX_SIZE + 1,
-        })
+        }, _rw)
         app.processEvents()
         check("an absurd size is refused before anything is written",
               not any(inbox.iterdir()), str(list(inbox.iterdir())))
@@ -376,6 +430,7 @@ def main() -> int:
     backpressure(app)
     interruptions(app)
     unconfirmed(app)
+    two_connections(app)
     refusals(app)
     interface(app)
 

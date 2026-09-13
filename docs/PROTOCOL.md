@@ -91,6 +91,46 @@ still sent for completeness -- the wallpaper's own colours where the platform
 reports them, otherwise the accent Android derives from the wallpaper -- but
 nothing is painted with it.
 
+## Two connections per desktop
+
+A desktop opens its main link and, once the phone lists `file_channel` among its
+capabilities, a second connection to the same address that authenticates with
+the same token plus a role:
+
+```
+desktop -> phone   {"t":"auth","token":"<stored token>","role":"files"}
+```
+
+That connection subscribes to nothing and carries only file transfers. Before
+it existed, a large file on the main link queued megabytes ahead of that
+desktop's audio frames and notifications -- the phone's writer is one ordered
+queue. On a separate socket TCP shares the network between them instead.
+Files shared from the phone go down a desktop's file connection when it has
+one and its main link when it does not; text shared from the phone is a
+clipboard message and always takes the main link. Sefirah makes the same split.
+
+## The phone's storage
+
+```
+desktop -> phone   {"t":"storage_start","req":7}
+phone   -> desktop {"t":"reply","rid":7,"port":8766,"user":"tessera","password":"<random>",
+                    "path":"/storage/emulated/0","hostKey":"ecdsa-sha2-nistp256 AAAA..."}
+desktop -> phone   {"t":"storage_stop"}
+desktop -> phone   {"t":"storage_grant","req":8}      # All files access, through Shizuku
+```
+
+The phone runs Apache MINA SSHD with the SFTP subsystem only -- no shell, no
+exec, no forwarding -- and the desktop mounts it with sshfs, or GVfs where sshfs
+is missing. The password is random per server start. The host key's public half
+travels over this link, which is already authenticated against the pinned
+certificate, and the desktop mounts with `StrictHostKeyChecking=yes` against a
+known_hosts file containing only that key: a server on the network presenting
+any other key is refused. The server is counted per desktop and stops when the
+last one sends `storage_stop` or disconnects.
+
+Capabilities: `storage` (Android 11 or later), `storage_allowed` (All files
+access is granted), `storage_grant` (it is not, and Shizuku can grant it).
+
 ## File transfer
 
 Either end may offer a file; the other accepts or refuses before any bytes

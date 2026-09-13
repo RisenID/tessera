@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...backends import filetransfer
+from ...backends import filetransfer, storage
 from ...backends.filetransfer import DONE, RECEIVING, SENDING, Transfer
+from ...core import platform
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, Pill, Toast, heading
@@ -254,6 +255,9 @@ class SharePage(QWidget):
         receive.add(self.folder_note)
         outer.addWidget(receive)
 
+        self.storage_card = self._build_storage_card(palette)
+        outer.addWidget(self.storage_card)
+
         history = Card(self)
         history_row = QHBoxLayout()
         history_title = QLabel("Transfers")
@@ -280,7 +284,120 @@ class SharePage(QWidget):
         self.toast = Toast(self)
         hub.transferChanged.connect(self._on_changed)
         self._refresh_notes()
+        self._refresh_storage()
         self.rebuild()
+
+    # -- the phone's storage ---------------------------------------------------
+
+    def _build_storage_card(self, palette: Palette) -> Card:
+        card = Card(self)
+        row = QHBoxLayout()
+        title = QLabel("Phone storage")
+        title.setObjectName("SectionTitle")
+        row.addWidget(title)
+        row.addStretch(1)
+        self.storage_pill = Pill("Not mounted", "muted")
+        self.storage_pill.apply(palette)
+        row.addWidget(self.storage_pill)
+        card.body().addLayout(row)
+
+        self.storage_note = QLabel()
+        self.storage_note.setObjectName("Muted")
+        self.storage_note.setWordWrap(True)
+        card.add(self.storage_note)
+
+        buttons = QHBoxLayout()
+        self.storage_open = QPushButton("Open in file manager")
+        self.storage_open.setObjectName("Primary")
+        self.storage_open.clicked.connect(self._open_storage)
+        buttons.addWidget(self.storage_open)
+        self.storage_toggle = QPushButton("Mount")
+        self.storage_toggle.clicked.connect(self._toggle_storage)
+        buttons.addWidget(self.storage_toggle)
+        self.storage_allow = QPushButton("Allow on the phone")
+        self.storage_allow.clicked.connect(self.hub.grant_storage)
+        buttons.addWidget(self.storage_allow)
+        buttons.addStretch(1)
+        card.body().addLayout(buttons)
+
+        self.hub.storageChanged.connect(self._refresh_storage)
+        self.hub.connectionChanged.connect(lambda _c: self._refresh_storage())
+        self.hub.companion.capabilitiesChanged.connect(lambda _c: self._refresh_storage())
+        return card
+
+    def _refresh_storage(self) -> None:
+        hub = self.hub
+        possible = hub.config.features.storage and platform.supported("storage")
+        self.storage_card.setVisible(possible)
+        if not possible:
+            return
+
+        caps = hub.companion.capabilities
+        mounted = hub.storage_mount is not None
+        state = hub.storage_state
+        connected = hub.connected
+        backend = storage.backend()
+
+        if mounted:
+            self.storage_pill.set_state("Mounted", "success")
+        elif state == "starting":
+            self.storage_pill.set_state("Connecting", "warning")
+        elif state == "error":
+            self.storage_pill.set_state("Not mounted", "danger")
+        else:
+            self.storage_pill.set_state("Not mounted", "muted")
+
+        if mounted:
+            where = hub.storage_mount.local_path or hub.storage_mount.location
+            note = (
+                f"The phone's storage is at {where}, and in the file manager's "
+                "sidebar. It is unmounted when the phone disconnects."
+            )
+        elif state in ("starting", "error") and hub.storage_message:
+            note = hub.storage_message
+        elif not connected:
+            note = "The companion app is not connected."
+        elif not backend:
+            note = "Mounting needs sshfs: install the fuse-sshfs package."
+        elif caps and "storage" not in caps:
+            note = (
+                "This phone needs Android 11 or later, and a companion app new "
+                "enough to share its storage."
+            )
+        elif caps and "storage_allowed" not in caps:
+            note = "The phone has not allowed All files access yet." + (
+                " It can be allowed from here, through Shizuku."
+                if "storage_grant" in caps
+                else " Allow it in the companion app on the phone."
+            )
+        else:
+            note = (
+                "The phone's files as a folder, over SFTP. The connection is "
+                "checked against a key the phone sends over the paired link, so "
+                "nothing else on the network can stand in for it."
+            )
+        self.storage_note.setText(note)
+
+        self.storage_open.setVisible(mounted)
+        self.storage_toggle.setText("Unmount" if mounted else "Mount")
+        self.storage_toggle.setEnabled(
+            mounted or (connected and bool(backend) and state != "starting"
+                        and (not caps or "storage" in caps))
+        )
+        self.storage_allow.setVisible(
+            connected and not mounted and state != "starting"
+            and "storage_grant" in caps and "storage_allowed" not in caps
+        )
+
+    def _toggle_storage(self) -> None:
+        if self.hub.storage_mount is not None:
+            self.hub.unmount_storage()
+        else:
+            self.hub.mount_storage()
+
+    def _open_storage(self) -> None:
+        if self.hub.storage_mount is not None:
+            storage.open_location(self.hub.storage_mount)
 
     # -- actions -------------------------------------------------------------
 
@@ -350,6 +467,7 @@ class SharePage(QWidget):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self._refresh_notes()
+        self._refresh_storage()
         self.rebuild()
 
     def resizeEvent(self, event) -> None:  # noqa: N802

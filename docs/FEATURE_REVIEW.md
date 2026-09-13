@@ -39,7 +39,8 @@ for free.
 | ~~Now playing on the desktop~~ | Published as our own MPRIS player | **done** |
 | ~~Desktop popups~~ | The desktop's server, with inline reply | **done** |
 | Screen mirroring, app windows | scrcpy over adb, reconnecting on its own | **partly done** — over the link is the remaining half |
-| ~~File transfer~~ | Chunked, both ways, plus the phone's share sheet | **done** |
+| ~~File transfer~~ | Chunked, both ways, on its own connection, plus the share sheet | **done** |
+| ~~Phone storage in the file manager~~ | SFTP server on the phone, sshfs on the desktop | **done** |
 
 ---
 

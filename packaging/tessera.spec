@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        24%{?dist}
+Release:        25%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -44,6 +44,9 @@ Requires:       glib2
 Recommends:     ffmpeg
 Recommends:     v4l2loopback
 Recommends:     scrcpy
+# The phone's storage as a folder: sshfs mounts the phone's SFTP server where
+# every application can see it. GVfs is the fallback without it.
+Recommends:     fuse-sshfs
 # bluetoothctl and mpris-proxy, for calls and music over Bluetooth.
 Recommends:     bluez
 # pactl, for switching between the music and call profiles. It lives in
@@ -164,6 +167,22 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-25
+- The phone's storage as a folder. The companion app runs an SFTP server --
+  Apache MINA SSHD, with nothing but the SFTP subsystem -- and Tessera mounts it
+  with sshfs, puts it in the file manager's sidebar, and unmounts it when the
+  phone goes. The approach is Sefirah's; the difference is trust: the phone's
+  SSH host key travels over the paired link and the mount accepts that key and
+  no other, where the usual way accepts whatever answers.
+- All files access, which Android 11 and later require for this, can be
+  granted from the desktop through Shizuku, or on the phone as usual.
+- File transfers have their own connection. On the main link a large file
+  queued megabytes ahead of audio and notifications; a second authenticated
+  socket lets TCP share the network between them. Phones without it fall back
+  to the main link.
+- The wallpaper is asked for once per run rather than on every reconnection,
+  and again only after twelve hours.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-24
 - The sidebar shows the phone's name -- the one its owner gave it -- with the
   model number on its tooltip rather than in place of it. The companion app was

@@ -82,6 +82,10 @@ UNSUPPORTED: dict[str, dict[str, str]] = {
         "mpris":
             "Media details come from the companion app; MPRIS is a Linux "
             "desktop interface.",
+        "storage":
+            "Not written for Windows yet. The phone's half is the same SFTP "
+            "server; Windows needs a filesystem driver such as WinFsp, or the "
+            "Cloud Files API, to show it as a drive.",
     },
     "macos": {
         "bluetooth_audio": "Not implemented on macOS.",
@@ -90,6 +94,7 @@ UNSUPPORTED: dict[str, dict[str, str]] = {
         "dnd_desktop": "Not implemented on macOS.",
         "mpris": "MPRIS is a Linux desktop interface.",
         "hotspot": "Joining a network from the app is not implemented on macOS.",
+        "storage": "Not implemented on macOS.",
     },
     "linux": {},
 }

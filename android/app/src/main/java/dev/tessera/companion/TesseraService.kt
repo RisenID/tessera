@@ -319,16 +319,24 @@ class TesseraService : Service() {
      * or "no computer connected" rather than closing silently either way.
      */
     fun share(uris: List<android.net.Uri>, text: String = ""): Int {
-        val live = sessions.toList()
-        if (live.isEmpty()) return 0
-        live.forEach { session ->
-            if (uris.isNotEmpty()) session.offerFiles(uris)
-            if (text.isNotEmpty() && uris.isEmpty()) session.offerText(text)
+        // One target per desktop, not per connection: a desktop holds two, and
+        // files go down its file connection where it has one, so a large
+        // transfer never sits in front of its audio. Text is a clipboard
+        // message, which only the main link handles.
+        val desktops = sessions.filter { it.isAuthenticated }.groupBy { it.token }.values
+        if (desktops.isEmpty()) return 0
+        for (connections in desktops) {
+            val main = connections.firstOrNull { it.role.isEmpty() } ?: connections.first()
+            if (uris.isNotEmpty()) {
+                (connections.firstOrNull { it.role == "files" } ?: main).offerFiles(uris)
+            } else if (text.isNotEmpty()) {
+                main.offerText(text)
+            }
         }
-        return live.size
+        return desktops.size
     }
 
-    private fun statusText(): String = when (val count = sessions.size) {
+    private fun statusText(): String = when (val count = sessions.count { it.role.isEmpty() }) {
         0 -> "Ready on port ${tls.localPort}"
         1 -> "Connected to 1 computer"
         else -> "Connected to $count computers"
@@ -340,6 +348,7 @@ class TesseraService : Service() {
         advertiser.stop()
         sessions.forEach(Session::close)
         sessions.clear()
+        dev.tessera.companion.features.StorageServer.stop()
         tls.stop()
         workers.shutdownNow()
         acceptThread?.interrupt()

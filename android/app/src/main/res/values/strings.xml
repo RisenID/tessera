@@ -12,6 +12,8 @@
     <string name="file_received_title">File from your computer</string>
     <string name="channel_files">Files</string>
     <string name="channel_files_description">Files arriving from a connected computer</string>
+    <string name="perm_storage">Files on your computer</string>
+    <string name="perm_storage_why">Let your computer open this phone\'s storage as a folder. Android calls this All files access; with Shizuku it is granted without leaving this screen.</string>
     <string name="app_long_name">Tessera Companion</string>
     <string name="stop">Stop</string>
     <string name="start">Start</string>

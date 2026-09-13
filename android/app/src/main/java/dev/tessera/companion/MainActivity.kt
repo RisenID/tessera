@@ -23,6 +23,7 @@ import dev.tessera.companion.features.NotificationBridge
 import dev.tessera.companion.features.PrivilegedShell
 import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.features.SmsRepository
+import dev.tessera.companion.features.StorageServer
 import dev.tessera.companion.net.TlsServer
 
 /**
@@ -114,6 +115,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * All files access, through Shizuku where it is running and through the
+     * system's own screen where it is not.
+     */
+    private fun grantStorage() {
+        if (!PrivilegedShell.hasPermission()) {
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        android.net.Uri.parse("package:$packageName"),
+                    )
+                )
+            }.onFailure { open(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION) }
+            return
+        }
+        Thread {
+            val problem = StorageServer.grant(this)
+            runOnUiThread {
+                if (problem != null) binding.shizukuState.text = problem
+                refresh()
+            }
+        }.start()
+    }
+
+    /**
      * From API 35 the system always draws edge-to-edge, so the app must inset
      * its own content. The app bar takes the status bar via fitsSystemWindows;
      * the scrolling content only needs the bottom and the horizontal cutout.
@@ -190,6 +216,15 @@ class MainActivity : AppCompatActivity() {
                 R.drawable.ic_audio,
                 granted = { ProjectionGrant.allowed(this) },
                 grant = { grantProjection() },
+            ),
+            Row(
+                binding.rowStorage,
+                R.string.perm_storage,
+                R.string.perm_storage_why,
+                R.drawable.ic_photo,
+                // Nothing to grant on a phone too old to have the permission.
+                granted = { !StorageServer.supported() || StorageServer.allowed() },
+                grant = { grantStorage() },
             ),
         )
 

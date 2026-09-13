@@ -10,6 +10,7 @@ import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
 import dev.tessera.companion.features.FileTransfer
+import dev.tessera.companion.features.StorageServer
 import dev.tessera.companion.features.Wallpaper
 import dev.tessera.companion.features.CameraStreamer
 import dev.tessera.companion.features.CallMonitor
@@ -93,6 +94,26 @@ class Session(
     /** The header whose binary frame has not arrived yet. */
     private var pendingBinary: JSONObject? = null
 
+    /**
+     * What this connection is for. "" is a desktop's main link; "files" is the
+     * second connection the same desktop opens for transfers alone, so a large
+     * file never queues ahead of that desktop's audio and notifications.
+     */
+    @Volatile
+    var role: String = ""
+        private set
+
+    /** Which paired desktop this is, so its two connections can be told apart from another's. */
+    @Volatile
+    var token: String = ""
+        private set
+
+    val isAuthenticated: Boolean
+        get() = authenticated
+
+    /** Whether this desktop is holding the storage server open. */
+    private var usingStorage = false
+
     override fun run() {
         Log.i(TAG, "session from ${socket.inetAddress?.hostAddress}")
         // Without this a file chunk -- a small header, then a large payload --
@@ -172,6 +193,8 @@ class Session(
             "auth" -> {
                 if (store.isKnown(message.optString("token"))) {
                     authenticated = true
+                    token = message.optString("token")
+                    role = message.optString("role")
                     send(
                         JSONObject()
                             .put("t", "auth_ok")
@@ -218,6 +241,13 @@ class Session(
         add("file_transfer")
         // The phone's own look, for the desktop's sidebar.
         add("wallpaper")
+        // A second connection for transfers alone.
+        add("file_channel")
+        // The phone's storage as a folder on the desktop, and whether it can
+        // be allowed from there rather than on this screen.
+        if (StorageServer.supported()) add("storage")
+        if (StorageServer.allowed()) add("storage_allowed")
+        if (StorageServer.grantable() && !StorageServer.allowed()) add("storage_grant")
         if (CallsRepository.canReadLog(context)) add("calls")
         if (CallsRepository.canControl(context)) add("call_control")
         // Only claim "hotspot" if the phone will actually take the command.
@@ -336,6 +366,44 @@ class Session(
             "ring_stop" -> {
                 FindPhone.stop(context)
                 reply(id, JSONObject().put("ringing", false))
+            }
+
+            // -- the phone's storage, for the desktop to mount --------------
+            "storage_start" -> {
+                try {
+                    val info = StorageServer.start(context)
+                    // start() counts a user each time; this desktop is one.
+                    if (usingStorage) StorageServer.release() else usingStorage = true
+                    reply(
+                        id,
+                        JSONObject()
+                            .put("port", info.port)
+                            .put("user", StorageServer.USER)
+                            .put("password", info.password)
+                            .put("path", info.path)
+                            .put("hostKey", info.hostKey)
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "file server did not start", e)
+                    fail(
+                        id,
+                        if (!StorageServer.allowed())
+                            "The phone has not allowed All files access, which its storage needs."
+                        else "The phone could not start its file server: ${e.message}"
+                    )
+                }
+            }
+            "storage_stop" -> {
+                if (usingStorage) {
+                    usingStorage = false
+                    StorageServer.release()
+                }
+                reply(id, JSONObject().put("stopped", true))
+            }
+            "storage_grant" -> {
+                val problem = StorageServer.grant(context)
+                if (problem == null) reply(id, JSONObject().put("granted", true))
+                else fail(id, problem)
             }
 
             "wallpaper_get" -> {
@@ -934,6 +1002,10 @@ class Session(
         outgoing?.cancel()
         outgoing?.close()
         outgoing = null
+        if (usingStorage) {
+            usingStorage = false
+            StorageServer.release()
+        }
         subscriber?.let {
             Bus.unsubscribe(it)
             ClipboardWatcher.removeUser(context)

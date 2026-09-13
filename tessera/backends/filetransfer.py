@@ -128,6 +128,9 @@ class Transfer:
     error: str = ""
     started: float = field(default_factory=time.monotonic)
     finished: float = 0.0
+    #: The connection this transfer lives on. Replies go back the way the
+    #: transfer came, and only that connection dropping can end it.
+    link: object = field(default=None, repr=False, compare=False)
 
     @property
     def fraction(self) -> float:
@@ -190,9 +193,13 @@ class FileTransfers(QObject):
     #: Something went wrong that the user should be told about once.
     failed = Signal(str)
 
-    def __init__(self, client, config, parent: QObject | None = None) -> None:
+    def __init__(
+        self, client, config, parent: QObject | None = None, *, fallback=None,
+    ) -> None:
         super().__init__(parent)
-        self._client = client
+        #: Where files go, best first: the connection that carries nothing but
+        #: files, then the main link for a phone too old to open a second one.
+        self._links = [link for link in (client, fallback) if link is not None]
         self._config = config
         self._transfers: dict[str, Transfer] = {}
         #: Files this end is sending, by transfer id: the open handle and how
@@ -205,10 +212,20 @@ class FileTransfers(QObject):
         self._queue: list[Path] = []
         self._sending = ""
 
-        client.fileEvent.connect(self.on_event)
-        client.fileChunk.connect(self.on_chunk)
-        client.flushed.connect(self._pump)
-        client.connectedChanged.connect(self._on_link)
+        for link in self._links:
+            link.fileEvent.connect(lambda message, l=link: self.on_event(message, l))
+            link.fileChunk.connect(self.on_chunk)
+            link.flushed.connect(self._pump)
+            link.connectedChanged.connect(
+                lambda connected, l=link: self._on_link(connected, l)
+            )
+
+    def _link(self):
+        """The best connection that is up right now, or None."""
+        for link in self._links:
+            if getattr(link, "connected", False):
+                return link
+        return None
 
     # -- what the interface reads --------------------------------------------
 
@@ -250,7 +267,8 @@ class FileTransfers(QObject):
     def _start_next(self) -> None:
         if self._sending or not self._queue:
             return
-        if not self._client.connected:
+        link = self._link()
+        if link is None:
             self.failed.emit("The phone is not connected.")
             self._queue.clear()
             return
@@ -271,6 +289,7 @@ class FileTransfers(QObject):
             direction=SENDING,
             path=path,
             mime=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            link=link,
         )
         self._transfers[transfer.id] = transfer
         self._outgoing[transfer.id] = handle
@@ -280,7 +299,7 @@ class FileTransfers(QObject):
         # Offered rather than pushed: the phone picks the destination and can
         # refuse before a single byte is sent, which is the difference between
         # a transfer that fails at the start and one that fails at the end.
-        self._client.send({
+        link.send({
             "t": "file_offer",
             "id": transfer.id,
             "name": transfer.name,
@@ -303,7 +322,8 @@ class FileTransfers(QObject):
         # handed over -- which is how an eight megabyte file ended up written
         # in ten milliseconds and held in memory. Counting down what this pass
         # has written is the part that cannot lie.
-        budget = HIGH_WATER - self._client.pending_bytes
+        link = transfer.link
+        budget = HIGH_WATER - link.pending_bytes
         while budget > 0:
             try:
                 chunk = handle.read(CHUNK)
@@ -324,7 +344,7 @@ class FileTransfers(QObject):
                 handle.close()                              # type: ignore[union-attr]
                 self._outgoing.pop(transfer.id, None)
                 self.changed.emit(transfer)
-                self._client.send({"t": "file_done", "id": transfer.id})
+                link.send({"t": "file_done", "id": transfer.id})
                 QTimer.singleShot(
                     CONFIRM_SECONDS * 1000,
                     lambda: self._confirm_timeout(transfer.id),
@@ -332,7 +352,7 @@ class FileTransfers(QObject):
                 return
 
             try:
-                self._client.send_binary({"t": "file_chunk", "id": transfer.id}, chunk)
+                link.send_binary({"t": "file_chunk", "id": transfer.id}, chunk)
             except Exception as exc:                        # noqa: BLE001
                 self._abort_send(transfer, str(exc))
                 return
@@ -365,7 +385,8 @@ class FileTransfers(QObject):
             return
         transfer.state = CANCELLED
         transfer.finished = time.monotonic()
-        self._client.send({"t": "file_cancel", "id": transfer_id})
+        if transfer.link is not None:
+            transfer.link.send({"t": "file_cancel", "id": transfer_id})
         if transfer.direction == SENDING:
             self._close_send(transfer_id)
             self._start_next()
@@ -375,8 +396,13 @@ class FileTransfers(QObject):
 
     # -- receiving -----------------------------------------------------------
 
-    def on_event(self, message: dict) -> None:
+    def on_event(self, message: dict, link=None) -> None:
         kind = message.get("t", "")
+        if kind == "file_offer":
+            # An offer is the one message that starts something, so it is
+            # the one that has to know which connection to answer on.
+            self._offered(message, link if link is not None else self._links[0])
+            return
         handler = {
             "file_offer": self._offered,
             "file_accept": self._accepted,
@@ -388,7 +414,7 @@ class FileTransfers(QObject):
         if handler is not None:
             handler(message)
 
-    def _offered(self, message: dict) -> None:
+    def _offered(self, message: dict, link) -> None:
         """The phone wants to send us something."""
         transfer_id = str(message.get("id") or "")
         if not transfer_id:
@@ -397,7 +423,7 @@ class FileTransfers(QObject):
         size = int(message.get("size") or 0)
 
         if size > MAX_SIZE:
-            self._client.send({
+            link.send({
                 "t": "file_reject", "id": transfer_id,
                 "message": "That file is larger than this computer will accept.",
             })
@@ -412,7 +438,7 @@ class FileTransfers(QObject):
             # is the spelling the completion step undoes.
             handle = partial_path(destination).open("wb")
         except OSError as exc:
-            self._client.send({
+            link.send({
                 "t": "file_reject", "id": transfer_id,
                 "message": f"This computer could not open a file to write: {exc}",
             })
@@ -422,12 +448,12 @@ class FileTransfers(QObject):
         transfer = Transfer(
             id=transfer_id, name=destination.name, size=size,
             direction=RECEIVING, state=RUNNING, path=destination,
-            mime=str(message.get("mime") or ""),
+            mime=str(message.get("mime") or ""), link=link,
         )
         self._transfers[transfer_id] = transfer
         self._incoming[transfer_id] = handle
         self.changed.emit(transfer)
-        self._client.send({"t": "file_accept", "id": transfer_id})
+        link.send({"t": "file_accept", "id": transfer_id})
 
     def on_chunk(self, header: dict, payload: bytes) -> None:
         transfer_id = str(header.get("id") or "")
@@ -438,7 +464,7 @@ class FileTransfers(QObject):
         try:
             handle.write(payload)                           # type: ignore[union-attr]
         except OSError as exc:
-            self._client.send({
+            transfer.link.send({
                 "t": "file_cancel", "id": transfer_id,
                 "message": f"writing failed: {exc}",
             })
@@ -482,7 +508,7 @@ class FileTransfers(QObject):
             transfer.size = transfer.done
         self.changed.emit(transfer)
         self.received.emit(transfer)
-        self._client.send({
+        transfer.link.send({
             "t": "file_saved", "id": transfer_id, "path": str(transfer.path),
         })
 
@@ -572,12 +598,14 @@ class FileTransfers(QObject):
 
     # -- the link ------------------------------------------------------------
 
-    def _on_link(self, connected: bool) -> None:
-        """A dropped link ends every transfer; none of them can survive it."""
+    def _on_link(self, connected: bool, link=None) -> None:
+        """A dropped connection ends the transfers that were using it."""
         if connected:
             return
         for transfer in list(self._transfers.values()):
             if not transfer.active:
+                continue
+            if link is not None and transfer.link is not link:
                 continue
             transfer.state = FAILED
             transfer.error = "The phone disconnected."
@@ -587,8 +615,14 @@ class FileTransfers(QObject):
             else:
                 self._discard_incoming(transfer.id)
             self.changed.emit(transfer)
-        self._queue.clear()
-        self._sending = ""
+        if self._sending and self._sending not in {
+            t.id for t in self._transfers.values() if t.active
+        }:
+            self._sending = ""
+        if self._link() is None:
+            self._queue.clear()
+        else:
+            self._start_next()
 
     def forget_finished(self) -> None:
         for transfer_id, transfer in list(self._transfers.items()):

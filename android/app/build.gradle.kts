@@ -64,6 +64,18 @@ android {
         }
     }
 
+    packaging {
+        resources {
+            // MINA SSHD's jars each carry the same Maven metadata. None of it
+            // is read at runtime.
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+            )
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -98,4 +110,9 @@ dependencies {
     // SoftApConfiguration) is blocked by the non-SDK interface restrictions
     // from Android 9 onwards; this lifts that for our process only.
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+    // The phone's storage on the desktop: an SFTP server the desktop mounts
+    // with sshfs. Apache MINA SSHD is the server Sefirah ships for the same
+    // job; SFTP is a filesystem protocol every desktop can already mount.
+    implementation("org.apache.sshd:sshd-core:2.15.0")
+    implementation("org.apache.sshd:sshd-sftp:2.15.0")
 }

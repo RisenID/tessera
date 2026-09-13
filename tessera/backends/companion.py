@@ -354,9 +354,20 @@ class CompanionClient(QObject):
     #: change instead of trying the others.
     CONNECT_TIMEOUT_MS = 6_000
 
-    def __init__(self, phone: PairedPhone | None = None, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        phone: PairedPhone | None = None,
+        parent: QObject | None = None,
+        role: str = "",
+    ) -> None:
         super().__init__(parent)
         self.phone = phone or PairedPhone()
+        #: "" for the main link; "files" for the second connection that
+        #: carries nothing but file transfers. A large file on the main link
+        #: queued megabytes ahead of audio frames and notifications; on its own
+        #: socket TCP shares the network between them instead. Sefirah does the
+        #: same, for the same reason.
+        self.role = role
         self._socket: QSslSocket | None = None
         self._decoder = Decoder()
         self._next_id = 1
@@ -399,6 +410,11 @@ class CompanionClient(QObject):
     @property
     def connected(self) -> bool:
         return self._authenticated and self._socket is not None
+
+    @property
+    def address(self) -> tuple[str, int] | None:
+        """Where the phone answered, while it is connected."""
+        return self._pending_host if self._authenticated else None
 
     @property
     def capabilities(self) -> list[str]:
@@ -718,15 +734,21 @@ class CompanionClient(QObject):
         if self._pair_code:
             self._send({"t": "pair", "code": self._pair_code})
         elif self.phone.token:
-            self._send({"t": "auth", "token": self.phone.token})
+            self._send(self._auth_message())
         else:
             self.pairingRequired.emit()
+
+    def _auth_message(self) -> dict[str, Any]:
+        message: dict[str, Any] = {"t": "auth", "token": self.phone.token}
+        if self.role:
+            message["role"] = self.role
+        return message
 
     def _recv_pair_ok(self, message: dict[str, Any]) -> None:
         self.phone.token = message.get("token", "")
         self._pair_code = ""
         self.paired.emit(self.phone)
-        self._send({"t": "auth", "token": self.phone.token})
+        self._send(self._auth_message())
 
     def _recv_pair_fail(self, message: dict[str, Any]) -> None:
         self._pair_code = ""
@@ -756,7 +778,10 @@ class CompanionClient(QObject):
         self.statusChanged.emit(f"Connected to {self.phone.name or self.phone.host}")
         self.connectedChanged.emit(True)
         self.capabilitiesChanged.emit(self._capabilities)
-        self._send({"t": "sub", "topics": self._subscription_topics()})
+        # The file connection subscribes to nothing: every event it carried
+        # would arrive twice.
+        if not self.role:
+            self._send({"t": "sub", "topics": self._subscription_topics()})
 
     def _subscription_topics(self) -> list[str]:
         """Ask only for the events the user wants.
