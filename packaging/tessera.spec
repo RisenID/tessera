@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        20%{?dist}
+Release:        21%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -164,6 +164,25 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-21
+- Bluetooth connects on its own now, shortly after the app starts and again if
+  the link drops. Connecting is still not playing: it brings up the hands-free
+  profile only, so the media profile is never claimed and nothing moves off the
+  phone's own headphones. Audio moves when the button asks, and only then.
+- A Bluetooth button sits in the sidebar next to the connection pill and the
+  refresh button, saying what pressing it would do and colouring itself by
+  whether the phone is connected. A phone disconnected there stays
+  disconnected -- the automatic connect follows the buttons rather than
+  fighting them.
+- Bluetooth is the route the app leads with: it moves the sound rather than
+  copying it, and it is the only one that can carry a call. Playing over the
+  companion link is now the fallback for a computer with no Bluetooth radio,
+  switched on in Settings -- and already on where this computer cannot do
+  Bluetooth audio at all, since there it is the only route there is.
+- The Audio page is ordered to match, and a new check covers the connection:
+  that it never brings up the media profile, that a deliberate disconnect is
+  not undone, and that an automatic attempt which fails stays out of the way.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-20
 - The phone can be kept quiet while its audio plays here. What the link carries
   is a copy, so both were playing the same track a fraction of a second apart;

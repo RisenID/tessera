@@ -42,9 +42,10 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("screen", "Screen mirroring", "The whole phone in a window, through scrcpy over adb"),
     ("apps", "Apps", "Launch one app into its own window"),
     ("hotspot", "Hotspot", "Start the phone's hotspot and join it"),
-    ("phone_audio", "Phone audio over the link",
-     "Play what the phone is playing, without Bluetooth or a profile switch"),
     ("bluetooth_audio", "Calls and music", "Bluetooth audio to and from the phone"),
+    ("phone_audio", "Phone audio over the link",
+     "The fallback where there is no Bluetooth: a copy of the phone's mix, "
+     "which cannot carry a call"),
 )
 
 
@@ -295,18 +296,20 @@ class SettingsPage(QWidget):
         self.route_card.add(route_title)
 
         self.audio_route = QComboBox()
-        self.audio_route.addItem("Whichever works (prefers the link)", "auto")
-        self.audio_route.addItem("Over the link", "link")
         self.audio_route.addItem("Over Bluetooth", "bluetooth")
+        self.audio_route.addItem("Whichever works (prefers Bluetooth)", "auto")
+        self.audio_route.addItem("Over the link", "link")
         index = self.audio_route.findData(hub.config.phone_audio.route)
         self.audio_route.setCurrentIndex(max(index, 0))
         self.route_card.add(self._labelled("One-click route", self.audio_route))
 
         route_note = QLabel(
-            "Over the link the phone sends a copy of what it is playing, so it "
-            "keeps playing there too and its own headphones are untouched. "
-            "Bluetooth moves the audio here instead, and is the only route that "
-            "can carry a call. Both are on the Audio page whatever is chosen."
+            "Bluetooth moves the audio here, and is the only route that can "
+            "carry a call, so it is the one this app leads with. Over the link "
+            "the phone sends a copy of what it is playing instead — the "
+            "fallback for a computer with no Bluetooth radio, switched on "
+            "above. Both are on the Audio page whatever is chosen, and neither "
+            "moves any audio until its button is pressed."
         )
         route_note.setObjectName("Muted")
         route_note.setWordWrap(True)
@@ -729,7 +732,7 @@ class SettingsPage(QWidget):
                 self.autostart_box.setChecked(autostart.enabled())
 
         self.hub.config.phone_audio.route = (
-            self.audio_route.currentData() or "auto"
+            self.audio_route.currentData() or "bluetooth"
         )
 
         codec = self.codec_choice.currentData()

@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
                 self.settings_page = page
                 page.featuresChanged.connect(self._apply_feature_visibility)
                 page.featuresChanged.connect(self.panel.apply_tiles)
+                # Switching Bluetooth audio off takes its button with it.
+                page.featuresChanged.connect(self.panel.refresh_header)
                 page.featuresChanged.connect(self._apply_panel_width)
             if isinstance(page, AudioPage):
                 self.audio_page = page

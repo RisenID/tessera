@@ -518,8 +518,61 @@ class DevicePanel(QWidget):
         self.reconnect_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reconnect_button.clicked.connect(self._reconnect)
         layout.addWidget(self.reconnect_button)
+
+        # Bluetooth has its own connection, separate from the companion link
+        # above, and until now the only way to make it was the Audio page. It
+        # belongs next to the other connection: it is what track details, call
+        # control and the audio button all need, and it is the thing to press
+        # when the phone has wandered off and come back.
+        self.bluetooth_button = QPushButton()
+        self.bluetooth_button.setObjectName("Ghost")
+        self.bluetooth_button.setFixedSize(24, 24)
+        self.bluetooth_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.bluetooth_button.clicked.connect(self._toggle_bluetooth)
+        layout.addWidget(self.bluetooth_button)
+        self._paint_bluetooth_button()
+
+        self.hub.bluetoothConnectedChanged.connect(
+            lambda _on: self._paint_bluetooth_button()
+        )
+        self.hub.bluetoothBusyChanged.connect(
+            lambda _busy: self._paint_bluetooth_button()
+        )
+
         layout.addStretch(1)
         return row
+
+    def _paint_bluetooth_button(self) -> None:
+        """Say what pressing it would do, and colour it by what is true now."""
+        button = self.bluetooth_button
+        possible = (
+            platform.supported("bluetooth_audio")
+            and self.hub.config.features.bluetooth_audio
+        )
+        button.setVisible(possible)
+        if not possible:
+            return
+
+        connected = self.hub.bluetooth_connected
+        busy = self.hub.bluetooth_busy
+        button.setEnabled(not busy)
+        button.setToolTip(
+            "Connecting over Bluetooth..." if busy else
+            "Disconnect Bluetooth" if connected else
+            # Worth saying on the button itself: this is the fear the whole
+            # audio path is built around, and the answer is no.
+            "Connect over Bluetooth (this does not move any audio)"
+        )
+        colour = (
+            self.palette_tokens.accent if connected else self.palette_tokens.muted
+        )
+        icon = tinted_icon(themed_icon("bluetooth", "preferences-system-bluetooth"),
+                           colour, 14)
+        if icon.isNull():
+            button.setText("\N{BLACK CIRCLE}" if connected else "\N{MEDIUM WHITE CIRCLE}")
+        else:
+            button.setIcon(icon)
+            button.setIconSize(QSize(14, 14))
 
     # -- the switches --------------------------------------------------------
 
@@ -789,6 +842,16 @@ class DevicePanel(QWidget):
         # The attempt is asynchronous; a permanently dead button reads as a hang.
         QTimer.singleShot(2500, lambda: self.reconnect_button.setEnabled(True))
 
+    def _toggle_bluetooth(self) -> None:
+        if self.hub.bluetooth_connected:
+            self.hub.disconnect_bluetooth()
+        else:
+            self.statusMessage.emit("Connecting over Bluetooth...")
+            self.hub.connect_bluetooth(
+                on_done=lambda label: self.statusMessage.emit(f"Connected to {label}")
+            )
+        self._paint_bluetooth_button()
+
     def _toggle_dnd(self) -> None:
         self.hub.set_phone_dnd("priority" if self.dnd_toggle.isChecked() else "off")
 
@@ -877,6 +940,7 @@ class DevicePanel(QWidget):
             self.link_pill.set_state("KDE Connect", "warning")
         else:
             self.link_pill.set_state("Offline", "muted")
+        self._paint_bluetooth_button()
         self.refresh_readings()
 
     def refresh_readings(self) -> None:

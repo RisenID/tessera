@@ -62,6 +62,10 @@ class Hub(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     bluetoothStreamingChanged = Signal(bool)
+    #: Connected or not, for the sidebar's Bluetooth button.
+    bluetoothConnectedChanged = Signal(bool)
+    #: True while a connect or disconnect this app asked for is in flight.
+    bluetoothBusyChanged = Signal(bool)
     #: The phone's audio, played here over the companion link.
     phoneAudioChanged = Signal(bool)
     phoneAudioLevel = Signal(float)
@@ -77,6 +81,10 @@ class Hub(QObject):
     #: How often to try bringing adb back. A failed connect costs seconds, and
     #: the phone is usually simply not listening, so this is deliberately slow.
     ADB_RETRY_SECONDS = 60.0
+    #: How long to leave a phone alone between automatic Bluetooth connects. A
+    #: phone that is off makes bluetoothctl wait for its whole timeout, so
+    #: trying on every watch would keep a worker busy for nothing.
+    BLUETOOTH_RETRY_SECONDS = 60.0
 
     def __init__(self, config: Config, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -106,6 +114,15 @@ class Hub(QObject):
         #: Set once the phone has told us which codecs it can send.
         self._codecs_learned = False
         self._bluetooth_streaming = False
+        #: Whether the phone should be connected over Bluetooth. Starts as the
+        #: setting says and then follows the buttons: a phone disconnected on
+        #: purpose must not be reconnected fifteen seconds later by the very
+        #: loop that is meant to keep it up.
+        self._bluetooth_wanted = bool(config.bluetooth.autoconnect)
+        self._bluetooth_busy = False
+        #: When the last automatic attempt was made, so a phone that is off or
+        #: out of range is not retried every time the watch runs.
+        self._bluetooth_tried = 0.0
         self._media: dict[str, Any] = {}
         self._phone_status: dict[str, Any] = {}
         self._hotspot_joined = False
@@ -139,6 +156,12 @@ class Hub(QObject):
         self._serial_timer.timeout.connect(self.refresh_adb)
         if platform.supported("bluetooth_audio"):
             self._serial_timer.timeout.connect(self._watch_bluetooth)
+            # Once shortly after starting, rather than waiting a quarter of a
+            # minute for the first tick: connecting on startup is the point of
+            # the setting, and fifteen seconds of "Not connected" reads as it
+            # not working. Not immediately, because the window is still being
+            # built and bluetoothctl is a subprocess.
+            QTimer.singleShot(1_500, self._watch_bluetooth)
         self._serial_timer.start(15_000)
 
     # -- persistence ---------------------------------------------------------
@@ -689,6 +712,142 @@ class Hub(QObject):
         self.config.save()
         self._apply_codec_preference()
 
+    @property
+    def bluetooth_busy(self) -> bool:
+        return self._bluetooth_busy
+
+    def _set_bluetooth_busy(self, busy: bool) -> None:
+        if busy == self._bluetooth_busy:
+            return
+        self._bluetooth_busy = busy
+        self.bluetoothBusyChanged.emit(busy)
+
+    def connect_bluetooth(self, on_done=None, on_error=None) -> None:
+        """Connect the phone over Bluetooth without moving any audio.
+
+        The quiet connect: the hands-free profile only, so A2DP is never
+        brought up and Android has no newly connected output to promote. Track
+        details and call control arrive; the music stays wherever it is. The
+        card is then left able to accept a stream, because the phone offers one
+        for a few seconds when a profile comes up and a card on the silent
+        profile misses the offer -- that is what has to be ready before the
+        audio button can work at all.
+        """
+        if not platform.supported("bluetooth_audio"):
+            self.errorOccurred.emit(
+                "This computer cannot do Bluetooth audio."
+            )
+            return
+        if not self.config.features.bluetooth_audio:
+            self.errorOccurred.emit(
+                "Bluetooth audio is switched off in Settings."
+            )
+            return
+        if self._bluetooth_busy:
+            return
+
+        self._bluetooth_wanted = True
+        self._bluetooth_tried = monotonic()
+        self._set_bluetooth_busy(True)
+
+        def work() -> str:
+            device = bluetooth.find_phone(
+                preferred_address=self.config.bluetooth.address,
+                name_hint=self.phone_name,
+            )
+            if device is None:
+                raise RuntimeError(
+                    "No paired phone found. Pair it with this computer in the "
+                    "Bluetooth settings first."
+                )
+            if self.config.bluetooth.address != device.address:
+                self.config.bluetooth.address = device.address
+                self.config.save()
+            if device.connected:
+                return device.label
+
+            if self.config.bluetooth.auto_stream:
+                bluetooth.connect(device.address)
+            else:
+                bluetooth.connect_quietly(device.address)
+                if bluetooth.audio_connected(device.address):
+                    # It came up anyway -- hand playback straight back.
+                    bluetooth.release_audio(device.address)
+                bt_audio.ready_to_receive(device.address)
+            return device.label
+
+        def done(label: object) -> None:
+            self._set_bluetooth_busy(False)
+            self._watch_bluetooth()
+            if on_done is not None:
+                on_done(str(label))
+
+        def failed(message: str) -> None:
+            self._set_bluetooth_busy(False)
+            # A caller that shows the failure itself -- the Audio page, which
+            # can offer to pair again -- says so by passing a handler; without
+            # one the message goes to the window's own error route.
+            if on_error is not None:
+                on_error(message)
+            else:
+                self.errorOccurred.emit(message)
+
+        submit(work, on_done=done, on_error=failed)
+
+    def disconnect_bluetooth(self, on_done=None, on_error=None) -> None:
+        """Drop the Bluetooth link, and stop trying to bring it back."""
+        address = self.config.bluetooth.address
+        if not address or self._bluetooth_busy:
+            return
+        self._bluetooth_wanted = False
+        self._set_bluetooth_busy(True)
+
+        def done(_result: object) -> None:
+            self._set_bluetooth_busy(False)
+            self._note_bluetooth({"connected": False})
+            if on_done is not None:
+                on_done("")
+
+        def failed(message: str) -> None:
+            self._set_bluetooth_busy(False)
+            if on_error is not None:
+                on_error(message)
+            else:
+                self.errorOccurred.emit(message)
+
+        submit(bluetooth.disconnect, address, on_done=done, on_error=failed)
+
+    def _autoconnect_bluetooth(self) -> None:
+        """Bring the link up by itself, if that is what the settings say.
+
+        Called from the same watch that parks unsolicited audio, so it costs no
+        timer of its own. Rate-limited because a phone that is off or out of
+        range makes `bluetoothctl connect` sit there for its full timeout, and
+        doing that every fifteen seconds would keep a worker permanently busy
+        for a phone that is simply not there.
+        """
+        if not self._bluetooth_wanted or self._bluetooth_busy:
+            return
+        if not self.config.bluetooth.autoconnect:
+            return
+        if not self.config.features.bluetooth_audio:
+            return
+        if not platform.supported("bluetooth_audio"):
+            return
+        if self._bluetooth_settled:
+            return
+        now = monotonic()
+        if now - self._bluetooth_tried < self.BLUETOOTH_RETRY_SECONDS:
+            return
+        self._bluetooth_tried = now
+        log.info("connecting the phone over Bluetooth")
+        # Quietly. Nobody pressed anything, so a phone that is switched off or
+        # out of range is not a failure to report -- and reporting it would put
+        # a toast on screen every minute for a phone left at home.
+        self.connect_bluetooth(
+            on_error=lambda message: log.info("automatic connect: %s", message)
+        )
+
     def _watch_bluetooth(self) -> None:
         """Park a Bluetooth link that takes the audio path without being asked.
 
@@ -774,7 +933,10 @@ class Hub(QObject):
         submit(check, on_done=self._note_bluetooth, on_error=lambda _m: None)
 
     def _note_bluetooth(self, state: dict) -> None:
+        was = self._bluetooth_settled
         self._bluetooth_settled = bool(state.get("connected"))
+        if bool(was) != self._bluetooth_settled or was is None:
+            self.bluetoothConnectedChanged.emit(self._bluetooth_settled)
         self._learn_codecs(state.get("phone_codecs") or [])
         name = state.get("name") or ""
         if name:
@@ -783,6 +945,10 @@ class Hub(QObject):
         if streaming != self._bluetooth_streaming:
             self._bluetooth_streaming = streaming
             self.bluetoothStreamingChanged.emit(streaming)
+
+        # Last, so it acts on what was just read rather than on the previous
+        # round: a phone that is not there is a phone to connect to.
+        self._autoconnect_bluetooth()
 
     @property
     def bluetooth_connected(self) -> bool:

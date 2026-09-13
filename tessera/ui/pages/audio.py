@@ -12,9 +12,14 @@ Two of them, and they are not equivalent:
 * **over Bluetooth** -- the phone becomes an A2DP source, which *does* move its
   audio here, and is the only route that can carry a call's microphone.
 
-The link route leads because it is the one that answers "play the music on my
-computer" without disturbing anything on the phone. Bluetooth stays for calls
-and for phones without the companion app.
+Bluetooth leads. It *moves* the sound rather than copying it, so the phone does
+not end up playing the same track alongside this computer, and it is the only
+route that can carry a call. The link route is the fallback for a computer with
+no Bluetooth radio, and is switched on in Settings.
+
+Connecting still moves nothing on its own, by either route. The Bluetooth
+connection made here leaves the media profile alone, so audio moves only when
+the button on this page asks for it.
 """
 
 from __future__ import annotations
@@ -89,7 +94,8 @@ class AudioPage(QWidget):
         page.addWidget(
             heading(
                 "Audio",
-                "Play the phone's audio here over the link, or use Bluetooth for calls",
+                "Music and calls over Bluetooth, or over the link where there "
+                "is no Bluetooth",
             )
         )
 
@@ -104,7 +110,10 @@ class AudioPage(QWidget):
         outer.setContentsMargins(0, 0, SPACE["md"], SPACE["xl"])
         outer.setSpacing(SPACE["lg"])
 
-        outer.addWidget(self._build_link_card(palette))
+        # Built first because the rest of the page reads its widgets, added
+        # last because it is the fallback: Bluetooth is the route this app
+        # leads with, and the one that can carry a call.
+        link_card = self._build_link_card(palette)
 
         # -- connection ------------------------------------------------------
         link = Card(self)
@@ -210,6 +219,8 @@ class AudioPage(QWidget):
         outer.addWidget(media)
         self.media_card = media
 
+        outer.addWidget(link_card)
+
         #: The Bluetooth half of the page, shown only where Bluetooth audio can
         #: work: it is absent on Windows, and can be switched off anywhere.
         self._bluetooth_cards = [link, mode, media]
@@ -239,10 +250,10 @@ class AudioPage(QWidget):
         card.body().addLayout(row)
 
         note = QLabel(
-            "Plays whatever the phone is playing, over the connection this app "
-            "already has. No Bluetooth is involved, and because it is a copy of "
-            "the phone's mix, nothing here ever takes the sound away from the "
-            "phone's own headphones."
+            "The fallback for a computer with no Bluetooth. Plays whatever the "
+            "phone is playing over the connection this app already has — a copy "
+            "of the phone's mix, so it cannot carry a call and cannot take the "
+            "sound away from the phone's own headphones."
         )
         note.setObjectName("Muted")
         note.setWordWrap(True)
@@ -429,9 +440,9 @@ class AudioPage(QWidget):
 
         The panel's switch calls this. Either route only ever starts on a
         click, and this is that click; which route is the user's choice, in
-        Settings. "Whichever works" prefers the link, because it takes nothing
-        away from the phone -- and falls back to Bluetooth for a phone whose
-        companion app cannot send audio.
+        Settings. "Whichever works" prefers Bluetooth, because it moves the
+        sound rather than copying it -- and falls back to the link on a
+        computer whose Bluetooth cannot, or will not, carry it.
         """
         if self.hub.phone_audio_active or self.hub.phone_audio_pending:
             self.hub.stop_phone_audio()
@@ -441,16 +452,27 @@ class AudioPage(QWidget):
             return
 
         route = self.hub.config.phone_audio.route
-        if route != "bluetooth" and self._link_usable():
-            self.hub.start_phone_audio()
-            return
         if route == "link":
+            if self._link_usable():
+                self.hub.start_phone_audio()
+                return
             # Asked for explicitly, so say why it cannot rather than quietly
             # doing something else to the phone's audio.
             self.toast.show_message(
                 self._link_note() or "The link route is not available.",
                 self.palette_tokens, "danger",
             )
+            return
+
+        # Bluetooth, or whichever works. "Whichever" means the card this
+        # computer can actually stream through: without a connected phone
+        # there is no profile to switch, and the link is then the only route
+        # that can answer the button at all.
+        if route == "bluetooth" or self._card is not None:
+            self._set_mode("music")
+            return
+        if self._link_usable():
+            self.hub.start_phone_audio()
             return
         self._set_mode("music")
 
@@ -624,6 +646,14 @@ class AudioPage(QWidget):
     # -- actions -------------------------------------------------------------
 
     def _toggle_connection(self) -> None:
+        """Connect or disconnect, through the hub rather than directly.
+
+        The hub owns the quiet connect and, more importantly, owns whether the
+        phone is *meant* to be connected: it reconnects by itself on a timer,
+        and a disconnect made here has to stop that. Doing the work locally
+        left the two disagreeing -- the link came back fifteen seconds after
+        being dropped on purpose.
+        """
         device = self._device
         if device is None or self._busy:
             return
@@ -631,27 +661,7 @@ class AudioPage(QWidget):
         connecting = not device.connected
         say(self.link_status, "Connecting..." if connecting else "Disconnecting...")
 
-        def work() -> None:
-            if not connecting:
-                bluetooth.disconnect(device.address)
-                return
-
-            if self.hub.config.bluetooth.auto_stream:
-                bluetooth.connect(device.address)
-                return
-
-            # Connect without the media profile. A plain connect brings up
-            # A2DP, and Android promotes a newly connected A2DP device to be
-            # the active output -- which is exactly what pulled music off the
-            # headphones. Leaving that profile alone means playback never moves
-            # until it is asked for.
-            bluetooth.connect_quietly(device.address)
-            if bluetooth.audio_connected(device.address):
-                # The phone brought the media profile up anyway; hand it back.
-                bluetooth.release_audio(device.address)
-            audio.ready_to_receive(device.address)
-
-        def done(_result: object) -> None:
+        def done(_label: object = "") -> None:
             self._busy = False
             say(self.link_status, "")
             self.forget_button.setVisible(False)
@@ -664,7 +674,10 @@ class AudioPage(QWidget):
             self.forget_button.setVisible("pair again" in message.lower())
             self.toast.show_message("Bluetooth failed", self.palette_tokens, "danger")
 
-        submit(work, on_done=done, on_error=failed)
+        if connecting:
+            self.hub.connect_bluetooth(on_done=done, on_error=failed)
+        else:
+            self.hub.disconnect_bluetooth(on_done=done, on_error=failed)
 
     def _forget(self) -> None:
         device = self._device

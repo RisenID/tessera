@@ -95,7 +95,16 @@ class FeatureConfig:
     #: Playing what the phone is playing, over the companion link rather than
     #: Bluetooth. Separate from bluetooth_audio: it needs no pairing, works on
     #: every platform, and cannot take audio off the phone's own headphones.
-    phone_audio: bool = True
+    #:
+    #: Off where Bluetooth can do the job, which is the route this app leads
+    #: with: it is the one that moves the sound rather than copying it, and it
+    #: is the only one that can carry a call. This is the fallback, switched on
+    #: here for a computer with no Bluetooth -- and on such a computer it is
+    #: the only route there is, so it starts on rather than leaving the feature
+    #: unreachable.
+    phone_audio: bool = field(
+        default_factory=lambda: not platform.supported("bluetooth_audio")
+    )
     calls: bool = True
 
 
@@ -115,7 +124,11 @@ class PhoneAudioConfig:
     #: * "auto" -- over the link when the phone offers it, else Bluetooth
     #: * "link" -- always over the companion link
     #: * "bluetooth" -- always the A2DP profile switch
-    route: str = "auto"
+    #:
+    #: Bluetooth by default: it moves the audio rather than copying it, so the
+    #: phone does not need silencing, and it is the same radio the call audio
+    #: has to use anyway.
+    route: str = "bluetooth"
 
     #: Whether the phone goes quiet while its audio is playing here.
     #:
@@ -138,6 +151,14 @@ class PhoneAudioConfig:
 class BluetoothConfig:
     #: Address of the phone's Bluetooth radio, learned on first use.
     address: str = ""
+    #: Connect to the phone over Bluetooth when this app starts, and again if
+    #: the link drops. On by default, because being connected is what makes
+    #: track details, call control and the audio button work at all.
+    #:
+    #: Connecting is not playing. The connection made here leaves the media
+    #: profile alone entirely, so nothing moves off the phone's own headphones
+    #: -- see `bluetooth.connect_quietly`. Audio moves only from the button.
+    autoconnect: bool = True
     #: Start streaming as soon as the phone connects. Off by default: taking
     #: over the audio path uninvited interrupts whatever is already playing,
     #: and connecting is often only wanted for track info and call control.

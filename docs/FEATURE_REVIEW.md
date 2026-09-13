@@ -1,10 +1,12 @@
 # Every feature, and whether there is a better way
 
 Written after the audio work, which started from the same question and found
-that the route the app was using (Bluetooth A2DP) was the wrong one: the phone
-already had a connection to this computer, and sending a copy of its mix over
-that connection is better in every way that matters. This is that question
-asked of everything else.
+that the app had only one route where it could have two: the phone already had
+a connection to this computer, and a copy of its mix can come over that
+connection with no radio involved. Both now exist. Bluetooth leads -- it moves
+the sound rather than copying it, so nothing has to be silenced, and it is the
+only route that can carry a call -- and the link is the fallback for a computer
+with no Bluetooth. This is that question asked of everything else.
 
 Each entry says what the feature does today, whether a better mechanism exists,
 and what it would cost. Verdicts are **keep**, **improve**, or **replace**.
@@ -23,7 +25,9 @@ for free.
 | Notifications, replies, OTP | Companion, push | **keep** |
 | Messages, calls (control), photos, apps list | Companion | **keep** |
 | Battery, signal, ringer | Companion, push | **keep** |
-| Phone audio | Companion link (new) | **keep** |
+| Phone audio | Bluetooth A2DP, with the link as the fallback | **keep** |
+| Phone audio over the link | Companion link, off unless switched on | **keep** — the route for a computer with no Bluetooth |
+| Connecting over Bluetooth | Automatic, hands-free profile only | **done** |
 | Call audio | Bluetooth HFP | **keep** — no alternative exists |
 | Do Not Disturb (phone) | Companion, push | **keep** |
 | Do Not Disturb (desktop) | Subscribed; the timer is a fallback | **keep** — the review had this wrong |

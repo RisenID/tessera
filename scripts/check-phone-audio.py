@@ -172,6 +172,10 @@ def hub_state() -> None:
     from tessera.core.hub import Hub
 
     config = Config()
+    # The link route is the fallback now, off by default on a computer that
+    # has Bluetooth. Everything below is about the route itself, so switch it
+    # on rather than testing the switch twice.
+    config.features.phone_audio = True
     hub = Hub(config)
     seen: list[bool] = []
     waiting: list[str] = []
@@ -305,19 +309,35 @@ def interface() -> None:
     )
 
     # Both routes stay available; the setting only decides what one click does.
-    from tessera.core.config import PhoneAudioConfig
+    from tessera.core import platform
+    from tessera.core.config import FeatureConfig, PhoneAudioConfig
 
+    # A comparison, not a truthy string: this read `check(label, route, "auto")`
+    # and passed on any non-empty answer, including the wrong one.
     check(
-        "the one-click route defaults to whichever works",
+        "Bluetooth is the one-click route",
+        PhoneAudioConfig().route == "bluetooth",
         PhoneAudioConfig().route,
-        "auto",
+    )
+    check(
+        "the link route is the fallback, off where Bluetooth works",
+        FeatureConfig().phone_audio is not platform.supported("bluetooth_audio"),
+        f"phone_audio={FeatureConfig().phone_audio}, "
+        f"bluetooth_audio={platform.supported('bluetooth_audio')}",
     )
 
-    hub = Hub(Config())
+    config = Config()
+    hub = Hub(config)
     palette = detect_palette(QApplication.instance())
     page = AudioPage(hub, palette)
+    check(
+        "the link card is hidden until it is switched on",
+        not page.link_card.isVisibleTo(page),
+    )
 
-    check("the link card is shown", page.link_card.isVisibleTo(page))
+    config.features.phone_audio = True
+    page = AudioPage(hub, palette)
+    check("and shown once it is", page.link_card.isVisibleTo(page))
     check(
         "it starts in the not-playing state",
         page.stream_pill.text() == "Not playing",
