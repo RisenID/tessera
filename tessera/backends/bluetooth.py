@@ -210,6 +210,30 @@ def connect_quietly(address: str, timeout: float = 25.0) -> None:
     release_audio(address)
 
 
+def keep_audio_on_phone(address: str, settle: float = 6.0, sleep=None) -> int:
+    """Hand back the media profile until it stays down for *settle* seconds.
+
+    Phones often bring A2DP up a few seconds after the calls profile, and some
+    retry after being told no. Returns how many times it had to be released.
+    """
+    import time
+
+    sleep = sleep or time.sleep
+    poll = min(1.0, settle / 4)
+    released = 0
+    quiet_since = time.monotonic()
+    deadline = quiet_since + settle * 4
+    while time.monotonic() < deadline:
+        if audio_connected(address):
+            release_audio(address)
+            released += 1
+            quiet_since = time.monotonic()
+        elif time.monotonic() - quiet_since >= settle:
+            break
+        sleep(poll)
+    return released
+
+
 def claim_audio(address: str) -> bool:
     """Ask the phone to send its audio here, for an explicit stream."""
     import time

@@ -35,12 +35,12 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 class Radio:
     """Stands in for BlueZ, recording what was asked of it."""
 
-    def __init__(self, connected: bool = False, brings_up_audio: bool = False):
+    def __init__(self, connected: bool = False, brings_up_audio: bool | int = False):
         self.calls: list[str] = []
         self.connected = connected
-        #: Some phones bring the media profile up regardless; the connect has
-        #: to notice and hand it straight back.
-        self.brings_up_audio = brings_up_audio
+        #: How many times the phone brings the media profile up by itself.
+        self.audio_ups = int(brings_up_audio)
+        self.transport = ""
 
     def install(self) -> None:
         radio = self
@@ -72,10 +72,12 @@ class Radio:
 
         def release_audio(address):
             radio.calls.append("release_audio")
+            radio.audio_ups = max(0, radio.audio_ups - 1)
+            radio.transport = ""
             return True
 
         def audio_connected(device):
-            return radio.brings_up_audio
+            return radio.audio_ups > 0
 
         bluetooth.find_phone = find_phone
         bluetooth.connect = connect
@@ -83,7 +85,9 @@ class Radio:
         bluetooth.disconnect = disconnect
         bluetooth.release_audio = release_audio
         bluetooth.audio_connected = audio_connected
+        bluetooth.media_state = lambda address: (radio.transport, [])
         bt_audio.ready_to_receive = lambda address: radio.calls.append("ready_to_receive")
+        bt_audio.phone_stream = lambda: ""
 
 
 def connects(radio: "Radio") -> list[str]:
@@ -107,7 +111,19 @@ def make_hub(**overrides):
     # The codec machinery writes WirePlumber configuration and restarts the
     # audio service; neither belongs in a check.
     hub_module.Hub._apply_codec_preference = lambda self: None
+    hub_module.Hub.BLUETOOTH_SETTLE_SECONDS = 0.04
+    hub_module.Hub.RESUME_DELAY_MS = 10
     return hub_module.Hub(config), config
+
+
+def fake_phone_link(hub, playing: bool) -> list[dict]:
+    """A connected companion link that records what is sent."""
+    sent: list[dict] = []
+    hub.companion._authenticated = True
+    hub.companion._socket = object()
+    hub.companion.send = sent.append
+    hub._on_media({"t": "media", "playing": playing})
+    return sent
 
 
 def defaults() -> None:
@@ -162,6 +178,75 @@ def connecting(app: QApplication) -> None:
         "connect" in radio.calls and "connect_quietly" not in radio.calls,
         ", ".join(radio.calls),
     )
+
+
+def handback(app: QApplication) -> None:
+    print("\n-- the phone keeps its audio, and its music keeps playing")
+    radio = Radio(brings_up_audio=2)
+    radio.install()
+    hub, _config = make_hub()
+    hub.connect_bluetooth()
+    settle(app)
+    check(
+        "a media profile that comes back is handed back again",
+        radio.calls.count("release_audio") == 2,
+        ", ".join(radio.calls),
+    )
+    check("and is watched for a while afterwards",
+          hub._bluetooth_guard_until > hub_module.monotonic())
+
+    # A late one, after the connect has finished.
+    radio.calls.clear()
+    radio.transport = "active"
+    hub._watch_bluetooth()
+    settle(app)
+    check("a media profile that turns up later is handed back",
+          "release_audio" in radio.calls, ", ".join(radio.calls))
+
+    # Unless the user asked for a stream.
+    radio.calls.clear()
+    radio.transport = "active"
+    hub.end_bluetooth_guard()
+    hub._bluetooth_settled = True
+    hub._watch_bluetooth()
+    settle(app)
+    check("a stream the user asked for is left alone",
+          "release_audio" not in radio.calls, ", ".join(radio.calls))
+
+    # Music that was playing is resumed once the connection settles.
+    radio = Radio(brings_up_audio=True)
+    radio.install()
+    hub, _config = make_hub()
+    sent = fake_phone_link(hub, playing=True)
+    hub.connect_bluetooth()
+    hub._on_media({"t": "media", "playing": False})      # the connection paused it
+    settle(app)
+    check("music paused by connecting is resumed",
+          {"t": "media_command", "action": "play"} in sent, str(sent))
+
+    radio = Radio(brings_up_audio=True)
+    radio.install()
+    hub, _config = make_hub()
+    sent = fake_phone_link(hub, playing=False)
+    hub.connect_bluetooth()
+    settle(app)
+    check("music that was not playing is not started", not sent, str(sent))
+
+    # Autoconnect waits for the phone to say what is playing.
+    radio = Radio()
+    radio.install()
+    hub, _config = make_hub()
+    hub.companion.phone.token = "paired"
+    hub._bluetooth_settled = False
+    hub._bluetooth_tried = 0.0
+    hub._autoconnect_bluetooth()
+    settle(app, rounds=5)
+    check("autoconnect waits for the media state first", not connects(radio),
+          ", ".join(radio.calls))
+    hub._on_media({"t": "media", "playing": False})
+    settle(app, rounds=150)
+    check("and connects once it has it", "connect_quietly" in radio.calls,
+          ", ".join(radio.calls))
 
 
 def intent(app: QApplication) -> None:
@@ -323,6 +408,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     defaults()
     connecting(app)
+    handback(app)
     intent(app)
     automatic(app)
     quiet_failure(app)

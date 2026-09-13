@@ -86,6 +86,15 @@ class Hub(QObject):
     ADB_RETRY_SECONDS = 60.0
     #: How long to leave a phone alone between automatic Bluetooth connects.
     BLUETOOTH_RETRY_SECONDS = 60.0
+    #: How long autoconnect waits for the phone to report whether media is playing.
+    BLUETOOTH_MEDIA_WAIT_SECONDS = 8.0
+    #: How long the media profile must stay down after connecting.
+    BLUETOOTH_SETTLE_SECONDS = 6.0
+    #: After connecting, keep handing back a media profile that reappears.
+    BLUETOOTH_GUARD_SECONDS = 60.0
+    BLUETOOTH_GUARD_POLL_MS = 3_000
+    #: Pause before resuming media that the connection interrupted.
+    RESUME_DELAY_MS = 2_000
     #: How long a fetched wallpaper is trusted before it is asked for again.
     WALLPAPER_RECHECK_SECONDS = 12 * 3600.0
 
@@ -129,6 +138,16 @@ class Hub(QObject):
         #: When the last automatic attempt was made, so a phone that is off or
         #: out of range is not retried every time the watch runs.
         self._bluetooth_tried = 0.0
+        self._started_at = monotonic()
+        #: Until when a media profile that appears is handed back to the phone.
+        self._bluetooth_guard_until = 0.0
+        self._bluetooth_guard_timer = QTimer(self)
+        self._bluetooth_guard_timer.setSingleShot(True)
+        self._bluetooth_guard_timer.timeout.connect(self._watch_bluetooth)
+        self._autoconnect_deferred = False
+        #: Media was playing when Bluetooth started connecting.
+        self._resume_after_bluetooth = False
+        self._media_known = False
         self._media: dict[str, Any] = {}
         self._phone_status: dict[str, Any] = {}
         self._hotspot_joined = False
@@ -921,6 +940,12 @@ class Hub(QObject):
         self._bluetooth_wanted = True
         self._bluetooth_tried = monotonic()
         self._set_bluetooth_busy(True)
+        # Connecting can pause the phone's media; remember whether to resume.
+        self._resume_after_bluetooth = (
+            self.companion.connected and bool(self._media.get("playing"))
+        )
+        quiet = not self.config.bluetooth.auto_stream
+        settle = self.BLUETOOTH_SETTLE_SECONDS
 
         def work() -> str:
             device = bluetooth.find_phone(
@@ -938,24 +963,27 @@ class Hub(QObject):
             if device.connected:
                 return device.label
 
-            if self.config.bluetooth.auto_stream:
+            if not quiet:
                 bluetooth.connect(device.address)
             else:
                 bluetooth.connect_quietly(device.address)
-                if bluetooth.audio_connected(device.address):
-                    # It came up anyway -- hand playback straight back.
-                    bluetooth.release_audio(device.address)
+                # The phone may add the media profile a few seconds later.
+                bluetooth.keep_audio_on_phone(device.address, settle)
                 bt_audio.ready_to_receive(device.address)
             return device.label
 
         def done(label: object) -> None:
             self._set_bluetooth_busy(False)
+            if quiet:
+                self._bluetooth_guard_until = monotonic() + self.BLUETOOTH_GUARD_SECONDS
             self._watch_bluetooth()
+            self._schedule_resume()
             if on_done is not None:
                 on_done(str(label))
 
         def failed(message: str) -> None:
             self._set_bluetooth_busy(False)
+            self._schedule_resume()
             # A caller that shows the failure itself -- the Audio page, which
             # can offer to pair again -- says so by passing a handler; without
             # one the message goes to the window's own error route.
@@ -1004,12 +1032,47 @@ class Hub(QObject):
         now = monotonic()
         if now - self._bluetooth_tried < self.BLUETOOTH_RETRY_SECONDS:
             return
+        if self._waiting_for_media(now):
+            # Wait for the phone to say what is playing, so it can be resumed.
+            if not self._autoconnect_deferred:
+                self._autoconnect_deferred = True
+                QTimer.singleShot(1_000, self._retry_autoconnect)
+            return
         self._bluetooth_tried = now
         log.info("connecting the phone over Bluetooth")
-        # Quietly.
+        # Failures are logged, not shown: nobody pressed anything.
         self.connect_bluetooth(
             on_error=lambda message: log.info("automatic connect: %s", message)
         )
+
+    def _waiting_for_media(self, now: float) -> bool:
+        """Whether autoconnect should hold off until the media state arrives."""
+        if self._media_known or not self.companion.phone.token:
+            return False
+        return now - self._started_at < self.BLUETOOTH_MEDIA_WAIT_SECONDS
+
+    def _retry_autoconnect(self) -> None:
+        self._autoconnect_deferred = False
+        self._autoconnect_bluetooth()
+
+    def end_bluetooth_guard(self) -> None:
+        """Stop handing the media profile back; the user asked for a stream."""
+        self._bluetooth_guard_until = 0.0
+        self._resume_after_bluetooth = False
+
+    def _schedule_resume(self) -> None:
+        if self._resume_after_bluetooth:
+            QTimer.singleShot(self.RESUME_DELAY_MS, self._resume_media)
+
+    def _resume_media(self) -> None:
+        """Resume media that was playing before Bluetooth interrupted it."""
+        if not self._resume_after_bluetooth:
+            return
+        self._resume_after_bluetooth = False
+        if not self.companion.connected or self._media.get("playing"):
+            return
+        log.info("resuming media paused by the Bluetooth connection")
+        self.companion.send({"t": "media_command", "action": "play"})
 
     def _watch_bluetooth(self) -> None:
         """Park a Bluetooth link that takes the audio path without being asked."""
@@ -1020,8 +1083,12 @@ class Hub(QObject):
         # asks for the opposite.
         park = not self.config.bluetooth.auto_stream
 
-        # Only a link seen coming up counts.
-        appeared = park and self._bluetooth_settled is False
+        # A link seen coming up, or one we connected recently, is handed back.
+        guarding = park and monotonic() < self._bluetooth_guard_until
+        appeared = park and (self._bluetooth_settled is False or guarding)
+        was_playing = self.companion.connected and bool(self._media.get("playing"))
+        if guarding:
+            self._bluetooth_guard_timer.start(self.BLUETOOTH_GUARD_POLL_MS)
 
         def check() -> dict:
             device = bluetooth.find_phone(
@@ -1048,12 +1115,13 @@ class Hub(QObject):
             bt_audio.ready_to_receive(device.address)
 
             if appeared and transport:
-                # Nobody asked for this.
                 bluetooth.release_audio(device.address)
                 log.info("released the media profile nobody asked for")
+                state["released"] = True
+                state["was_playing"] = was_playing
                 return state
 
-            # Chosen on the phone.
+            # Streaming here was chosen on the phone.
             if transport in bluetooth.TRANSPORT_STREAMING:
                 node = bt_audio.phone_stream()
                 if node:
@@ -1078,6 +1146,9 @@ class Hub(QObject):
         if streaming != self._bluetooth_streaming:
             self._bluetooth_streaming = streaming
             self.bluetoothStreamingChanged.emit(streaming)
+        if state.get("released") and state.get("was_playing"):
+            self._resume_after_bluetooth = True
+            self._schedule_resume()
 
         # Last, so it acts on what was just read rather than on the previous
         # round: a phone that is not there is a phone to connect to.
@@ -1140,6 +1211,7 @@ class Hub(QObject):
 
     def _on_media(self, message: dict) -> None:
         self._media = message
+        self._media_known = True
         self.mediaChanged.emit(message)
 
     def media_command(self, action: str) -> None:

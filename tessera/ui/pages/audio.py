@@ -657,6 +657,9 @@ class AudioPage(QWidget):
 
             self._stop_routing()
 
+            # An explicit stream: stop handing the media profile back.
+            self.hub.end_bluetooth_guard()
+
             # Make the card able to receive before asking the phone to send.
             audio.ready_to_receive(self._address)
 
