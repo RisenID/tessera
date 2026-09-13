@@ -80,12 +80,16 @@ phone   -> desktop {"t":"wallpaper","rid":4,"colour":"#8f0312","format":"jpeg","
 ```
 
 The picture is optional and often absent: a live wallpaper has no still image,
-and recent Android does not let an ordinary app read one that does -- the file
-is not readable by the shell either. The colour always comes, by whichever
-route the phone allows: the wallpaper's own colours, the colour One UI derived
-from it (read from a dump, which needs Shizuku), or the system accent Android
-themes itself with. The desktop uses the picture when there is one and the
-colour when there is not.
+the home screen's is closed to ordinary apps on recent Android, and the lock
+screen's needs a permission that no longer exists to grant. The phone tries the
+home wallpaper, then the lock wallpaper, and sends whichever it gets.
+
+Where it gets neither, the desktop draws a default wallpaper rather than
+anything derived from the phone: a phone tile is a picture behind a bezel, and
+a flat colour in that shape does not look like a phone. The `colour` field is
+still sent for completeness -- the wallpaper's own colours where the platform
+reports them, otherwise the accent Android derives from the wallpaper -- but
+nothing is painted with it.
 
 ## File transfer
 

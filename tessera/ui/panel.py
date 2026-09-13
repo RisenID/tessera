@@ -7,14 +7,16 @@ lives in the tab strip instead. See docs/DESIGN.md.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
     QLinearGradient,
     QPainter,
     QPainterPath,
+    QPen,
     QPixmap,
+    QRadialGradient,
 )
 from PySide6.QtWidgets import (
     QFrame,
@@ -43,6 +45,10 @@ FEED_LIMIT = 8
 #: How far the rail can be dragged. The minimum is what the complication strip
 #: and four switches need before they start wrapping into nonsense.
 MIN_WIDTH, MAX_WIDTH = 280, 720
+
+#: The phone tile, in phone proportions. Roughly a 9:19.5 screen with a bezel
+#: around it, which is what makes it read as a phone rather than as an icon.
+PHONE_TILE = (46, 92)
 
 #: Widths beyond this add space rather than size: icons stop growing so a very
 #: wide rail does not turn into a row of billboards.
@@ -330,7 +336,6 @@ class DevicePanel(QWidget):
         self._wallpaper_file = (
             str(hub.wallpaper_path) if hub.wallpaper_path.exists() else ""
         )
-        self._wallpaper_colour = ""
         self.palette_tokens = palette
         self._player = MprisPlayer(self)
         self._media_service = ""
@@ -349,7 +354,6 @@ class DevicePanel(QWidget):
 
         layout.addWidget(self._build_header())
         layout.addWidget(self._build_complications())
-        layout.addWidget(self._build_link_row())
         layout.addWidget(self._build_tiles())
         layout.addWidget(self._build_battery())
         layout.addWidget(divider())
@@ -425,7 +429,7 @@ class DevicePanel(QWidget):
         for complication in self._complications:
             complication.set_metrics(icon_px, font_px)
 
-        self.phone_tile.setFixedSize(self._px(46), self._px(58))
+        self.phone_tile.setFixedSize(self._px(PHONE_TILE[0]), self._px(PHONE_TILE[1]))
         self._paint_phone_tile()
 
         for button in self._tile_buttons + self._transport:
@@ -457,137 +461,129 @@ class DevicePanel(QWidget):
 
         self.phone_tile = QLabel()
         self.phone_tile.setObjectName("PhoneTile")
-        self.phone_tile.setFixedSize(46, 58)
+        # A phone's shape, not a square: the tile is a little phone showing
+        # its own wallpaper, so it has to be phone-proportioned to read as one.
+        self.phone_tile.setFixedSize(PHONE_TILE[0], PHONE_TILE[1])
         self.phone_tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._paint_phone_tile()
-        layout.addWidget(self.phone_tile, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.phone_tile, 0, Qt.AlignmentFlag.AlignVCenter)
 
         names = QVBoxLayout()
-        names.setSpacing(0)
+        names.setSpacing(SPACE["xs"])
         names.addStretch(1)
         self.brand = QLabel("No phone")
         self.brand.setObjectName("BrandName")
         self.brand.setWordWrap(True)
         names.addWidget(self.brand)
+        # The model is not worth a line of its own -- it is a part number --
+        # but it is worth having, so it lives on the name's tooltip.
         self.device_label = QLabel("")
         self.device_label.setObjectName("BrandSub")
+        self.device_label.setVisible(False)
         names.addWidget(self.device_label)
+        # Connected or not, directly under the name: it is the first thing
+        # anybody looks for, and it was two rows away.
+        names.addWidget(self._build_link_row())
         names.addStretch(1)
         layout.addLayout(names, 1)
         return header
 
     def _paint_phone_tile(self) -> None:
-        """The phone, as the phone looks: its wallpaper where we have it.
+        """A little phone showing its wallpaper.
 
-        The tile is already phone-shaped, so filling it with the wallpaper
-        makes it *this* phone rather than a generic outline -- the same thing
-        the phone's own lock screen does with the same picture. Falling back
-        through the wallpaper's colour to a plain glyph, because a phone that
-        will not share its wallpaper is common and unremarkable.
+        The wallpaper where the phone would give us one, and a default where it
+        would not -- which is most phones now: a live wallpaper has no still
+        image, and recent Android will not hand one over to an ordinary app
+        anyway. Either way it is a picture behind a phone-shaped bezel, because
+        a coloured rectangle is not a phone.
         """
         width, height = self.phone_tile.width(), self.phone_tile.height()
-        picture = self._wallpaper_pixmap(width, height)
-        if picture is not None:
-            self.phone_tile.setPixmap(picture)
+        if width <= 0 or height <= 0:
             return
-
-        size = max(24, round(height * 0.48))
-        # On the phone's own colour the outline has to be light, whatever the
-        # desktop's theme is doing.
-        tint = self.palette_tokens.text
-        if self._wallpaper_colour:
-            tint = "#FFFFFF" if QColor(self._wallpaper_colour).lightnessF() < 0.6 else "#101010"
-        icon = tinted_icon(themed_icon("smartphone"), tint, size)
-        washed = self._colour_pixmap(width, height)
-        if washed is not None:
-            painter = QPainter(washed)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            if not icon.isNull():
-                ratio = washed.devicePixelRatio()
-                glyph = icon.pixmap(size, size)
-                painter.drawPixmap(
-                    round((width - glyph.width() / ratio) / 2),
-                    round((height - glyph.height() / ratio) / 2),
-                    glyph,
-                )
-            painter.end()
-            self.phone_tile.setPixmap(washed)
-            return
-
-        if icon.isNull():
-            self.phone_tile.setText("\N{MOBILE PHONE}")
-        else:
-            self.phone_tile.setPixmap(icon.pixmap(size, size))
-
-    def _colour_pixmap(self, width: int, height: int) -> "QPixmap | None":
-        """The tile in the phone's own colour, for a phone with no picture.
-
-        A live wallpaper cannot be read by any app -- the file is not even
-        readable by the shell -- but the phone still themes itself from it, and
-        that colour is available. It is the phone's wallpaper as far as the
-        phone is concerned, so the tile wears it.
-        """
-        if not self._wallpaper_colour or width <= 0 or height <= 0:
-            return None
-        base = QColor(self._wallpaper_colour)
-        if not base.isValid():
-            return None
 
         ratio = self.devicePixelRatioF() or 1.0
         canvas = QPixmap(round(width * ratio), round(height * ratio))
         canvas.setDevicePixelRatio(ratio)
         canvas.fill(Qt.GlobalColor.transparent)
 
+        radius = RADIUS["lg"] + 2
+        bezel = max(2.0, height * 0.035)
+
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        gradient = QLinearGradient(0, 0, 0, height)
-        gradient.setColorAt(0.0, base.lighter(125))
-        gradient.setColorAt(1.0, base.darker(115))
-        shape = QPainterPath()
-        shape.addRoundedRect(0, 0, width, height, RADIUS["lg"], RADIUS["lg"])
-        painter.fillPath(shape, gradient)
-        painter.end()
-        return canvas
 
-    def _wallpaper_pixmap(self, width: int, height: int) -> "QPixmap | None":
-        """The wallpaper, cropped to the tile and rounded like it."""
+        body = QPainterPath()
+        body.addRoundedRect(0.0, 0.0, float(width), float(height), radius, radius)
+        painter.fillPath(body, QColor("#0B0D11"))
+
+        screen = QPainterPath()
+        screen.addRoundedRect(
+            bezel, bezel, width - bezel * 2, height - bezel * 2,
+            radius - 2, radius - 2,
+        )
+        painter.save()
+        painter.setClipPath(screen)
+        picture = self._wallpaper_source()
+        inner = QSize(
+            round((width - bezel * 2) * ratio), round((height - bezel * 2) * ratio)
+        )
+        if picture is not None and not picture.isNull():
+            scaled = picture.scaled(
+                inner,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled.setDevicePixelRatio(ratio)
+            painter.drawPixmap(
+                round(bezel - (scaled.width() / ratio - (width - bezel * 2)) / 2),
+                round(bezel - (scaled.height() / ratio - (height - bezel * 2)) / 2),
+                scaled,
+            )
+        else:
+            self._paint_default_wallpaper(
+                painter, bezel, width - bezel * 2, height - bezel * 2
+            )
+        painter.restore()
+
+        # A hairline where the glass meets the frame, so the bezel reads as a
+        # phone rather than as a border the theme forgot to remove.
+        painter.setPen(QPen(QColor(255, 255, 255, 38), 1))
+        painter.drawPath(body)
+        painter.end()
+        self.phone_tile.setPixmap(canvas)
+
+    def _wallpaper_source(self) -> "QPixmap | None":
         path = self._wallpaper_file
-        if not path or width <= 0 or height <= 0:
+        if not path:
             return None
-        source = QPixmap(path)
-        if source.isNull():
-            return None
+        picture = QPixmap(path)
+        return None if picture.isNull() else picture
 
-        ratio = self.devicePixelRatioF() or 1.0
-        target = QSize(round(width * ratio), round(height * ratio))
-        # Cover, not fit: the tile is a window onto the wallpaper, and letterbox
-        # bars inside a rounded rectangle look like a mistake.
-        scaled = source.scaled(
-            target,
-            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            Qt.TransformationMode.SmoothTransformation,
+    @staticmethod
+    def _paint_default_wallpaper(
+        painter: QPainter, inset: float, width: float, height: float
+    ) -> None:
+        """The stand-in, for a phone that will not share its own.
+
+        Drawn rather than shipped: a gradient with a soft light in one corner
+        is what a phone wallpaper looks like from across a desk, and it costs
+        no file and no licence.
+        """
+        gradient = QLinearGradient(inset, inset, inset + width, inset + height)
+        gradient.setColorAt(0.0, QColor("#243B6B"))
+        gradient.setColorAt(0.55, QColor("#3C2A63"))
+        gradient.setColorAt(1.0, QColor("#161A2C"))
+        painter.fillRect(QRectF(inset, inset, width, height), gradient)
+
+        glow = QRadialGradient(
+            inset + width * 0.3, inset + height * 0.22, max(width, height) * 0.75
         )
-        canvas = QPixmap(target)
-        canvas.setDevicePixelRatio(ratio)
-        canvas.fill(Qt.GlobalColor.transparent)
+        glow.setColorAt(0.0, QColor(255, 255, 255, 60))
+        glow.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.fillRect(QRectF(inset, inset, width, height), glow)
 
-        painter = QPainter(canvas)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        path_shape = QPainterPath()
-        radius = RADIUS["lg"] * ratio
-        path_shape.addRoundedRect(0, 0, target.width(), target.height(), radius, radius)
-        painter.setClipPath(path_shape)
-        painter.drawPixmap(
-            round((target.width() - scaled.width()) / 2),
-            round((target.height() - scaled.height()) / 2),
-            scaled,
-        )
-        painter.end()
-        return canvas
-
-    def _on_wallpaper(self, path: str, colour: str) -> None:
+    def _on_wallpaper(self, path: str, _colour: str) -> None:
         self._wallpaper_file = path
-        self._wallpaper_colour = colour
         self._paint_phone_tile()
 
     def _build_complications(self) -> QWidget:
@@ -1054,6 +1050,7 @@ class DevicePanel(QWidget):
         # number; the name is what the phone is called on its owner's desk.
         model = self.hub.companion.phone.model or self.hub.bluetooth_name
         self.device_label.setText("" if model == name else model)
+        self.brand.setToolTip(model if model and model != name else "")
         source = self.hub.source
         if source == "companion":
             self.link_pill.set_state("Connected", "success")

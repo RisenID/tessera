@@ -76,63 +76,58 @@ def naming(app: QApplication) -> None:
 
 
 def wallpaper(app: QApplication) -> None:
-    print("\n-- the tile wears the phone's wallpaper")
+    print("\n-- the tile is a phone showing a wallpaper")
     hub, panel = make_panel(app)
 
-    plain = panel.phone_tile.pixmap()
-    check("there is something on the tile to begin with", not plain.isNull())
+    def tile() -> QImage:
+        return panel.phone_tile.pixmap().toImage()
 
-    # A phone that sends a picture.
+    check("it is phone-shaped, not square",
+          panel.phone_tile.height() > panel.phone_tile.width() * 1.6,
+          f"{panel.phone_tile.width()}x{panel.phone_tile.height()}")
+
+    # With no wallpaper at all there must still be a wallpaper: the default.
+    plain = tile()
+    check("a phone that shares nothing still gets a picture", not plain.isNull())
+    middle = plain.pixelColor(plain.width() // 2, plain.height() // 2)
+    check("the default is a wallpaper rather than a flat fill",
+          middle.alpha() == 255 and middle.lightnessF() > 0.05,
+          middle.name())
+    top = plain.pixelColor(plain.width() // 2, plain.height() // 6)
+    bottom = plain.pixelColor(plain.width() // 2, plain.height() * 5 // 6)
+    check("and it has the shading of one, not one colour",
+          abs(top.lightnessF() - bottom.lightnessF()) > 0.04,
+          f"{top.name()} to {bottom.name()}")
+
+    corner = plain.pixelColor(0, 0)
+    check("the corners are rounded like a phone", corner.alpha() == 0,
+          f"corner alpha {corner.alpha()}")
+    edge = plain.pixelColor(plain.width() // 2, 1)
+    check("with a bezel around the screen", edge.lightnessF() < 0.2, edge.name())
+
+    # A phone that does share one shows it.
     image = QImage(64, 128, QImage.Format.Format_RGB32)
     image.fill(0x2E7D32)
     target = hub.wallpaper_path
     target.parent.mkdir(parents=True, exist_ok=True)
     image.save(str(target), "JPG")
-    hub.wallpaperChanged.emit(str(target), "#2e7d32")
+    hub.wallpaperChanged.emit(str(target), "")
     app.processEvents()
 
-    painted = panel.phone_tile.pixmap().toImage()
-    check("the picture is drawn on it", not painted.isNull())
-    middle = painted.pixelColor(painted.width() // 2, painted.height() // 2)
-    check("in the wallpaper's colours rather than the theme's",
-          middle.green() > middle.red() and middle.green() > middle.blue(),
-          middle.name())
-    corner = painted.pixelColor(0, 0)
-    check("and rounded like the tile it replaces", corner.alpha() == 0,
-          f"corner alpha {corner.alpha()}")
+    painted = tile()
+    shown = painted.pixelColor(painted.width() // 2, painted.height() // 2)
+    check("the phone's own wallpaper replaces the default",
+          shown.green() > shown.red() and shown.green() > shown.blue(),
+          shown.name())
 
-    # A phone that will not give up its wallpaper -- a live one -- but does
-    # say what colour it is.
+    # A colour with no picture is not painted with: that was the version
+    # before this one, and it looked like a coloured brick.
     hub.wallpaperChanged.emit("", "#8f0312")
     app.processEvents()
-    washed = panel.phone_tile.pixmap().toImage()
-    tint = washed.pixelColor(washed.width() // 2, 4)
-    check("a colour alone still colours the tile",
-          tint.red() > tint.green() and tint.red() > tint.blue(), tint.name())
-
-    # The outline on top has to stay legible on either kind of colour. It is a
-    # thin line, so look for the extremes across the tile rather than at one
-    # pixel: the middle of the drawn phone is its empty screen, which is the
-    # wash showing through, and sampling there tested nothing.
-    def extremes(image):
-        lightnesses = [
-            image.pixelColor(x, y).lightnessF()
-            for y in range(0, image.height(), 2)
-            for x in range(0, image.width(), 2)
-            if image.pixelColor(x, y).alpha() > 200
-        ]
-        return min(lightnesses), max(lightnesses)
-
-    darkest, _lightest = extremes(washed)
-    check("a dark wallpaper gets a light outline drawn on it",
-          _lightest > 0.85, f"lightest {_lightest:.2f}")
-
-    hub.wallpaperChanged.emit("", "#f2f2f2")
-    app.processEvents()
-    light = panel.phone_tile.pixmap().toImage()
-    pale_darkest, _ = extremes(light)
-    check("and a pale one gets a dark outline instead",
-          pale_darkest < 0.4, f"darkest {pale_darkest:.2f}")
+    reverted = tile()
+    spot = reverted.pixelColor(reverted.width() // 2, reverted.height() // 2)
+    check("a colour on its own goes back to the default, not a red block",
+          spot.red() < 120, spot.name())
 
 
 def saving(app: QApplication) -> None:

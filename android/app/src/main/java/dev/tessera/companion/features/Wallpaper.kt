@@ -48,20 +48,13 @@ object Wallpaper {
     }
 
     /**
-     * The wallpaper's colour as #rrggbb, by whichever route this phone allows.
+     * A colour for the wallpaper, where the picture itself cannot be had.
      *
-     * Three, in order of how closely they describe the picture:
-     *
-     *  1. the home screen wallpaper's own colours;
-     *  2. the lock screen's, which is often a still image even when the home
-     *     screen is not;
-     *  3. the phone's system accent, which Android 12 and later derive *from*
-     *     the wallpaper and expose to every app without permission.
-     *
-     * The third is what answers on this phone and many like it: the wallpaper
-     * is a live one -- Samsung's own, here -- so there is no image and no
-     * wallpaper colours, but the palette the whole phone is themed with is
-     * still the wallpaper's palette.
+     * Sent for completeness rather than drawn with: the desktop shows a
+     * default wallpaper when the phone has none to give, because a flat colour
+     * does not look like a phone. The wallpaper's own colours first, then the
+     * accent Android 12 and later derive *from* the wallpaper and expose to
+     * every app without permission.
      */
     fun colour(context: Context): String? {
         val manager = runCatching { WallpaperManager.getInstance(context) }.getOrNull()
@@ -75,43 +68,14 @@ object Wallpaper {
                 (primary.blue() * 255).toInt(),
             )
         }
-        return seed() ?: accent(context)
+        return accent(context)
     }
-
-    /**
-     * The colour the phone itself derived from the wallpaper.
-     *
-     * One UI keeps it in the wallpaper service's dump, and it is the honest
-     * answer for a live wallpaper: the picture cannot be read by anyone -- not
-     * even the shell -- but this is the colour the phone themed itself with
-     * because of it. On the phone this was written against, the public API
-     * answers a flat grey and this answers the deep red the wallpaper is.
-     *
-     * Reading a dump needs the DUMP permission, so it goes through the same
-     * Shizuku shell as the hotspot and the clipboard, and is simply skipped
-     * where that is not available.
-     */
-    private fun seed(): String? {
-        if (!PrivilegedShell.hasPermission()) return null
-        val output = runCatching { PrivilegedShell.run("dumpsys wallpaper") }.getOrNull()
-        if (output == null || output.code != 0) return null
-        val match = SEED.find(output.text) ?: return null
-        val value = match.groupValues[1].toIntOrNull() ?: return null
-        return hex((value shr 16) and 0xFF, (value shr 8) and 0xFF, value and 0xFF)
-    }
-
 
     /** The phone's own themed accent, which Android derives from the wallpaper. */
     private fun accent(context: Context): String? = runCatching {
         val value = context.getColor(android.R.color.system_accent1_400)
-        hex(
-            (value shr 16) and 0xFF,
-            (value shr 8) and 0xFF,
-            value and 0xFF,
-        )
+        hex((value shr 16) and 0xFF, (value shr 8) and 0xFF, value and 0xFF)
     }.getOrNull()
-
-    private val SEED = Regex("SeedColors,\\s*\\[(-?\\d+)")
 
     private fun hex(red: Int, green: Int, blue: Int): String =
         String.format("#%02x%02x%02x", red, green, blue)
@@ -119,13 +83,24 @@ object Wallpaper {
     private fun read(context: Context): Bitmap? {
         val manager = runCatching { WallpaperManager.getInstance(context) }.getOrNull()
             ?: return null
-        // Wrapped rather than checked: this throws SecurityException on the
-        // versions that have closed it off, and returns the default wallpaper
-        // on some others. Both are "no picture", not a failure to report.
+
+        // The home screen first. Wrapped rather than checked: this throws
+        // SecurityException on the versions that have closed it off, and
+        // returns nothing for a live wallpaper. Both are "no picture", not a
+        // failure worth reporting.
         val drawable: Drawable? = runCatching { manager.drawable }
-            .onFailure { Log.i(TAG, "the phone will not share its wallpaper: ${it.message}") }
+            .onFailure { Log.i(TAG, "no home wallpaper: ${it.message}") }
             .getOrNull()
-        return drawable?.let { toBitmap(it) }
+        drawable?.let { toBitmap(it) }?.let { return it }
+
+        // Then the lock screen, which is very often a still photograph even on
+        // a phone whose home screen is a live wallpaper -- this phone being
+        // exactly that case.
+        return runCatching {
+            manager.getWallpaperFile(WallpaperManager.FLAG_LOCK)?.use { descriptor ->
+                android.graphics.BitmapFactory.decodeFileDescriptor(descriptor.fileDescriptor)
+            }
+        }.onFailure { Log.i(TAG, "no lock wallpaper: ${it.message}") }.getOrNull()
     }
 
     private fun toBitmap(drawable: Drawable): Bitmap? {
