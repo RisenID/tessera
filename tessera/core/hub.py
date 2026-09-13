@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from time import monotonic, sleep
 from typing import Any
 
@@ -63,6 +64,8 @@ class Hub(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     bluetoothStreamingChanged = Signal(bool)
+    #: The phone's wallpaper arrived (a path), or its colour (#rrggbb).
+    wallpaperChanged = Signal(str, str)
     #: A file started, progressed, or ended. Carries the Transfer.
     transferChanged = Signal(object)
     #: A file finished arriving, and its path now exists.
@@ -141,6 +144,8 @@ class Hub(QObject):
         #: Whether the phone is silent because we asked it to be, for the
         #: stream that is running now.
         self.phone_muted = False
+        #: The dominant colour of the phone's wallpaper, where it gave one.
+        self.wallpaper_colour = ""
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -159,6 +164,7 @@ class Hub(QObject):
         self._wire_phone_audio()
         self._wire_media_player()
         self._wire_files()
+        self._wire_wallpaper()
         self._apply_codec_preference()
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
@@ -184,6 +190,7 @@ class Hub(QObject):
             token=saved.token,
             fingerprint=saved.fingerprint,
             name=saved.name,
+            model=saved.model,
             device_id=saved.device_id,
         )
 
@@ -195,6 +202,7 @@ class Hub(QObject):
         saved.token = phone.token
         saved.fingerprint = phone.fingerprint
         saved.name = phone.name
+        saved.model = phone.model
         saved.device_id = phone.device_id
         self.config.save()
 
@@ -633,6 +641,45 @@ class Hub(QObject):
         # An error from the phone while we are waiting on consent is the end of
         # that attempt, whatever it was: stop claiming to be starting.
         self.companion.errorOccurred.connect(self._on_phone_error_for_audio)
+
+    # -- the phone's own look --------------------------------------------------
+
+    def _wire_wallpaper(self) -> None:
+        self.companion.capabilitiesChanged.connect(self._maybe_fetch_wallpaper)
+
+    @property
+    def wallpaper_path(self) -> Path:
+        return platform.state_dir() / "wallpaper.jpg"
+
+    def _maybe_fetch_wallpaper(self, capabilities: list) -> None:
+        """Ask for the wallpaper once per connection, and only if it can.
+
+        Cosmetic, so it must cost nothing when it fails: a phone that will not
+        share it says so once and the sidebar keeps its outline.
+        """
+        if "wallpaper" not in capabilities:
+            return
+        self.companion.request({"t": "wallpaper_get"}, self._on_wallpaper)
+
+    def _on_wallpaper(self, message: dict) -> None:
+        colour = str(message.get("colour") or "")
+        data = message.get("data")
+        path = ""
+        if isinstance(data, (bytes, bytearray)) and data:
+            target = self.wallpaper_path
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                # Written whole, then swapped: a half-written image would be
+                # drawn as a grey box until the next connection.
+                temporary = target.with_suffix(".part")
+                temporary.write_bytes(bytes(data))
+                temporary.replace(target)
+                path = str(target)
+            except OSError as exc:
+                log.debug("could not save the wallpaper: %s", exc)
+        if path or colour:
+            self.wallpaper_colour = colour
+            self.wallpaperChanged.emit(path, colour)
 
     # -- files ---------------------------------------------------------------
 

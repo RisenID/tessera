@@ -10,6 +10,7 @@ import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
 import dev.tessera.companion.features.FileTransfer
+import dev.tessera.companion.features.Wallpaper
 import dev.tessera.companion.features.CameraStreamer
 import dev.tessera.companion.features.CallMonitor
 import dev.tessera.companion.features.CallsRepository
@@ -215,6 +216,8 @@ class Session(
         // Files both ways, and the phone's share sheet: MediaStore's Downloads
         // collection needs no permission, so this is always available.
         add("file_transfer")
+        // The phone's own look, for the desktop's sidebar.
+        add("wallpaper")
         if (CallsRepository.canReadLog(context)) add("calls")
         if (CallsRepository.canControl(context)) add("call_control")
         // Only claim "hotspot" if the phone will actually take the command.
@@ -333,6 +336,20 @@ class Session(
             "ring_stop" -> {
                 FindPhone.stop(context)
                 reply(id, JSONObject().put("ringing", false))
+            }
+
+            "wallpaper_get" -> {
+                val colour = Wallpaper.colour(context)
+                val header = JSONObject().put("t", "wallpaper")
+                if (colour != null) header.put("colour", colour)
+                val image = Wallpaper.jpeg(context)
+                if (image != null) {
+                    sendBinary(header.put("format", "jpeg"), image, id)
+                } else {
+                    // No picture, but the colours are still worth having: the
+                    // desktop tints its own tile rather than showing nothing.
+                    reply(id, header)
+                }
             }
 
             // -- files, both directions ------------------------------------

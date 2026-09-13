@@ -68,6 +68,7 @@ class CompanionConfig:
     token: str = ""
     fingerprint: str = ""     # SHA-256 of the phone's TLS certificate
     name: str = ""
+    model: str = ""           # the part number, shown under the name
     device_id: str = ""
 
 

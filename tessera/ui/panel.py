@@ -8,7 +8,14 @@ lives in the tab strip instead. See docs/DESIGN.md.
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import (
+    QColor,
+    QGuiApplication,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -26,7 +33,7 @@ from ..backends.mpris import MprisPlayer
 from ..core import otp, platform
 from ..core.hub import Hub
 from ..core.models import Notification
-from .theme import SPACE, Palette
+from .theme import RADIUS, SPACE, Palette
 from .widgets import Avatar, Pill, divider, themed_icon, tinted_icon
 
 #: How many notifications the panel shows. The rest are on the full page,
@@ -319,6 +326,11 @@ class DevicePanel(QWidget):
     def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
         super().__init__(parent)
         self.hub = hub
+        #: The phone's wallpaper, once it has sent one, and its colour.
+        self._wallpaper_file = (
+            str(hub.wallpaper_path) if hub.wallpaper_path.exists() else ""
+        )
+        self._wallpaper_colour = ""
         self.palette_tokens = palette
         self._player = MprisPlayer(self)
         self._media_service = ""
@@ -351,6 +363,7 @@ class DevicePanel(QWidget):
         layout.addWidget(self.status)
 
         hub.connectionChanged.connect(lambda _c: self.refresh_header())
+        hub.wallpaperChanged.connect(self._on_wallpaper)
         hub.capabilitiesChanged.connect(lambda _c: self.refresh_header())
         hub.batteryChanged.connect(self._on_battery)
         hub.phoneStatusChanged.connect(lambda _s: self.refresh_readings())
@@ -464,12 +477,118 @@ class DevicePanel(QWidget):
         return header
 
     def _paint_phone_tile(self) -> None:
-        size = max(24, round(self.phone_tile.height() * 0.48))
-        icon = tinted_icon(themed_icon("smartphone"), self.palette_tokens.text, size)
+        """The phone, as the phone looks: its wallpaper where we have it.
+
+        The tile is already phone-shaped, so filling it with the wallpaper
+        makes it *this* phone rather than a generic outline -- the same thing
+        the phone's own lock screen does with the same picture. Falling back
+        through the wallpaper's colour to a plain glyph, because a phone that
+        will not share its wallpaper is common and unremarkable.
+        """
+        width, height = self.phone_tile.width(), self.phone_tile.height()
+        picture = self._wallpaper_pixmap(width, height)
+        if picture is not None:
+            self.phone_tile.setPixmap(picture)
+            return
+
+        size = max(24, round(height * 0.48))
+        # On the phone's own colour the outline has to be light, whatever the
+        # desktop's theme is doing.
+        tint = self.palette_tokens.text
+        if self._wallpaper_colour:
+            tint = "#FFFFFF" if QColor(self._wallpaper_colour).lightnessF() < 0.6 else "#101010"
+        icon = tinted_icon(themed_icon("smartphone"), tint, size)
+        washed = self._colour_pixmap(width, height)
+        if washed is not None:
+            painter = QPainter(washed)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if not icon.isNull():
+                ratio = washed.devicePixelRatio()
+                glyph = icon.pixmap(size, size)
+                painter.drawPixmap(
+                    round((width - glyph.width() / ratio) / 2),
+                    round((height - glyph.height() / ratio) / 2),
+                    glyph,
+                )
+            painter.end()
+            self.phone_tile.setPixmap(washed)
+            return
+
         if icon.isNull():
             self.phone_tile.setText("\N{MOBILE PHONE}")
         else:
             self.phone_tile.setPixmap(icon.pixmap(size, size))
+
+    def _colour_pixmap(self, width: int, height: int) -> "QPixmap | None":
+        """The tile in the phone's own colour, for a phone with no picture.
+
+        A live wallpaper cannot be read by any app -- the file is not even
+        readable by the shell -- but the phone still themes itself from it, and
+        that colour is available. It is the phone's wallpaper as far as the
+        phone is concerned, so the tile wears it.
+        """
+        if not self._wallpaper_colour or width <= 0 or height <= 0:
+            return None
+        base = QColor(self._wallpaper_colour)
+        if not base.isValid():
+            return None
+
+        ratio = self.devicePixelRatioF() or 1.0
+        canvas = QPixmap(round(width * ratio), round(height * ratio))
+        canvas.setDevicePixelRatio(ratio)
+        canvas.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        gradient = QLinearGradient(0, 0, 0, height)
+        gradient.setColorAt(0.0, base.lighter(125))
+        gradient.setColorAt(1.0, base.darker(115))
+        shape = QPainterPath()
+        shape.addRoundedRect(0, 0, width, height, RADIUS["lg"], RADIUS["lg"])
+        painter.fillPath(shape, gradient)
+        painter.end()
+        return canvas
+
+    def _wallpaper_pixmap(self, width: int, height: int) -> "QPixmap | None":
+        """The wallpaper, cropped to the tile and rounded like it."""
+        path = self._wallpaper_file
+        if not path or width <= 0 or height <= 0:
+            return None
+        source = QPixmap(path)
+        if source.isNull():
+            return None
+
+        ratio = self.devicePixelRatioF() or 1.0
+        target = QSize(round(width * ratio), round(height * ratio))
+        # Cover, not fit: the tile is a window onto the wallpaper, and letterbox
+        # bars inside a rounded rectangle look like a mistake.
+        scaled = source.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        canvas = QPixmap(target)
+        canvas.setDevicePixelRatio(ratio)
+        canvas.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path_shape = QPainterPath()
+        radius = RADIUS["lg"] * ratio
+        path_shape.addRoundedRect(0, 0, target.width(), target.height(), radius, radius)
+        painter.setClipPath(path_shape)
+        painter.drawPixmap(
+            round((target.width() - scaled.width()) / 2),
+            round((target.height() - scaled.height()) / 2),
+            scaled,
+        )
+        painter.end()
+        return canvas
+
+    def _on_wallpaper(self, path: str, colour: str) -> None:
+        self._wallpaper_file = path
+        self._wallpaper_colour = colour
+        self._paint_phone_tile()
 
     def _build_complications(self) -> QWidget:
         """The little readings, in one line under the name."""
@@ -931,7 +1050,9 @@ class DevicePanel(QWidget):
     def refresh_header(self) -> None:
         name = self.hub.phone_name
         self.brand.setText(name or "No phone")
-        model = self.hub.companion.phone.name or self.hub.bluetooth_name
+        # The model under the name, not instead of it. "SM-S931B" is a part
+        # number; the name is what the phone is called on its owner's desk.
+        model = self.hub.companion.phone.model or self.hub.bluetooth_name
         self.device_label.setText("" if model == name else model)
         source = self.hub.source
         if source == "companion":

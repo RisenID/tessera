@@ -67,6 +67,26 @@ correlation silently overwrites them.
 
 Errors come back as `{"t":"error","rid":N,"message":"..."}`.
 
+## The phone's name and its look
+
+`hello` carries `name` and `model`, and they are not the same thing: the name
+is what the phone's owner called it in the phone's own settings, the model is
+the part number. The desktop shows the name and puts the model underneath.
+
+```
+desktop -> phone   {"t":"wallpaper_get","req":4}
+phone   -> desktop {"t":"wallpaper","rid":4,"colour":"#8f0312","format":"jpeg","binary":true,...} + binary frame
+              or   {"t":"wallpaper","rid":4,"colour":"#8f0312"}
+```
+
+The picture is optional and often absent: a live wallpaper has no still image,
+and recent Android does not let an ordinary app read one that does -- the file
+is not readable by the shell either. The colour always comes, by whichever
+route the phone allows: the wallpaper's own colours, the colour One UI derived
+from it (read from a dump, which needs Shizuku), or the system accent Android
+themes itself with. The desktop uses the picture when there is one and the
+colour when there is not.
+
 ## File transfer
 
 Either end may offer a file; the other accepts or refuses before any bytes

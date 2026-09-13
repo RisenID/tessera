@@ -288,6 +288,9 @@ class PairedPhone:
     token: str = ""
     fingerprint: str = ""     # SHA-256 of the phone's certificate, hex
     name: str = ""
+    #: The model number, which is not the phone's name: the companion app
+    #: sends both, and the sidebar shows the name with the model underneath.
+    model: str = ""
     device_id: str = ""
 
     @property
@@ -709,6 +712,7 @@ class CompanionClient(QObject):
             self._teardown()
             return
         self.phone.name = message.get("name", "") or self.phone.name
+        self.phone.model = message.get("model", "") or self.phone.model
         self.phone.device_id = message.get("id", "") or self.phone.device_id
 
         if self._pair_code:

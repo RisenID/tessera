@@ -13,6 +13,8 @@ import java.security.SecureRandom
  */
 class Store(context: Context) {
 
+    private val appContext = context.applicationContext
+
     private val prefs: SharedPreferences =
         context.getSharedPreferences("tessera", Context.MODE_PRIVATE)
 
@@ -29,9 +31,34 @@ class Store(context: Context) {
             return generated
         }
 
+    /**
+     * What this phone calls itself.
+     *
+     * The user's own name for it, the one they typed in the phone's settings
+     * and the one their Bluetooth devices show -- not the model number. A
+     * sidebar saying "SM-S931B" is a part number; it is not the name of
+     * anybody's phone. The model is still sent separately, and the desktop
+     * shows it underneath.
+     */
     var displayName: String
-        get() = prefs.getString(KEY_NAME, null) ?: android.os.Build.MODEL
+        get() = prefs.getString(KEY_NAME, null) ?: deviceName()
         set(value) = prefs.edit().putString(KEY_NAME, value).apply()
+
+    private fun deviceName(): String {
+        val resolver = appContext.contentResolver
+        // Settings.Global.DEVICE_NAME is where "Ruchit's S25" lives; the
+        // Bluetooth name is the same string on most phones and the fallback
+        // where it is not set.
+        val named = runCatching {
+            android.provider.Settings.Global.getString(resolver, "device_name")
+        }.getOrNull()
+        val bluetooth = runCatching {
+            android.provider.Settings.Secure.getString(resolver, "bluetooth_name")
+        }.getOrNull()
+        return named?.takeIf { it.isNotBlank() }
+            ?: bluetooth?.takeIf { it.isNotBlank() }
+            ?: android.os.Build.MODEL
+    }
 
     fun tokens(): Set<String> = prefs.getStringSet(KEY_TOKENS, emptySet()) ?: emptySet()
 

@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        22%{?dist}
+Release:        23%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -164,6 +164,16 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-23
+- The sidebar shows the phone's name -- the one its owner gave it -- with the
+  model number underneath rather than in place of it. The companion app was
+  reporting its model as its name; it now reports what the phone calls itself,
+  which is the same string its Bluetooth devices see.
+- The phone tile wears the phone's wallpaper. Where no app may read it -- a
+  live wallpaper, or recent Android, where the file is not readable even by the
+  shell -- it wears the colour the phone themed itself with instead, which is
+  the wallpaper as far as the phone is concerned.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-22
 - Files, both ways, over the connection the app already has. Drop them on the
   window or pick them on the new Share page; on the phone, share anything to
