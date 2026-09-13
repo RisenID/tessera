@@ -1,8 +1,4 @@
-"""Colours, spacing and the application stylesheet.
-
-Colours come from the platform palette; standard controls are left to the
-platform style. See docs/DESIGN.md.
-"""
+"""Colours, spacing and the application stylesheet."""
 
 from __future__ import annotations
 
@@ -106,9 +102,7 @@ def detect_palette(app: QApplication) -> Palette:
     return Palette(
         name="dark" if dark else "light",
         bg=_hex(window),
-        # A shade lighter than the window, so cards read as raised. The view
-        # colour would be wrong: Breeze makes it *darker* than the window, and
-        # cards drawn in it looked like holes punched in the page.
+        # A shade lighter than the window, so cards read as raised.
         surface=mix(_hex(window), _hex(text), 0.05),
         surface_alt=mix(_hex(window), _hex(text), 0.06),
         surface_hover=mix(_hex(window), _hex(text), 0.11),
@@ -136,12 +130,7 @@ def mix(colour: str, other: str, amount: float) -> str:
 
 
 def tab_stylesheet(p: Palette) -> str:
-    """The tab strip's QSS: colours and padding only.
-
-    The accent underline is painted by PageTabs instead. A QTabBar does not
-    pick up a border on its tabs from a sheet applied before it is shown, and
-    the selected tab was left with no indicator at all.
-    """
+    """The tab strip's QSS: colours and padding only."""
     return f"""
 QTabBar {{ background: transparent; }}
 QTabBar::tab {{
@@ -157,10 +146,7 @@ QTabBar::tab:selected {{ color: {p.text}; font-weight: 650; }}
 
 
 def stylesheet(p: Palette) -> str:
-    """The application's QSS: the sidebar, cards and semantic labels only.
-
-    Standard controls are left to the platform style. See docs/DESIGN.md.
-    """
+    """The application's QSS: the sidebar, cards and semantic labels only."""
     app = QApplication.instance()
     base = app.font().pointSizeF() if app else 10.0
     if base <= 0:

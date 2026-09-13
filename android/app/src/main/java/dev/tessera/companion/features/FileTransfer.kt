@@ -21,19 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
-/**
- * Files between this phone and a desktop, in both directions.
- *
- * Receiving writes straight into MediaStore's Downloads collection, which is
- * the one place an ordinary app can put a file where the user's own file
- * manager will find it, with no storage permission at all. The entry is
- * created as `IS_PENDING`, so nothing else on the phone sees a half-written
- * file, and published when the last chunk lands.
- *
- * Sending reads a content Uri a chunk at a time. Nothing is ever loaded whole:
- * the files people actually share are videos, and a 4K clip does not fit in an
- * app's heap.
- */
+/** Files between this phone and a desktop, in both directions. */
 object FileTransfer {
 
     private const val TAG = "TesseraFiles"
@@ -44,17 +32,7 @@ object FileTransfer {
 
     private const val CHANNEL_ID = "tessera-files"
 
-    /**
-     * How many chunks may wait to be written before the reader has to stop.
-     *
-     * The queue exists so that reading the socket and writing to storage
-     * happen at the same time rather than in turn: without it the link sat
-     * idle for every disk write, which measured as a third of the throughput
-     * the same phone manages over adb. Bounded, so a fast link cannot turn
-     * into unbounded memory -- a full queue stops the reader, TCP's window
-     * closes, and the sender slows down, which is exactly the wanted
-     * behaviour.
-     */
+    /** How many chunks may wait to be written before the reader has to stop. */
     private const val QUEUE_DEPTH = 12
 
     /** One file arriving from a desktop. */
@@ -88,10 +66,7 @@ object FileTransfer {
 
         fun open(): String? {
             val problem = runCatching {
-                // Straight into MediaStore, as a pending entry. Staging in the
-                // app's cache first was tried and measured: no faster, and it
-                // needs the whole file a second time on a partition that is
-                // usually the smaller of the two.
+                // Straight into MediaStore, as a pending entry.
                 val target = resolver.insert(downloads(), values)
                     ?: return "the phone would not make a file to write"
                 uri = target
@@ -286,13 +261,7 @@ object FileTransfer {
     private fun downloads(): Uri =
         MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
-    /**
-     * A name from a desktop, reduced to something that cannot escape.
-     *
-     * It comes from another machine, so a path separator in it is either a
-     * mistake or an attempt to write somewhere else. Only the last component
-     * survives.
-     */
+    /** A name from a desktop, reduced to something that cannot escape. */
     fun safeName(name: String): String {
         val last = name.replace('\\', '/').substringAfterLast('/').trim()
         val cleaned = last.filter { it.isLetterOrDigit() || it in " .,-_()[]'#&+" }

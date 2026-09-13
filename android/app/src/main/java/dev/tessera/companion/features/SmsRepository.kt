@@ -10,12 +10,7 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * SMS conversations, read straight from the Telephony provider.
- *
- * Sending goes through SmsManager, which is the reason this lives in a phone
- * app at all: the adb shell user can read messages but cannot send them.
- */
+/** SMS conversations, read straight from the Telephony provider. */
 object SmsRepository {
 
     private const val TAG = "TesseraSms"
@@ -36,12 +31,7 @@ object SmsRepository {
     fun canSend(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
 
-    /**
-     * Recent messages, newest first, grouped into threads by the caller.
-     *
-     * [limit] is applied by the query itself so a phone with a decade of
-     * messages does not stall the connection.
-     */
+    /** Recent messages, newest first, grouped into threads by the caller. */
     fun messages(context: Context, limit: Int = 500, threadId: String? = null): JSONArray {
         val result = JSONArray()
         if (!canRead(context)) return result

@@ -1,22 +1,5 @@
 #!/usr/bin/env bash
-#
-# Install Tessera for the current user, on any distribution.
-#
-# The RPM is the tidy route on Fedora and its relatives. Everywhere else there
-# is no package, and the desktop half needs nothing built: it is Python and Qt.
-# So this wires up the three things a package would have done -- a launcher on
-# PATH, a menu entry, and the WirePlumber configuration that lets the computer
-# receive audio -- entirely inside $HOME, with no root and no package manager.
-#
-# Deliberately not pip. Fedora and Debian both mark the system interpreter as
-# externally managed, so "pip install --user ." fails on both without being
-# told to break system packages; and a virtualenv would need its own copy of
-# Qt. The launcher runs the checkout in place instead, which also means
-# updating is a git pull.
-#
-#   scripts/install-user.sh              install
-#   scripts/install-user.sh --uninstall   remove every file it created
-#   scripts/install-user.sh --check       report what is in place
+# 
 
 set -euo pipefail
 
@@ -97,9 +80,8 @@ sed "s|^Exec=tessera\$|Exec=$launcher|" \
     "$root/packaging/dev.tessera.Tessera.desktop" > "$desktop"
 install -m0644 "$root/packaging/icons/dev.tessera.Tessera.svg" "$icon"
 
-# WirePlumber needs the receive-side Bluetooth roles enabled before a phone can
-# stream here. Tessera rewrites this file from its audio quality setting, so an
-# existing one is left alone.
+# WirePlumber needs the receive-side Bluetooth roles enabled before a
+# phone can stream here.
 if [[ -f $wireplumber ]]; then
     printf 'Bluetooth audio config already present, left as it is.\n'
 else

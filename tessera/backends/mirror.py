@@ -1,16 +1,4 @@
-"""Screen mirroring and per-app windows.
-
-Both are scrcpy: it is the only mature way to get low-latency video *and*
-input injection on Linux. Injecting touches and keys needs the signature-level
-INJECT_EVENTS permission, so a sideloaded companion app cannot do it; scrcpy
-sidesteps that by running its server as the shell user, which is allowed.
-
-Two shapes:
-
-* :func:`mirror_command` -- the phone's real screen, mirrored and controllable.
-* :func:`app_command` -- one app on its own virtual display, so it gets its own
-  desktop window and the phone's screen stays free for something else.
-"""
+"""Screen mirroring and per-app windows."""
 
 from __future__ import annotations
 
@@ -93,11 +81,7 @@ def app_command(
     title: str = "",
     resizable: bool = True,
 ) -> list[str]:
-    """One app on its own virtual display.
-
-    The phone's own screen is untouched, so the app runs beside whatever the
-    phone is already doing rather than taking it over.
-    """
+    """One app on its own virtual display."""
     current = version()
     if current < MIN_VIRTUAL_DISPLAY:
         raise MirrorError(

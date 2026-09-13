@@ -7,16 +7,7 @@ import android.os.Parcel
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 
-/**
- * Calls on the clipboard service's binder interface, whoever is making them.
- *
- * Two callers share this: [ClipboardBridge], which reaches the service through
- * Shizuku from inside the app, and [dev.tessera.companion.shell.ClipboardHelper],
- * which the desktop starts over adb as the shell user. Both talk to the hidden
- * IClipboard interface, whose methods have gained parameters over successive
- * releases (attribution tag in 11, device id in 14), so rather than hardcoding
- * one shape the right overload is chosen by its parameter types.
- */
+/** Calls on the clipboard service's binder interface, whoever is making them. */
 object ClipboardCalls {
 
     /** How to list a binder proxy's methods: the app needs a hidden-API bypass, the shell does not. */
@@ -41,14 +32,7 @@ object ClipboardCalls {
         return true
     }
 
-    /**
-     * Asks the service to say when the clipboard changes.
-     *
-     * The listener parameter is a hidden AIDL interface there is no class for
-     * at compile time, so a dynamic proxy stands in for it, carrying a plain
-     * Binder that answers the one call the service makes on it. Returns false
-     * where no overload fits, and the caller polls instead.
-     */
+    /** Asks the service to say when the clipboard changes. */
     fun listen(service: Any, caller: String, onChange: () -> Unit, lookup: Lookup = PLAIN): Boolean {
         val method = lookup.methods(service)
             .filter { it.name == "addPrimaryClipChangedListener" }

@@ -27,13 +27,7 @@ import dev.tessera.companion.features.SmsRepository
 import dev.tessera.companion.features.StorageServer
 import dev.tessera.companion.net.TlsServer
 
-/**
- * Setup and status.
- *
- * Deliberately a checklist rather than a dashboard: every capability the
- * desktop offers depends on a permission granted here, and the usual failure is
- * not knowing which one is missing.
- */
+/** Setup and status. */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -89,13 +83,7 @@ class MainActivity : AppCompatActivity() {
         TesseraService.start(this)
     }
 
-    /**
-     * Stops Android asking before every audio stream.
-     *
-     * The row is not a permission the app needs to work -- it is the
-     * difference between the computer being able to play this phone's music on
-     * its own and the phone having to be picked up each time.
-     */
+    /** Stops Android asking before every audio stream. */
     private fun grantProjection() {
         if (!PrivilegedShell.hasPermission()) {
             PrivilegedShell.requestPermission(SHIZUKU_REQUEST)

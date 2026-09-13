@@ -35,11 +35,7 @@ from ..widgets import EmptyState, Toast, header_row, heading
 
 
 class ThreadRow(QWidget):
-    """One conversation in the list: who it is, and the latest line.
-
-    A plain list item renders both lines in the same weight and colour, which
-    is why conversations ran together and were hard to tell apart.
-    """
+    """One conversation in the list: who it is, and the latest line."""
 
     def __init__(self, name: str, preview: str, when: int, unread: bool, palette: Palette, parent=None):
         super().__init__(parent)
@@ -123,12 +119,7 @@ def _copy_code(code: str) -> None:
 
 
 class Bubble(QWidget):
-    """One message, aligned by direction.
-
-    Consecutive messages from the same sender are grouped: only the last of a
-    run carries a timestamp and the tail corner, which is what makes it
-    possible to tell one message from the next at a glance.
-    """
+    """One message, aligned by direction."""
 
     def __init__(
         self,
@@ -144,8 +135,7 @@ class Bubble(QWidget):
         super().__init__(parent)
         outer = QVBoxLayout(self)
         # The gap above each message carries the grouping: tight within a run
-        # from one sender, wide when the sender changes. Layout spacing applies
-        # to every item equally, so it has to live on the message itself.
+        # from one sender, wide when the sender changes.
         outer.setContentsMargins(0, 2 if grouped else SPACE["md"], 0, 0)
         outer.setSpacing(2)
 
@@ -157,12 +147,9 @@ class Bubble(QWidget):
         bubble.setMaximumWidth(MAX_BUBBLE_WIDTH)
         bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
-        # A word-wrapped label reports a minimal width hint, so without this a
-        # short message collapses into a sliver and a long one wraps every two
-        # or three words. Give it the width the text actually wants, capped.
-        # ensurePolished applies the stylesheet first; measuring before that
-        # uses the default font and under-estimates, which is why short
-        # messages were wrapping with room to spare.
+        # A word-wrapped label reports a minimal width hint, so without this
+        # a short message collapses into a sliver and a long one wraps every
+        # two or three words.
         bubble.ensurePolished()
         metrics = bubble.fontMetrics()
         longest = max(
@@ -235,19 +222,15 @@ class MessagesPage(QWidget):
         self._threads: list[dict] = []
         self._current: dict | None = None
         #: Set while the thread list is being rebuilt, so the selection Qt
-        #: moves around during the rebuild is not mistaken for the user
-        #: picking a different conversation.
+        #: moves around during the rebuild is not mistaken for the user picking
+        #: a different conversation.
         self._rebuilding = False
-        #: True when the transcript is scrolled to the newest message, which
-        #: is the only case where a refresh should scroll it again. Someone
-        #: reading back through a conversation is left where they are.
+        #: True when the transcript is scrolled to the newest message, which is
+        #: the only case where a refresh should scroll it again.
         self._at_latest = True
 
         # A text arrives as a notification long before anything asks the phone
-        # for it, so the page reloads on that rather than polling. The delay
-        # is not cosmetic: the messaging app posts its notification from the
-        # broadcast, and the message reaches the SMS provider a moment later,
-        # so querying immediately can return the conversation as it was.
+        # for it, so the page reloads on that rather than polling.
         self._pending = QTimer(self)
         self._pending.setSingleShot(True)
         self._pending.setInterval(700)
@@ -345,8 +328,8 @@ class MessagesPage(QWidget):
 
     def _render_threads(self, items: list) -> None:
         # Rebuilding the list drops the selection, and a list that rebuilds
-        # whenever a text arrives would throw the user out of the conversation
-        # they are reading. Remember which one it was and put it back.
+        # whenever a text arrives would throw the user out of the
+        # conversation they are reading.
         open_thread = (self._current or {}).get("thread")
 
         self._threads = items
@@ -376,8 +359,7 @@ class MessagesPage(QWidget):
         self._rebuilding = False
 
         # Re-read the conversation, which is how a newly arrived message
-        # reaches the transcript. Done here rather than through the selection
-        # signal, which stays silent when the row has not moved.
+        # reaches the transcript.
         if reopen >= 0:
             self._open_thread(reopen)
 
@@ -488,8 +470,6 @@ class MessagesPage(QWidget):
         self.toast.show_message("Sent", self.palette_tokens, "success")
         # Same delay as an incoming text: the send returns once the message is
         # handed to the radio, a moment before it appears in the provider.
-        # Reloading the list rather than just the thread also refreshes the
-        # conversation's preview line.
         self._pending.start()
 
     def resizeEvent(self, event) -> None:  # noqa: N802

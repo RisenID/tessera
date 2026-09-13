@@ -1,16 +1,4 @@
-"""Files between the phone and this computer, in both directions.
-
-Two ways in and two ways out, because the moment a file needs moving is never
-the same moment twice:
-
-* drop files anywhere on this window, or press the button here;
-* share to Tessera from any app on the phone, which puts the file straight in
-  the desktop's download folder.
-
-The page is mostly a list. What matters while a file is moving is how far it
-has got and the ability to stop it; what matters afterwards is opening it, or
-finding it in the file manager -- so those are the only buttons.
-"""
+"""Files between the phone and this computer, in both directions."""
 
 from __future__ import annotations
 
@@ -37,12 +25,7 @@ from ..widgets import Card, Pill, Toast, heading
 
 
 class DropArea(QWidget):
-    """The target for dragged files, and the button for everyone else.
-
-    A drop zone alone would be a trap for anyone driving by keyboard, and a
-    button alone throws away the gesture people actually reach for. It is one
-    control doing both: click it, or drop on it -- or on the window.
-    """
+    """The target for dragged files, and the button for everyone else."""
 
     def __init__(self, palette: Palette, on_files, parent: QWidget | None = None):
         super().__init__(parent)

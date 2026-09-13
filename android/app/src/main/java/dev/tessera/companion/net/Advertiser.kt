@@ -13,17 +13,6 @@ import android.util.Log
 /**
  * Announces the phone on the local network so the desktop finds it without the
  * user typing an IP address.
- *
- * Registering once is not enough, which is the bug this class exists in its
- * current shape to fix. An NSD registration belongs to the network it was made
- * on: switch Wi-Fi networks, toggle the hotspot, or let the radio drop and come
- * back, and the advertisement silently goes with it. The service that made it
- * is still running and still listening, so nothing looks wrong -- the desktop
- * simply stops being able to find the phone, and falls back to whatever address
- * it last saw, which after a hotspot session is one that no longer exists.
- *
- * So the registration follows the network instead of the process: every change
- * re-registers, and a failed registration is retried.
  */
 class Advertiser(private val context: Context) {
 
@@ -74,10 +63,8 @@ class Advertiser(private val context: Context) {
             }
 
             override fun onRegistrationFailed(info: NsdServiceInfo, errorCode: Int) {
-                // Usually transient -- registering while the platform is still
-                // tearing the previous one down, or before the new network has
-                // an address. Not fatal either way: the desktop can still find
-                // the phone by sweeping the subnet.
+                // Usually transient -- registering while the platform is still tearing the previous
+                // one down, or before the new network has an address.
                 Log.w(TAG, "mDNS registration failed ($errorCode); retrying")
                 scheduleRetry()
             }
@@ -112,13 +99,7 @@ class Advertiser(private val context: Context) {
         listener = null
     }
 
-    /**
-     * Re-register, after letting the platform settle.
-     *
-     * Unregistration is asynchronous and a new registration made too soon is
-     * rejected, and a network that has just appeared does not have an address
-     * for a moment either -- so both sides of the pause are needed.
-     */
+    /** Re-register, after letting the platform settle. */
     private fun scheduleRetry() {
         if (settings == null) return
         handler.removeCallbacksAndMessages(null)

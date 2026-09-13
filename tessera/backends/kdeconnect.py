@@ -1,14 +1,4 @@
-"""KDE Connect bridge.
-
-KDE Connect already runs the hard part -- a paired, encrypted TLS link to the
-Android app -- and exposes it on the session bus. This module wraps the bits we
-need (device state, notifications, battery, file transfer) behind Qt signals.
-
-Everything is spoken over explicit D-Bus message calls rather than
-QDBusInterface's generated metaobject: kdeconnectd ships introspection XML with
-a duplicated `sendSimpleNotification` method, which makes Qt reject the
-metaobject and silently break property access.
-"""
+"""KDE Connect bridge."""
 
 from __future__ import annotations
 
@@ -107,11 +97,7 @@ class Notification:
 
 
 def _unwrap(value: Any) -> Any:
-    """Strip QDBusVariant wrappers that org.freedesktop.DBus.Properties.Get adds.
-
-    Without this every property reads back as a truthy QDBusVariant object, so
-    `bool(isReachable)` would be True even for an offline phone.
-    """
+    """Strip QDBusVariant wrappers that org.freedesktop.DBus.Properties.Get adds."""
     while isinstance(value, QDBusVariant):
         value = value.variant()
     return value
@@ -163,12 +149,7 @@ class KdeConnect(QObject):
     def _call(
         self, path: str, iface: str, method: str, *args: Any, quiet: bool = False
     ) -> Any:
-        """Make a blocking D-Bus call, returning the first reply argument.
-
-        kdeconnectd is a local, responsive daemon, so blocking calls are cheap;
-        the exception is anything that reaches the phone, which callers push to
-        a worker thread.
-        """
+        """Make a blocking D-Bus call, returning the first reply argument."""
         msg = QDBusMessage.createMethodCall(SERVICE, path, iface, method)
         if args:
             msg.setArguments(list(args))
@@ -430,13 +411,7 @@ class KdeConnect(QObject):
         return self.has_plugin("sms")
 
     def send_sms(self, address: str, body: str) -> None:
-        """Send an SMS through KDE Connect's Android app.
-
-        The plugin's object path and `sendSms` signature have both changed
-        across KDE Connect releases, so the known variants are tried in turn.
-        The caller is expected to fall back to composing on the phone if every
-        variant fails.
-        """
+        """Send an SMS through KDE Connect's Android app."""
         if not self._device_id:
             raise KdeConnectError("No phone selected.")
 

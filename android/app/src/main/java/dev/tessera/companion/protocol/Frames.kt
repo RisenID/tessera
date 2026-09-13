@@ -9,9 +9,6 @@ import java.io.OutputStream
 /**
  * Wire framing for the desktop link: a 4-byte big-endian length, a type byte,
  * then the payload. See docs/PROTOCOL.md in the desktop repository.
- *
- * Binary payloads (photos, video frames) travel as their own frames rather than
- * base64 inside JSON, which keeps large transfers off the text path.
  */
 object Frames {
     const val TYPE_JSON: Int = 1

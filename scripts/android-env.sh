@@ -1,11 +1,4 @@
 # Toolchain for building the companion app.
-#
-#   source scripts/android-env.sh
-#
-# Everything the Android build needs lives under ~/android and nothing lives in
-# the checkout: the JDK, the SDK, Gradle itself and all build output. Fedora 44
-# ships only JDK 25, which the Android Gradle Plugin rejects, so JDK 21 sits
-# beside the SDK rather than replacing the system Java.
 
 export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$HOME/android/Sdk}"
 export ANDROID_HOME="$ANDROID_SDK_ROOT"

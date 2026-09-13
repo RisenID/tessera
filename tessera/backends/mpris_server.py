@@ -1,25 +1,4 @@
-"""Publishing the phone's music to this desktop, as an MPRIS player.
-
-The other MPRIS module *reads* a player: BlueZ republishes the phone's AVRCP
-data on the session bus, but only while the phone is connected over Bluetooth,
-which means making this computer the phone's audio output. This one goes the
-other way. What the companion app already reports -- title, artist, album, and
-whether it is playing -- is offered to the desktop as a player of our own, so:
-
-* Plasma's media applet, the lock screen and the task manager show the phone's
-  track, with buttons that work;
-* the keyboard's play, next and previous keys control the phone, because the
-  desktop routes them to whichever MPRIS player is current;
-* none of it needs Bluetooth, so the phone's own headphones are untouched.
-
-It pairs with playing the phone's audio here: once the sound is coming out of
-this computer, the controls for it should be where every other player's are.
-
-The interface is the MPRIS v2 specification, of which this implements the part
-a remote player can honestly answer -- no seeking, no track list, no volume:
-those belong to the phone, and a control that lies is worse than one that is
-absent.
-"""
+"""Publishing the phone's music to this desktop, as an MPRIS player."""
 
 from __future__ import annotations
 
@@ -280,13 +259,7 @@ class MprisServer(QObject):
         self._announce()
 
     def _metadata(self, media: dict[str, Any]) -> dict[str, Any]:
-        """The MPRIS shape of a track.
-
-        Deliberately without mpris:length: it is a 64-bit integer, PySide6
-        marshals every Python int as a 32-bit one, and a wrong type is worse
-        than a missing optional field -- the applet simply shows no progress
-        bar, which is honest, because there is no seeking here either.
-        """
+        """The MPRIS shape of a track."""
         title = str(media.get("title", "") or "")
         if not title:
             return {}
@@ -294,8 +267,7 @@ class MprisServer(QObject):
         album = str(media.get("album", "") or "")
 
         # Plain values, not QDBusVariant: the map is already a{sv}, so QtDBus
-        # boxes each value itself. Wrapping them here produced a variant inside
-        # a variant, which applets read as an empty field.
+        # boxes each value itself.
         data: dict[str, Any] = {
             # The specification wants an object path here, and a plain string
             # would be sent as one more string.

@@ -3,12 +3,7 @@ package dev.tessera.companion
 import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * Fan-out from the phone's event sources to whichever desktops are connected.
- *
- * Keeping this separate means NotificationBridge does not need to know whether
- * anyone is listening: it publishes, and sessions subscribe while they live.
- */
+/** Fan-out from the phone's event sources to whichever desktops are connected. */
 object Bus {
 
     fun interface Subscriber {

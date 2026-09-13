@@ -1,12 +1,4 @@
-"""adb wrapper.
-
-KDE Connect deliberately exposes only what its Android app implements, which
-leaves two gaps this app needs to fill: Do Not Disturb state (no KDE Connect
-plugin exists for it) and hotspot control. Both are reachable through adb, so
-this module keeps that dependency in one place.
-
-Every function here blocks; callers run them via :func:`tessera.core.proc.submit`.
-"""
+"""adb wrapper."""
 
 from __future__ import annotations
 
@@ -86,11 +78,7 @@ def _adb(args: list[str], serial: str | None = None, timeout: float = 15.0) -> R
 
 
 def devices() -> list[AdbDevice]:
-    """All attached devices, including unauthorized/offline ones.
-
-    Unusable devices are returned rather than filtered out so the UI can explain
-    *why* a phone is not working instead of showing an empty list.
-    """
+    """All attached devices, including unauthorized/offline ones."""
     if not available():
         return []
     result = _adb(["devices", "-l"], timeout=20.0)
@@ -120,11 +108,7 @@ def devices() -> list[AdbDevice]:
 
 
 def resolve_serial(preferred: str = "") -> str:
-    """Pick which device to talk to.
-
-    Prefers the configured serial, then the only usable device. Raises with a
-    message meant to be shown to the user rather than logged.
-    """
+    """Pick which device to talk to."""
     attached = devices()
     if preferred:
         for dev in attached:
@@ -152,14 +136,7 @@ def resolve_serial(preferred: str = "") -> str:
 
 
 def _deduplicate(devices: list[AdbDevice]) -> list[AdbDevice]:
-    """Collapse entries that are the same physical phone.
-
-    Wireless debugging routinely produces two: one from an explicit
-    `adb connect host:port` and one auto-connected over mDNS
-    (`adb-<serial>-XXXX._adb-tls-connect._tcp`). They share product, model and
-    device tags, so grouping on those identifies the duplicate. The plain
-    host:port entry is preferred because it stays valid across mDNS churn.
-    """
+    """Collapse entries that are the same physical phone."""
     grouped: dict[tuple[str, str, str], list[AdbDevice]] = {}
     for device in devices:
         key = (device.product, device.model, device.serial if not device.product else "")
@@ -177,11 +154,7 @@ def _deduplicate(devices: list[AdbDevice]) -> list[AdbDevice]:
 
 
 def shell(serial: str, command: str, timeout: float = 15.0) -> str:
-    """Run *command* in the device shell and return stdout.
-
-    The command is passed as a single string, exactly as `adb shell` expects,
-    so quoting is the caller's responsibility.
-    """
+    """Run *command* in the device shell and return stdout."""
     result = _adb(["shell", command], serial=serial, timeout=timeout)
     if not result.ok:
         raise AdbError(result.text or f"adb shell failed ({result.code})")
@@ -192,10 +165,7 @@ def shell(serial: str, command: str, timeout: float = 15.0) -> str:
 
 
 def try_shell(serial: str, command: str, timeout: float = 15.0) -> tuple[bool, str]:
-    """Like :func:`shell` but returns success instead of raising.
-
-    Used where several vendor-specific commands are tried in turn.
-    """
+    """Like :func:`shell` but returns success instead of raising."""
     try:
         return True, shell(serial, command, timeout=timeout)
     except AdbError as exc:
@@ -269,13 +239,7 @@ MDNS_CONNECT = "_adb-tls-connect._tcp"
 
 
 def mdns_targets() -> list[str]:
-    """Phones advertising wireless debugging on this network, as host:port.
-
-    Android advertises the port over mDNS and picks a new one every time
-    wireless debugging is switched on, so a remembered address goes stale --
-    this is how to find the current one without asking the user to read it off
-    the phone.
-    """
+    """Phones advertising wireless debugging on this network, as host:port."""
     result = _adb(["mdns", "services"], timeout=12.0)
     if not result.ok:
         return []
@@ -307,11 +271,7 @@ _ROW = re.compile(r"^Row:\s*\d+\s+(.*)$")
 
 
 def parse_content_rows(output: str) -> list[dict[str, str]]:
-    """Parse `adb shell content query` output into dictionaries.
-
-    Values may contain commas (file paths, message bodies), so fields are split
-    on ", key=" boundaries rather than on every comma.
-    """
+    """Parse `adb shell content query` output into dictionaries."""
     rows: list[dict[str, str]] = []
     for line in output.splitlines():
         match = _ROW.match(line.strip())
@@ -339,11 +299,7 @@ def content_query(
     limit: int = 0,
     timeout: float = 30.0,
 ) -> list[dict[str, str]]:
-    """Query an Android content provider.
-
-    `--sort` is unsupported on some ROMs, so a failure with a sort clause is
-    retried without one rather than reported as an error.
-    """
+    """Query an Android content provider."""
     def build(with_sort: bool) -> str:
         parts = [f"content query --uri {uri}"]
         if projection:

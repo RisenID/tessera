@@ -1,11 +1,4 @@
-"""QtDBus, where there is a QtDBus.
-
-Three backends here speak D-Bus: KDE Connect, MPRIS and the desktop's Do Not
-Disturb. All three are Linux desktop interfaces, and on Windows the module may
-not even be in the Qt build. Importing it through here means those modules
-still import -- and then quietly do nothing -- instead of taking the whole app
-down on a platform that was never going to have a session bus.
-"""
+"""QtDBus, where there is a QtDBus."""
 
 from __future__ import annotations
 
@@ -29,12 +22,7 @@ except ImportError:  # pragma: no cover - Windows, or a Qt built without it
 
 
 class _NoBus:
-    """Stands in for a session bus that does not exist.
-
-    Only the handful of calls the backends make on a bus they have not checked
-    first. Everything answers "nothing here" rather than raising, because the
-    callers already handle an unreachable service.
-    """
+    """Stands in for a session bus that does not exist."""
 
     def isConnected(self) -> bool:  # noqa: N802 - Qt naming
         return False

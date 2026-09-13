@@ -1,26 +1,4 @@
-"""The phone's audio on this computer, by either of the two routes.
-
-Two of them, and they are not equivalent:
-
-* **over the link** -- the companion app sends a copy of the phone's media mix
-  over the connection the app already holds. No pairing, no profile, and it
-  cannot take audio away from the phone's own headphones because it is a copy.
-  Being a copy also means the phone plays it too, which is why there is a box
-  on the card to keep the phone quiet while it runs -- the capture happens
-  before the phone's volume stage, so silencing the phone costs this side
-  nothing. This is the route Phone Link uses, and it works on every platform.
-* **over Bluetooth** -- the phone becomes an A2DP source, which *does* move its
-  audio here, and is the only route that can carry a call's microphone.
-
-Bluetooth leads. It *moves* the sound rather than copying it, so the phone does
-not end up playing the same track alongside this computer, and it is the only
-route that can carry a call. The link route is the fallback for a computer with
-no Bluetooth radio, and is switched on in Settings.
-
-Connecting still moves nothing on its own, by either route. The Bluetooth
-connection made here leaves the media profile alone, so audio moves only when
-the button on this page asks for it.
-"""
+"""The phone's audio on this computer, by either of the two routes."""
 
 from __future__ import annotations
 
@@ -49,12 +27,7 @@ from ..widgets import Card, Pill, Toast, heading
 
 
 def say(label: QLabel, text: str) -> None:
-    """Put *text* on *label*, and take the label away when there is none.
-
-    An empty QLabel is not nothing: it holds its line of height and leaves a
-    band of blank card under the buttons. These three labels are empty most of
-    the time -- they exist for the one sentence that explains a failure.
-    """
+    """Put *text* on *label*, and take the label away when there is none."""
     label.setText(text)
     label.setVisible(bool(text))
 
@@ -177,9 +150,7 @@ class AudioPage(QWidget):
         self.call_button.clicked.connect(lambda: self._set_mode("call"))
         mode_buttons.addWidget(self.call_button)
 
-        # Named for what it does rather than for what it stops. Handing the
-        # audio back to whatever the phone was using is the thing people want,
-        # and "stop" read as though it silenced the music altogether.
+        # Named for what it does rather than for what it stops.
         self.handback_button = QPushButton("Play on the phone again")
         self.handback_button.clicked.connect(self._park)
         mode_buttons.addWidget(self.handback_button)
@@ -259,11 +230,7 @@ class AudioPage(QWidget):
         note.setWordWrap(True)
         card.add(note)
 
-        # A copy means both play it. With the phone on the desk that is the
-        # same track twice, a fraction of a second apart, which is worse than
-        # either on its own -- so the phone is muted by default and this is how
-        # to stop that. It belongs here rather than in Settings: the answer
-        # depends on where the phone is right now, not on how the app is set up.
+        # A copy means both play it.
         self.mute_phone = QCheckBox("Keep the phone quiet while it plays here")
         self.mute_phone.setChecked(self.hub.config.phone_audio.mute_phone)
         self.mute_phone.toggled.connect(self._set_muted)
@@ -287,9 +254,9 @@ class AudioPage(QWidget):
         buttons.addWidget(self.volume)
         card.body().addLayout(buttons)
 
-        # A meter, because "is it playing or is the phone silent?" is the first
-        # question when nothing comes out, and the answer is not otherwise
-        # visible anywhere.
+        # A meter, because "is it playing or is the phone silent?" is the
+        # first question when nothing comes out, and the answer is not
+        # otherwise visible anywhere.
         self.level = QProgressBar()
         self.level.setRange(0, 100)
         self.level.setTextVisible(False)
@@ -436,14 +403,7 @@ class AudioPage(QWidget):
         submit(self._read_state, on_done=self._apply_state, on_error=lambda _m: None)
 
     def quick_toggle(self) -> None:
-        """Play the phone's audio here, or stop.
-
-        The panel's switch calls this. Either route only ever starts on a
-        click, and this is that click; which route is the user's choice, in
-        Settings. "Whichever works" prefers Bluetooth, because it moves the
-        sound rather than copying it -- and falls back to the link on a
-        computer whose Bluetooth cannot, or will not, carry it.
-        """
+        """Play the phone's audio here, or stop."""
         if self.hub.phone_audio_active or self.hub.phone_audio_pending:
             self.hub.stop_phone_audio()
             return
@@ -464,10 +424,7 @@ class AudioPage(QWidget):
             )
             return
 
-        # Bluetooth, or whichever works. "Whichever" means the card this
-        # computer can actually stream through: without a connected phone
-        # there is no profile to switch, and the link is then the only route
-        # that can answer the button at all.
+        # Bluetooth, or whichever works.
         if route == "bluetooth" or self._card is not None:
             self._set_mode("music")
             return
@@ -486,12 +443,7 @@ class AudioPage(QWidget):
         )
 
     def _read_state(self) -> tuple:
-        """Gather Bluetooth and audio state off the GUI thread.
-
-        Read from what is happening -- is the media profile connected, is a
-        stream flowing -- not from PipeWire's profile, which is always left
-        ready to receive and so would claim playback the moment it connected.
-        """
+        """Gather Bluetooth and audio state off the GUI thread."""
         device = bluetooth.find_phone(
             preferred_address=self.hub.config.bluetooth.address,
             name_hint=self.hub.phone_name,
@@ -504,9 +456,7 @@ class AudioPage(QWidget):
             return device, card, "", audio.Stream()
 
         transport = bluetooth.audio_transport(device.address)
-        # Only look for the stream when BlueZ says audio is on the wire. A
-        # stream node exists exactly while that is true, so asking otherwise
-        # tells us nothing -- and pw-dump is a fifth of a megabyte of JSON.
+        # Only look for the stream when BlueZ says audio is on the wire.
         stream = (audio.music_stream()
                   if transport in bluetooth.TRANSPORT_STREAMING else audio.Stream())
         return device, card, transport, stream
@@ -568,12 +518,7 @@ class AudioPage(QWidget):
             bluetooth.release_audio(self._device.address)
 
     def _park(self) -> None:
-        """Stop moving audio without disconnecting the phone.
-
-        Only the Bluetooth profile is dropped; PipeWire's silent profile is
-        never selected -- WirePlumber remembers it and restores it on every
-        later connection, which is what stopped the audio arriving at all.
-        """
+        """Stop moving audio without disconnecting the phone."""
         if self._device is None:
             return
         self._stop_routing()
@@ -611,9 +556,7 @@ class AudioPage(QWidget):
             say(self.mode_status, self._playing_note(stream))
         elif claimed:
             # The profile is connected and nothing is coming down it, which is
-            # what a paused phone looks like. Saying "playing" here was the
-            # old bug: it read PipeWire's profile, which is now always left
-            # ready, so it announced playback the moment Bluetooth connected.
+            # what a paused phone looks like.
             say(self.mode_status, 
                 "Ready. The phone's audio plays here as soon as it starts."
             )
@@ -646,14 +589,7 @@ class AudioPage(QWidget):
     # -- actions -------------------------------------------------------------
 
     def _toggle_connection(self) -> None:
-        """Connect or disconnect, through the hub rather than directly.
-
-        The hub owns the quiet connect and, more importantly, owns whether the
-        phone is *meant* to be connected: it reconnects by itself on a timer,
-        and a disconnect made here has to stop that. Doing the work locally
-        left the two disagreeing -- the link came back fifteen seconds after
-        being dropped on purpose.
-        """
+        """Connect or disconnect, through the hub rather than directly."""
         device = self._device
         if device is None or self._busy:
             return
@@ -721,21 +657,12 @@ class AudioPage(QWidget):
 
             self._stop_routing()
 
-            # Order matters. The card has to be able to accept a stream before
-            # the phone is asked for one, because the phone withdraws its offer
-            # within a few seconds of making it.
+            # Make the card able to receive before asking the phone to send.
             audio.ready_to_receive(self._address)
 
             # The received audio appears as a playback stream rather than a
             # source: PipeWire names it bluez_input.<address>.<n> with media
-            # class Stream/Output/Audio. It exists only while audio is actually
-            # flowing, so its absence usually means nothing is playing yet
-            # rather than that anything is broken.
-            #
-            # Asking twice is not belt and braces. Android decides where a
-            # playback session goes when it handles the connection, and a
-            # request that lands while it is busy -- mid-track, screen off --
-            # is simply dropped, which is why the button worked only sometimes.
+            # class Stream/Output/Audio.
             for attempt in range(2):
                 bluetooth.claim_audio(self._address)
                 stream = audio.wait_for_stream(attempts=16 if attempt == 0 else 24)
@@ -756,12 +683,7 @@ class AudioPage(QWidget):
 
     @staticmethod
     def _playing_note(stream: audio.Stream) -> str:
-        """What is playing, and the ceiling the codec puts on it.
-
-        Codec, sample rate and bit rate together: the codec sets the ceiling,
-        the rate is read from the stream, and the bit rate is the number that
-        actually separates LDAC from aptX from SBC.
-        """
+        """What is playing, and the ceiling the codec puts on it."""
         codec = btcodecs.CODEC_NAMES.get(stream.codec, stream.codec)
         kbps = btcodecs.BITRATES.get(codec)
         detail = " · ".join(
@@ -778,11 +700,7 @@ class AudioPage(QWidget):
         self._stream_node = stream.node
 
     def _explain_silence(self) -> str:
-        """Say why no sound is arriving, distinguishing the causes.
-
-        A media transport exists only once the phone has this computer as an
-        output, so BlueZ can tell "not selected" from "selected but paused".
-        """
+        """Say why no sound is arriving, distinguishing the causes."""
         self._watch_for_stream()
         state = bluetooth.audio_transport(self._address)
 
@@ -825,12 +743,7 @@ class AudioPage(QWidget):
         )
 
     def _watch_for_stream(self) -> None:
-        """Link the phone's audio the moment it starts arriving.
-
-        Pressing play happens on the phone, seconds or minutes after the button
-        here, so waiting once and giving up would leave the audio unlinked for
-        exactly the common case.
-        """
+        """Link the phone's audio the moment it starts arriving."""
         if self._watch is not None:
             return
         self._waited = 0
@@ -853,10 +766,7 @@ class AudioPage(QWidget):
             self._stop_watch()
             return
 
-        # Give up eventually. Without this the wait outlives any plausible
-        # "I am about to press play": the phone stays connected, nothing ever
-        # arrives, and the poll goes on reading pw-dump every two seconds for
-        # as long as the app is open.
+        # Give up eventually.
         self._waited += 1
         if self._waited > self.WATCH_TICKS:
             self._stop_watch()

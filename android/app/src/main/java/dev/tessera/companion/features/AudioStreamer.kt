@@ -15,44 +15,11 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
-/**
- * Streams what this phone is playing to the desktop.
- *
- * Playback capture, not a Bluetooth profile. Android hands us a *copy* of the
- * media mix, so the phone keeps playing exactly as it was: through its speaker,
- * or through headphones that are none of our business. Nothing here can pull
- * audio away from them, which is the whole reason this route was chosen over
- * A2DP -- and it is the same route Phone Link and scrcpy take.
- *
- * Because it is a copy, the phone plays the track at the same time as the
- * desktop unless it is asked not to; [MediaMute] is that, switched from the
- * desktop and never on by itself.
- *
- * Two consequences worth knowing, both Android's rules rather than ours:
- *
- *  * it needs a MediaProjection, which means the user consents on the phone --
- *    the same dialog screen sharing uses, because this is the same permission;
- *  * an app can opt out of being captured (`allowAudioPlaybackCapture=false`),
- *    and apps playing DRM-protected audio generally do. Those arrive as
- *    silence; everything else is captured.
- *
- * The wire format is signed 16-bit PCM at 48 kHz stereo -- what the capture
- * gives us, forwarded untouched. That is 1.5 Mbit/s, which a local network does
- * not notice, and it means no decoder on the desktop and nothing to go wrong
- * between the phone's mix and the speakers. The header names the format, so a
- * compressed one can be added later without either end guessing.
- */
+/** Streams what this phone is playing to the desktop. */
 class AudioStreamer(
     private val context: Context,
     private val projection: MediaProjection,
-    /**
-     * Whether to silence the phone's own speaker while this runs.
-     *
-     * The capture is a copy, so without this the track plays twice at once --
-     * once here and once on the desktop. The desktop decides, because only the
-     * person sitting in front of it knows whether the phone is on the desk or
-     * in their pocket with headphones in. See [MediaMute].
-     */
+    /** Whether to silence the phone's own speaker while this runs. */
     private var mutePhone: Boolean = false,
     private val onStarted: (JSONObject) -> Unit,
     private val onFrame: (ByteArray) -> Unit,
@@ -89,11 +56,8 @@ class AudioStreamer(
     // start() checks RECORD_AUDIO first; lint does not follow it across methods.
     @SuppressLint("MissingPermission")
     private fun open() {
-        // What to capture: media and games, plus UNKNOWN, which is where a
-        // surprising number of players end up when they set no attributes.
-        // Deliberately not USAGE_VOICE_COMMUNICATION (a call is not ours to
-        // copy) and not the assistant or notification usages, which would put
-        // the phone's own beeps on the desktop's speakers.
+        // What to capture: media and games, plus UNKNOWN, which is where a surprising number of
+        // players end up when they set no attributes.
         val config = AudioPlaybackCaptureConfiguration.Builder(projection)
             .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
             .addMatchingUsage(AudioAttributes.USAGE_GAME)
@@ -140,9 +104,8 @@ class AudioStreamer(
                 .put("rate", SAMPLE_RATE)
                 .put("channels", 2)
                 .put("frameBytes", FRAME_BYTES)
-                // Said rather than assumed: Do Not Disturb can refuse the mute,
-                // and the desktop should not claim the phone went quiet if it
-                // did not.
+                // Said rather than assumed: Do Not Disturb can refuse the mute, and the desktop
+                // should not claim the phone went quiet if it did not.
                 .put("muted", silenced)
                 .put("muteAsked", mutePhone)
         )
@@ -150,13 +113,7 @@ class AudioStreamer(
         reader = thread(name = "tessera-audio") { pump(audio) }
     }
 
-    /**
-     * Reads the capture and hands each frame on, for as long as we are running.
-     *
-     * One frame is 20 ms. Small enough that the desktop can keep its buffer
-     * short, large enough that the socket is not doing thousands of tiny
-     * writes a second.
-     */
+    /** Reads the capture and hands each frame on, for as long as we are running. */
     private fun pump(audio: AudioRecord) {
         val frame = ByteArray(FRAME_BYTES)
         while (running.get()) {
@@ -189,14 +146,7 @@ class AudioStreamer(
     val quietSeconds: Int
         get() = quietFrames * FRAME_MS / 1000
 
-    /**
-     * Mute or unmute the phone without interrupting the stream.
-     *
-     * The checkbox is on the desktop and gets pressed while the music is
-     * playing -- most often because the phone is audibly playing the same
-     * track -- so it has to take effect there and then rather than at the next
-     * start.
-     */
+    /** Mute or unmute the phone without interrupting the stream. */
     fun setMuted(on: Boolean): Boolean {
         mutePhone = on
         if (!running.get()) return false

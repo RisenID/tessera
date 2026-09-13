@@ -1,16 +1,4 @@
-"""Starting Tessera when the user logs in.
-
-Two implementations behind one pair of functions:
-
-* **Linux** -- an XDG autostart entry in ~/.config/autostart, which KDE, GNOME,
-  XFCE and the rest all read, and which shows up in the desktop's own autostart
-  settings so the user can see and undo it there too.
-* **Windows** -- a value under HKCU\\…\\CurrentVersion\\Run, which is where the
-  Startup Apps page in Settings looks. Per user, no elevation.
-
-Login, not boot: the app needs a session to draw in and a tray to sit in, so
-there is nothing useful to start before someone logs in.
-"""
+"""Starting Tessera when the user logs in."""
 
 from __future__ import annotations
 
@@ -45,12 +33,7 @@ X-GNOME-Autostart-enabled=true
 
 
 def launch_command() -> str:
-    """How to start Tessera again, quoted for the platform.
-
-    A frozen build is its own executable. Otherwise the launcher on PATH, which
-    covers the package and the per-user install alike; and failing that an
-    explicit interpreter call, so autostart works from a bare checkout.
-    """
+    """How to start Tessera again, quoted for the platform."""
     if getattr(sys, "frozen", False):
         return _quote(sys.executable)
 

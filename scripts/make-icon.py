@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the application icon, at every size Windows asks for.
-
-The icon comes out of the same glyph code the interface uses, so there is no
-binary in the repository and the icon cannot drift from the app's own artwork.
-Writes an .ico (Windows), a .png (everything else) and nothing else.
-
-    python3 scripts/make-icon.py packaging/windows/tessera.ico
-"""
+"""Draw the application icon, at every size Windows asks for."""
 
 from __future__ import annotations
 

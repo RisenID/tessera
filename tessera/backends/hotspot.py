@@ -1,17 +1,4 @@
-"""One-click phone hotspot.
-
-Two halves:
-
-* the phone -- turn tethering on. Android's `cmd wifi start-softap` is the
-  documented route, but vendor ROMs (Samsung's One UI included) frequently
-  restrict or rename it, so several strategies are tried in order and USB
-  tethering is kept as a fallback that essentially always works.
-* the laptop -- join the resulting network, with NetworkManager on Linux and
-  netsh on Windows. Both answer the same four questions, so the page above
-  does not know which one it is talking to.
-
-Everything blocks; callers dispatch through :func:`tessera.core.proc.submit`.
-"""
+"""One-click phone hotspot."""
 
 from __future__ import annotations
 
@@ -48,11 +35,7 @@ class ApConfig:
 
 
 def read_ap_config(serial: str) -> ApConfig:
-    """Best-effort read of the phone's saved hotspot SSID and passphrase.
-
-    Samsung stores this where `cmd wifi` cannot always reach it, so a dumpsys
-    scrape is tried too. Returns empty fields rather than raising.
-    """
+    """Best-effort read of the phone's saved hotspot SSID and passphrase."""
     ok, out = adb.try_shell(serial, "cmd wifi get-softap-config", timeout=10.0)
     if ok and out:
         ssid = _first(r"SSID\s*[:=]\s*\"?([^\"\n,]+)", out)
@@ -96,12 +79,7 @@ def tethering_state(serial: str) -> bool | None:
 
 
 def start_phone_hotspot(serial: str, config: HotspotConfig) -> ApConfig:
-    """Turn the phone's Wi-Fi hotspot on and report the network to join.
-
-    Tries, in order: starting a softap with our own SSID/passphrase, then
-    starting the phone's saved hotspot. Raises with guidance if the ROM blocks
-    shell control entirely.
-    """
+    """Turn the phone's Wi-Fi hotspot on and report the network to join."""
     band = "-b 5" if config.band == "5" else "-b 2"
     attempts: list[tuple[str, str]] = []
 
@@ -156,11 +134,7 @@ def stop_phone_hotspot(serial: str) -> None:
 
 
 def set_usb_tethering(serial: str, enabled: bool) -> None:
-    """Toggle USB tethering, the fallback when Wi-Fi tethering is blocked.
-
-    Android switched the USB tethering function from rndis to ncm around
-    Android 11, and ROMs disagree, so both are attempted.
-    """
+    """Toggle USB tethering, the fallback when Wi-Fi tethering is blocked."""
     if not enabled:
         adb.try_shell(serial, "svc usb setFunctions", timeout=20.0)
         return
@@ -279,12 +253,7 @@ def disconnect_wifi(ssid: str) -> None:
 
 
 def phone_addresses(serial: str) -> list[str]:
-    """The phone's own addresses, read over adb.
-
-    The same list the companion app reports, for the path where there is no
-    companion app to ask. Tether interfaces sort first for the same reason they
-    do on the phone: that is the address this computer is about to need.
-    """
+    """The phone's own addresses, read over adb."""
     ok, out = adb.try_shell(serial, "ip -4 -o addr show", timeout=10.0)
     if not ok or not out:
         return []
@@ -308,24 +277,7 @@ def _looks_like_tether(name: str) -> bool:
 
 def reachable_address(addresses: "list[str]", port: int, timeout: float = 1.5,
                       attempts: int = 8, gap: float = 1.0) -> str:
-    """The first of *addresses* that answers on *port*.
-
-    Joining the phone's hotspot destroys the network the two were talking over,
-    and the phone's address on the new one cannot be worked out from this side:
-    the tether interface is named differently on every ROM, its subnet is the
-    phone's own choice, and mDNS is often not carried across a soft AP at all.
-    Assuming the default gateway is right most of the time and wrong in exactly
-    the cases that strand the connection.
-
-    So the phone sends its addresses while the two can still talk, and this
-    tries them. A plain TCP connect is enough: the listener is either there or
-    it is not, and the TLS handshake that follows is the companion client's
-    job. Addresses are probed together rather than in turn -- a wrong one costs
-    a full timeout, and there are usually three or four of them.
-
-    Retried, because DHCP on the new link takes a moment to settle and the
-    first sweep frequently runs before this computer has an address at all.
-    """
+    """The first of *addresses* that answers on *port*."""
     import socket
     from concurrent.futures import ThreadPoolExecutor
 

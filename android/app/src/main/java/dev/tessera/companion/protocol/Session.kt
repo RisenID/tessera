@@ -41,23 +41,15 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
-/**
- * One connected desktop.
- *
- * Runs on its own thread for the life of the socket. Writes are serialised
- * through [writeLock] because a JSON header and the binary frame that follows
- * it must stay adjacent on the wire, and events can arrive from the
- * notification listener at any moment.
- */
+/** One connected desktop. */
 class Session(
     private val context: Context,
     private val socket: Socket,
     private val store: Store,
 ) : Runnable {
 
-    // A 64 kB buffer rather than the default 8: every file chunk is 256 kB,
-    // and refilling eight kilobytes at a time was pure overhead on the one
-    // path where throughput matters.
+    // A 64 kB buffer rather than the default 8: every file chunk is 256 kB, and refilling eight
+    // kilobytes at a time was pure overhead on the one path where throughput matters.
     private val input = DataInputStream(socket.getInputStream().buffered(64 * 1024))
     private val output = BufferedOutputStream(socket.getOutputStream())
     private val writeLock = Any()
@@ -81,14 +73,7 @@ class Session(
     private var outgoing: FileTransfer.Outgoing? = null
     private val toSend = java.util.concurrent.ConcurrentLinkedQueue<android.net.Uri>()
 
-    /**
-     * How many chunks may be queued for the writer at once.
-     *
-     * The writer's queue is unbounded, so reading a file as fast as the disk
-     * allows would put the whole thing in memory while the network took it a
-     * packet at a time -- the exact failure this chunking exists to avoid. A
-     * permit is released as each chunk leaves.
-     */
+    /** How many chunks may be queued for the writer at once. */
     private val sendWindow = Semaphore(8)
 
     /** The header whose binary frame has not arrived yet. */
@@ -116,10 +101,9 @@ class Session(
 
     override fun run() {
         Log.i(TAG, "session from ${socket.inetAddress?.hostAddress}")
-        // Without this a file chunk -- a small header, then a large payload --
-        // waits for an acknowledgement between the two, which cost about
-        // 150 ms per chunk and held transfers to a megabyte a second on a link
-        // capable of far more.
+        // Without this a file chunk -- a small header, then a large payload -- waits for an
+        // acknowledgement between the two, which cost about 150 ms per chunk and held transfers to
+        // a megabyte a second on a link capable of far more.
         runCatching { socket.tcpNoDelay = true }
         try {
             loop()
@@ -140,10 +124,8 @@ class Session(
                     val message = JSONObject(String(frame.payload, Charsets.UTF_8))
                     when {
                         !authenticated -> handleHandshake(message)
-                        // A header that says "binary" describes the frame
-                        // immediately after it, and is not a command in
-                        // itself. Until files, every binary frame went the
-                        // other way, so this direction had never needed it.
+                        // A header that says "binary" describes the frame immediately after it, and
+                        // is not a command in itself.
                         message.optBoolean("binary") -> pendingBinary = message
                         else -> handleCommand(message)
                     }
@@ -445,9 +427,7 @@ class Session(
                 reply(id, JSONObject().put("muted", muted).put("streaming", audio != null))
             }
 
-            // One-time: stop Android asking before every stream. Runs through
-            // the same Shizuku shell the hotspot uses, so it needs nothing on
-            // the phone -- which is the point.
+            // One-time: stop Android asking before every stream.
             "audio_grant" -> {
                 val service = TesseraService.running_instance
                 if (service == null) {
@@ -487,9 +467,8 @@ class Session(
                             .put("requestedBand", message.optString("band", "2.4"))
                             .put("band", actual?.first ?: "")
                             .put("frequency", actual?.second ?: 0)
-                            // Where to find this phone once the desktop has
-                            // left the network the two are talking over. This
-                            // reply is the last chance to say.
+                            // Where to find this phone once the desktop has left the network the
+                            // two are talking over.
                             .put("addresses", NetworkAddresses.listAfterTethering())
                     )
                 }
@@ -511,17 +490,15 @@ class Session(
                     .put("binder", TetheringController.available())
                     .put("ssid", Hotspot.config()?.first ?: "")
                     .put("passphrase", Hotspot.config()?.second ?: "")
-                    // Read from the network interfaces rather than from
-                    // "enabled" above, which needs the shell uid and so is
-                    // always unknown on exactly the phones that have to use
-                    // the panel. See NetworkAddresses.isSoftAp.
+                    // Read from the network interfaces rather than from "enabled" above, which
+                    // needs the shell uid and so is always unknown on exactly the phones that
+                    // have to use the panel.
                     .put("tethering", NetworkAddresses.hasSoftAp())
                     .put("addresses", NetworkAddresses.list())
             )
 
-            // Asked for on its own when the hotspot was started some other
-            // way -- from the phone, or over adb -- and the desktop still needs
-            // somewhere to reconnect to.
+            // Asked for on its own when the hotspot was started some other way -- from the phone,
+            // or over adb -- and the desktop still needs somewhere to reconnect to.
             "net_addresses" ->
                 reply(id, JSONObject().put("addresses", NetworkAddresses.list()))
 
@@ -672,18 +649,7 @@ class Session(
 
     // -- the phone's audio ---------------------------------------------------
 
-    /**
-     * Starts sending what the phone is playing.
-     *
-     * Nothing here happens on a mere connection: the desktop asks for this
-     * because someone pressed a button, which is the rule this project keeps --
-     * connecting must never take audio off the phone's own headphones. Playback
-     * capture cannot do that in any case, which is why it is the route chosen.
-     *
-     * The user has to consent on the phone. If they have not, the service asks
-     * and the stream starts when they answer; the desktop is told to expect
-     * that rather than left waiting.
-     */
+    /** Starts sending what the phone is playing. */
     private fun startAudio(id: Int?, mute: Boolean) {
         if (!AudioStreamer.supported()) return fail(id, AudioStreamer.UNSUPPORTED)
         if (!AudioStreamer.canCapture(context)) return fail(id, AudioStreamer.NO_PERMISSION)
@@ -741,13 +707,7 @@ class Session(
 
     // -- files ---------------------------------------------------------------
 
-    /**
-     * The desktop is offering a file.
-     *
-     * Accepted before a byte arrives, or refused with a reason: a transfer
-     * that fails at the start costs nothing, and one that fails at the end
-     * costs the whole file.
-     */
+    /** The desktop is offering a file. */
     private fun receiveOffer(message: JSONObject) {
         val id = message.optString("id")
         if (id.isEmpty()) return
@@ -788,9 +748,7 @@ class Session(
         val transfer = incoming.remove(id) ?: return
         val uri = transfer.finish()
         if (uri.isEmpty()) {
-            // The writer failed at the last moment. Saying "saved" here would
-            // leave the desktop showing a success for a file that is not on
-            // the phone at all.
+            // The writer failed at the last moment.
             send(
                 JSONObject().put("t", "file_cancel").put("id", id)
                     .put("message", "the phone could not finish writing the file")
@@ -807,12 +765,7 @@ class Session(
         if (outgoing?.id == id) endOutgoing()
     }
 
-    /**
-     * Send files to this desktop. Called by the share sheet.
-     *
-     * Queued rather than started: one file at a time uses the whole link for
-     * that file, which is both faster per file and honest about progress.
-     */
+    /** Send files to this desktop. Called by the share sheet. */
     fun offerFiles(uris: List<android.net.Uri>) {
         if (!open.get() || !authenticated) return
         toSend.addAll(uris)
@@ -861,10 +814,9 @@ class Session(
                     null
                 } ?: break
 
-                // Wait for room rather than queueing the whole file: the
-                // writer's queue is unbounded, and reading from storage is far
-                // faster than a Wi-Fi link, so without this the file would sit
-                // in memory in its entirety.
+                // Wait for room rather than queueing the whole file: the writer's queue is
+                // unbounded, and reading from storage is far faster than a Wi-Fi link, so without
+                // this the file would sit in memory in its entirety.
                 if (!sendWindow.tryAcquire(10, java.util.concurrent.TimeUnit.SECONDS)) {
                     if (!open.get()) break
                     continue
@@ -923,13 +875,7 @@ class Session(
         if (notify) send(JSONObject().put("t", "audio_stopped"))
     }
 
-    /**
-     * The user revoked the projection from the status bar.
-     *
-     * Called by the service, on any session: only the one that is streaming
-     * has anything to do, and the desktop needs telling because it did not ask
-     * for this.
-     */
+    /** The user revoked the projection from the status bar. */
     fun stopAudioFromSystem() {
         if (audio == null) return
         stopAudio(notify = true)
@@ -937,14 +883,7 @@ class Session(
 
     // -- writing -------------------------------------------------------------
 
-    /**
-     * Queues a message for the writer thread.
-     *
-     * Never writes on the caller's thread. Notification and DND events are
-     * published from the main thread by the platform's listener callbacks, and
-     * writing a socket there throws NetworkOnMainThreadException, which used to
-     * tear down the whole session the moment a notification arrived.
-     */
+    /** Queues a message for the writer thread. */
     private fun send(message: JSONObject) {
         if (!open.get()) return
         submitWrite {

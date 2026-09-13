@@ -2,13 +2,7 @@ package dev.tessera.companion
 
 import android.os.SystemClock
 
-/**
- * The six-digit code shown on the phone during pairing.
- *
- * Single-use and short-lived: a code is only valid while the pairing screen is
- * open, and consuming it invalidates it, so a code seen over someone's shoulder
- * is not enough to pair later.
- */
+/** The six-digit code shown on the phone during pairing. */
 object Pairing {
 
     private const val VALID_MILLIS = 60_000L

@@ -1,9 +1,7 @@
 %global appid dev.tessera.Tessera
 
 # Resolve the site-packages path without requiring python3-devel just to build
-# a pure-Python package. When the usual Python RPM macros are present they win.
-# base must be pinned to /usr: Fedora patches sysconfig so that an unprefixed
-# install resolves to /usr/local, which is the wrong place for packaged files.
+# a pure-Python package.
 %{!?python3_sitelib: %global python3_sitelib %(%{__python3} -c "import sysconfig; print(sysconfig.get_path('purelib', vars={'base': '/usr', 'platbase': '/usr'}))")}
 %{!?__python3: %global __python3 /usr/bin/python3}
 
@@ -31,16 +29,11 @@ Requires:       NetworkManager
 Requires:       avahi-tools
 # pkexec, used once to load the virtual-camera kernel module.
 Requires:       polkit
-# gdbus, which raises the desktop notifications. Not a stylistic choice: the
-# specification's replaces_id is an unsigned 32-bit integer and PySide6 sends
-# every Python int as a signed one, so QtDBus cannot make the call at all.
-# glib2 is present on any system with a notification server; naming it means a
-# stripped one fails at install rather than falling back to a tray balloon.
+# gdbus, which raises the desktop notifications.
 Requires:       glib2
 
 # Weak dependencies: each unlocks one feature, and several live in RPM Fusion
-# or a COPR, so a missing one must not block installation. The app detects each
-# at runtime and explains what to install.
+# or a COPR, so a missing one must not block installation.
 Recommends:     ffmpeg
 Recommends:     v4l2loopback
 Recommends:     scrcpy
@@ -54,8 +47,7 @@ Recommends:     bluez
 Recommends:     pulseaudio-utils
 
 # pw-dump and pw-link, for finding the node the phone's audio arrives on and
-# connecting it to the speakers. Received Bluetooth audio is not a source, so
-# pactl alone cannot see it.
+# connecting it to the speakers.
 Recommends:     pipewire-utils
 
 # Building the LDAC decoder with tessera-ldac-decoder. Only suggested: it is an
@@ -81,9 +73,7 @@ injecting input requires a permission Android does not grant ordinary apps.
 %autosetup -n %{name}-%{version}
 
 %build
-# Nothing to compile here: the application is pure Python. Byte-compilation
-# happens during %%install so the package does not depend on the byte-compile
-# build-root policy being available.
+# Nothing to compile here: the application is pure Python.
 
 %install
 install -d %{buildroot}%{python3_sitelib}/tessera
@@ -115,11 +105,7 @@ install -Dm0644 packaging/%{appid}.metainfo.xml \
 install -Dm0644 packaging/icons/%{appid}.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
 
-# Virtual-camera module options. Placed here rather than written at runtime so
-# that uninstalling the package removes it again.
-# WirePlumber needs the receive-side Bluetooth roles enabled before a phone
-# can stream to this computer; without them the only profile offered is the
-# one that sends audio the other way.
+# Virtual-camera module options.
 install -Dm0644 packaging/51-tessera-bluez.conf \
     %{buildroot}%{_datadir}/wireplumber/wireplumber.conf.d/51-tessera-bluez.conf
 
@@ -128,8 +114,7 @@ install -Dm0644 packaging/tessera-v4l2loopback.conf \
 
 # The LDAC decoder is shipped as source because it has to be compiled against
 # whichever PipeWire release the machine is running -- libspa-bluez5.so refuses
-# a codec plugin built against a different ABI version. tessera-ldac-decoder
-# does that, installs the result under the user's home, and can undo it.
+# a codec plugin built against a different ABI version.
 install -d %{buildroot}%{_datadir}/tessera/ldac-decoder
 install -m0644 native/ldac-decoder/ldacBT_dec.c native/ldac-decoder/README.md \
     %{buildroot}%{_datadir}/tessera/ldac-decoder/

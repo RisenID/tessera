@@ -1,24 +1,4 @@
-"""Bluetooth link to the phone, for call audio and music.
-
-Both features are ordinary Bluetooth profiles rather than anything Tessera
-invents; what the app adds is making them one click and explaining the failures,
-which BlueZ reports as opaque strings.
-
-The phone offers two roles that matter here:
-
-* **Audio Source** (A2DP) -- the phone streams music to the computer, which
-  acts as the sink.
-* **Handsfree Audio Gateway** (HFP) -- the computer acts as the headset, so a
-  call's audio arrives on the computer's speakers and microphone.
-
-PipeWire enables both of those roles by default, which is visible in the
-adapter advertising "Audio Sink" and "Handsfree" UUIDs.
-
-bluetoothctl is driven rather than BlueZ's D-Bus API directly: the object
-manager returns deeply nested containers that PySide6's D-Bus bindings
-unmarshal poorly, and bluetoothctl's text output is stable and carries the
-error strings verbatim.
-"""
+"""Bluetooth link to the phone, for call audio and music."""
 
 from __future__ import annotations
 
@@ -123,14 +103,8 @@ def device_info(address: str, fallback_name: str = "") -> BtDevice:
 
 
 def find_phone(preferred_address: str = "", name_hint: str = "") -> BtDevice | None:
-    """Pick the paired device most likely to be the phone.
-
-    Prefers a configured address, then a name match, then any paired device
-    that offers both call and music roles -- which headphones do not.
-    """
-    # Ask about the known address directly. Enumerating every paired device
-    # runs a bluetoothctl info per device -- four processes where one will do,
-    # on a check that repeats for as long as the app is open.
+    """Pick the paired device most likely to be the phone."""
+    # Ask about the known address directly.
     if preferred_address:
         device = device_info(preferred_address)
         if device.paired:
@@ -170,9 +144,7 @@ def disconnect(address: str, timeout: float = 20.0) -> None:
         raise BluetoothError(result.text or "Could not disconnect.")
 
 
-#: The phone's A2DP source role. Connecting this is what makes Android move
-#: its media output to this computer; disconnecting it hands playback back to
-#: whatever the phone was using before.
+#: The phone's A2DP source role.
 UUID_A2DP_SOURCE_FULL = "0000110a-0000-1000-8000-00805f9b34fb"
 
 
@@ -194,18 +166,7 @@ def _device_path_in(objects: dict, address: str) -> str:
 
 
 def device_path(address: str) -> str:
-    """The device's D-Bus object path, on whichever adapter holds it.
-
-    Not /org/bluez/hci0/dev_XX. The adapter is hci0 on most machines and is
-    not on plenty of others: plug in a USB Bluetooth dongle, or have had one
-    plugged in once, and the built-in radio can be hci1. Assuming hci0 there
-    does not fail loudly -- ConnectProfile is sent to an object that does not
-    exist, and the transport and codec lookups simply find nothing, so music
-    never arrives and nothing says why.
-
-    Falls back to the first adapter the kernel lists, then to hci0, so the
-    answer is never worse than the assumption it replaces.
-    """
+    """The device's D-Bus object path, on whichever adapter holds it."""
     found = _device_path_in(_managed_objects(), address)
     if found:
         return found
@@ -228,13 +189,7 @@ def _profile(address: str, method: str, uuid: str) -> bool:
 
 
 def release_audio(address: str) -> bool:
-    """Hand playback back to the phone's previous output.
-
-    Connecting a phone connects every profile it offers, and Android promotes a
-    newly connected A2DP device to be the active output -- which is what pulls
-    music off a pair of headphones. Dropping just that profile leaves the
-    device connected while returning the audio.
-    """
+    """Hand playback back to the phone's previous output."""
     return _profile(address, "DisconnectProfile", UUID_A2DP_SOURCE_FULL)
 
 
@@ -243,17 +198,7 @@ UUID_HFP_AG_FULL = "0000111f-0000-1000-8000-00805f9b34fb"
 
 
 def connect_quietly(address: str, timeout: float = 25.0) -> None:
-    """Connect without taking over the phone's media output.
-
-    A plain connect brings up every profile the phone offers, and Android
-    promotes a newly connected A2DP device to be the active output -- music
-    jumps off whatever headphones are in use. Connecting only the hands-free
-    profile leaves A2DP alone entirely, so playback never moves; the audio
-    profile is claimed later, and only if asked for.
-
-    Falls back to a full connect followed by releasing the audio, for devices
-    that refuse a single-profile connect.
-    """
+    """Connect without taking over the phone's media output."""
     if not available():
         raise BluetoothError("bluetoothctl is not installed.")
 
@@ -266,14 +211,7 @@ def connect_quietly(address: str, timeout: float = 25.0) -> None:
 
 
 def claim_audio(address: str) -> bool:
-    """Ask the phone to send its audio here, for an explicit stream.
-
-    Android moves playback to a media device when that device *connects*, not
-    while it sits there connected: asking again for a profile that is already
-    up changes nothing, and the phone keeps playing to its own speaker. So a
-    profile that is already connected is dropped first, which turns the request
-    into the connection Android acts on.
-    """
+    """Ask the phone to send its audio here, for an explicit stream."""
     import time
 
     if audio_transport(address):
@@ -288,11 +226,7 @@ def forget(address: str) -> None:
 
 
 def explain(message: str, address: str) -> str:
-    """Turn a BlueZ failure into an instruction.
-
-    These strings are the only diagnosis a user gets, and on their own they are
-    close to meaningless.
-    """
+    """Turn a BlueZ failure into an instruction."""
     lowered = message.lower()
 
     if "key-missing" in lowered or "authentication failed" in lowered:
@@ -320,20 +254,12 @@ def explain(message: str, address: str) -> str:
     return message.strip() or "The Bluetooth connection failed."
 
 
-#: Transport states BlueZ reports for an audio link. "idle" means the profile
-#: is connected and configured but no audio is being carried -- the normal
-#: state while the phone is selected as the output but nothing is playing.
+#: Transport states BlueZ reports for an audio link.
 TRANSPORT_STREAMING = ("pending", "active", "broadcasting")
 
 
 def _managed_objects() -> dict:
-    """Everything BlueZ is currently publishing, as one dict.
-
-    The whole object tree in a single call. Both things worth knowing about a
-    phone -- what its media transport is doing, and which codecs it can send --
-    live in here, and reading it twice to answer them separately was a second
-    process and a second parse for data already in hand.
-    """
+    """Everything BlueZ is currently publishing, as one dict."""
     result = run(
         ["busctl", "--system", "--json=short", "call", "org.bluez", "/",
          "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"],
@@ -367,19 +293,11 @@ def _transport_of(objects: dict, address: str) -> str:
 
 
 def audio_transport(address: str) -> str:
-    """State of the phone's media transport: '', 'idle', 'pending', 'active'.
-
-    An empty string means the phone has not selected this computer as an audio
-    output at all, which is a different problem from a phone that has selected
-    it and simply is not playing anything. Telling those two apart is the
-    difference between a useful message and a misleading one.
-    """
+    """State of the phone's media transport: '', 'idle', 'pending', 'active'."""
     return _transport_of(_managed_objects(), address)
 
 
 #: A2DP codec identifiers, as they appear in an endpoint's Codec property.
-#: 0xFF means the codec is vendor-defined and the first six capability bytes
-#: say which one: a little-endian 32-bit vendor id then a 16-bit codec id.
 CODEC_SBC = 0
 CODEC_MPEG = 1
 CODEC_AAC = 2
@@ -435,37 +353,17 @@ def _codecs_of(objects: dict, address: str) -> list[str]:
 
 
 def remote_codecs(address: str) -> list[str]:
-    """The codecs the phone can send, straight from the phone.
-
-    BlueZ publishes the remote device's stream endpoints as MediaEndpoint1
-    objects under the device path -- .../dev_XX_.../sep1, sep2 and so on --
-    once a connection has discovered them. Each names a codec the phone is
-    willing to source, which is the only reliable way to know what it can
-    actually do: a Galaxy S25 turns out to offer SBC, AAC, aptX, LDAC and
-    Samsung's own codec, and no aptX HD at all, which is why asking it for
-    aptX HD got plain SBC.
-
-    Empty while the phone has never connected. Callers must treat that as "not
-    known yet" rather than "supports nothing".
-    """
+    """The codecs the phone can send, straight from the phone."""
     return _codecs_of(_managed_objects(), address)
 
 
 def media_state(address: str) -> tuple[str, list[str]]:
-    """The transport state and the phone's codecs, from one query.
-
-    For the periodic check, which wants both and should not pay twice.
-    """
+    """The transport state and the phone's codecs, from one query."""
     objects = _managed_objects()
     return _transport_of(objects, address), _codecs_of(objects, address)
 
 
 def audio_connected(device: "BtDevice | str") -> bool:
-    """Whether the phone's media profile is up, whoever brought it up.
-
-    A transport object exists only once A2DP is connected, which is also the
-    moment Android moves its playback here -- so this is the test for "the
-    audio has been taken over", not the mere fact of being connected.
-    """
+    """Whether the phone's media profile is up, whoever brought it up."""
     address = device if isinstance(device, str) else device.address
     return bool(audio_transport(address))

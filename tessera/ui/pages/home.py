@@ -96,9 +96,7 @@ class HomePage(QWidget):
         self._timer.timeout.connect(self.refresh_light)
         self.refresh_all()
 
-    # Polling stops while the page is off screen. See the same pair in
-    # pages/audio.py for why: a hidden page has nothing to keep up to date,
-    # and a minimised window hides every page at once.
+    # Polling stops while the page is off screen.
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

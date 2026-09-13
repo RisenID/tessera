@@ -1,10 +1,4 @@
-"""Client for the Tessera companion app.
-
-Speaks the protocol in docs/PROTOCOL.md over one pinned-TLS connection. Unlike
-the adb backend nothing here polls: the phone pushes notification, DND and
-battery changes as they happen, which is the whole point of having a companion
-app rather than driving the phone from the outside.
-"""
+"""Client for the Tessera companion app."""
 
 from __future__ import annotations
 
@@ -110,12 +104,7 @@ class Discovered:
 
 
 def discover(timeout: float = 4.0) -> list[Discovered]:
-    """Find companion apps on the local network via mDNS.
-
-    Uses avahi-browse rather than a bundled zeroconf stack: it is already
-    running on a Fedora desktop and needs no extra dependency. Returns an empty
-    list when avahi is absent, in which case the UI asks for an IP address.
-    """
+    """Find companion apps on the local network via mDNS."""
     if not have("avahi-browse"):
         return []
     result = run(
@@ -180,18 +169,7 @@ def local_networks() -> list[tuple[str, Any]]:
 
 
 def on_a_local_network(host: str, networks: "list | None" = None) -> bool:
-    """Whether *host* is an address this computer could reach directly.
-
-    The point is to stop retrying an address that cannot possibly answer. After
-    a spell on the phone's hotspot the remembered address is something like
-    192.168.43.1, and back on the home network every attempt at it costs a full
-    connect timeout before anything else is tried -- which is what made the app
-    look like it was stuck on the hotspot.
-
-    Such an address is demoted rather than discarded: a routed network, or a
-    VPN, can make an address off this machine's own subnets perfectly
-    reachable, and there is no way to tell from here.
-    """
+    """Whether *host* is an address this computer could reach directly."""
     import ipaddress
 
     try:
@@ -203,22 +181,7 @@ def on_a_local_network(host: str, networks: "list | None" = None) -> bool:
 
 
 def sweep_for_companions(port: int, timeout: float = 0.4, workers: int = 64) -> list[str]:
-    """Every address on this computer's own subnets listening on *port*.
-
-    The address-independent way to find a phone whose address has changed: DHCP
-    hands out a different one, the remembered address is stale, and mDNS is not
-    always there to say so -- Android drops its advertisement across network
-    changes, and some access points filter multicast entirely.
-
-    A listener is not proof of anything, and this does not treat it as such.
-    What comes back is a list of addresses worth trying; the phone is whichever
-    one presents the certificate pinned at pairing, and the pairing token is
-    never sent to anything that fails that check because the TLS handshake ends
-    first.
-
-    Only subnets of 256 addresses or fewer are swept. A /16 would be 65,000
-    probes for a phone that is not going to be on a container bridge anyway.
-    """
+    """Every address on this computer's own subnets listening on *port*."""
     import socket
     from concurrent.futures import ThreadPoolExecutor
 
@@ -248,12 +211,7 @@ def sweep_for_companions(port: int, timeout: float = 0.4, workers: int = 64) -> 
 
 
 def default_gateways() -> list[str]:
-    """IPv4 gateways of the active routes.
-
-    When the desktop joins the phone's hotspot, the phone *is* the gateway, so
-    this is how it is found after a network change: its old address on the home
-    network no longer exists, and the new one is not known in advance.
-    """
+    """IPv4 gateways of the active routes."""
     result = run(["ip", "-4", "route", "show", "default"], timeout=5.0)
     if not result.ok:
         return []
@@ -328,10 +286,7 @@ class CompanionClient(QObject):
     #: (offers, acceptances, completions, cancellations) and the chunks.
     fileEvent = Signal(dict)
     fileChunk = Signal(dict, bytes)
-    #: The socket has written some of what it was holding. Whoever is sending a
-    #: file waits on this rather than handing Qt a whole file at once: a
-    #: QTcpSocket buffers everything it is given, so a gigabyte would become a
-    #: gigabyte of memory before a byte of it reached the phone.
+    #: The socket has written some of what it was holding.
     flushed = Signal()
     phoneAudioStopped = Signal()
     #: Android asks the user on the phone before capturing playback, and only
@@ -341,17 +296,12 @@ class CompanionClient(QObject):
     #: Backoff schedule for reconnection, in seconds.
     RETRY_DELAYS = (2, 5, 10, 20, 30, 60)
 
-    #: How often to prove the link is alive, and how long to wait for the reply.
-    #: A TCP connection that dies with the network -- exactly what happens when
-    #: the desktop switches to the phone's hotspot -- stays open and silent
-    #: rather than erroring, so silence has to be detected explicitly.
+    #: How often to prove the link is alive, and how long to
+    #: wait for the reply.
     HEARTBEAT_MS = 15_000
     HEARTBEAT_GRACE = 2
 
-    #: How long to wait for one address before moving to the next. A TCP
-    #: connect to an address that no longer exists takes minutes to fail on its
-    #: own, which would strand the app on a stale address after a network
-    #: change instead of trying the others.
+    #: How long to wait for one address before moving to the next.
     CONNECT_TIMEOUT_MS = 6_000
 
     def __init__(
@@ -362,11 +312,8 @@ class CompanionClient(QObject):
     ) -> None:
         super().__init__(parent)
         self.phone = phone or PairedPhone()
-        #: "" for the main link; "files" for the second connection that
-        #: carries nothing but file transfers. A large file on the main link
-        #: queued megabytes ahead of audio frames and notifications; on its own
-        #: socket TCP shares the network between them instead. Sefirah does the
-        #: same, for the same reason.
+        #: "" for the main link; "files" for the second connection that carries
+        #: nothing but file transfers.
         self.role = role
         self._socket: QSslSocket | None = None
         self._decoder = Decoder()
@@ -386,9 +333,8 @@ class CompanionClient(QObject):
         #: Addresses still to try for this reconnection round.
         self._candidates: list[tuple[str, int]] = []
         self._pending_host: tuple[str, int] | None = None
-        #: Candidates that are a guess rather than the address we were paired
-        #: on. A certificate that does not match at one of these means "not the
-        #: phone", not "the phone has been replaced".
+        #: Candidates that are a guess rather than the address
+        #: we were paired on.
         self._speculative: set[tuple[str, int]] = set()
         #: How many times we have gone looking this session. The subnet sweep
         #: joins in from the second round.
@@ -459,19 +405,7 @@ class CompanionClient(QObject):
         self._connect_to(host, port)
 
     def _resolve_candidates(self) -> None:
-        """Work out where the phone might be, off the GUI thread.
-
-        Four sources: the address that worked last time, whatever mDNS can see,
-        the default gateway -- which is the phone itself whenever this computer
-        is on its hotspot -- and, when none of those is any use, a sweep of this
-        computer's own subnets.
-
-        Ordering is the part that matters. Addresses on a subnet this computer
-        is not on go last, however promising they look: after a spell on the
-        phone's hotspot the remembered address is 192.168.43.1, and trying it
-        first costs a full connect timeout on every cycle, which is what made
-        the app look like it was still chasing the hotspot.
-        """
+        """Work out where the phone might be, off the GUI thread."""
         self._resolving = True
         self._resolutions += 1
         saved_host, saved_port = self.phone.host, self.phone.port or DEFAULT_PORT
@@ -537,22 +471,20 @@ class CompanionClient(QObject):
         self._pending_host = (host, port)
 
         socket = QSslSocket(self)
-        # The phone's certificate is self-signed by design, so the usual chain
-        # checks cannot apply; the fingerprint pinned at pairing is the trust
-        # anchor instead.
+        # The phone's certificate is self-signed by design, so the usual
+        # chain checks cannot apply; the fingerprint pinned at pairing is the
+        # trust anchor instead.
         socket.setPeerVerifyMode(QSslSocket.PeerVerifyMode.QueryPeer)
         socket.sslErrors.connect(self._on_ssl_errors)
         socket.encrypted.connect(self._on_encrypted)
         # Nagle's algorithm holds a small write back until the previous one is
         # acknowledged, and every chunk of a file is exactly that pattern: a
-        # short JSON header followed by a large payload. The stall it caused
-        # was about 150 ms per chunk -- a file moved at a megabyte a second
-        # over a link that manages far more.
+        # short JSON header followed by a large payload.
         socket.setSocketOption(QAbstractSocket.SocketOption.LowDelayOption, 1)
         socket.readyRead.connect(self._on_ready_read)
         # encryptedBytesWritten, not bytesWritten: on a TLS socket the plain
-        # side reports everything as written the moment it is encrypted, so
-        # the ordinary signal says nothing about what has reached the network.
+        # side reports everything as written the moment it is encrypted, so the
+        # ordinary signal says nothing about what has reached the network.
         socket.encryptedBytesWritten.connect(lambda _n: self.flushed.emit())
         socket.disconnected.connect(self._on_disconnected)
         socket.errorOccurred.connect(self._on_socket_error)
@@ -621,10 +553,7 @@ class CompanionClient(QObject):
             socket.ignoreSslErrors()
             return
 
-        # Something else answering on the port is not news. Sweeping a subnet
-        # reaches whatever is listening on it, and refusing the handshake is
-        # the whole point of the check: the pairing token is never sent,
-        # because this runs before the connection is considered encrypted.
+        # Something else answering on the port is not news.
         if self._pending_host in self._speculative:
             log.info("%s is not the phone (certificate does not match)", self._pending_host[0])
             self._teardown(silent=True)
@@ -784,12 +713,7 @@ class CompanionClient(QObject):
             self._send({"t": "sub", "topics": self._subscription_topics()})
 
     def _subscription_topics(self) -> list[str]:
-        """Ask only for the events the user wants.
-
-        The phone starts work on subscription -- the clipboard poll, for one --
-        so an unwanted feature has to mean not subscribing, rather than
-        discarding events after they arrive.
-        """
+        """Ask only for the events the user wants."""
         if self.wanted_topics is None:
             return ["notifications", "dnd", "battery"]
         return list(self.wanted_topics)
@@ -825,11 +749,7 @@ class CompanionClient(QObject):
         self.batteryChanged.emit(int(message.get("level", 0)), bool(message.get("charging")))
 
     def _recv_status(self, message: dict[str, Any]) -> None:
-        """Battery, signal and ringer state in one frame.
-
-        Also feeds batteryChanged, so a phone reporting status needs no
-        separate battery frame.
-        """
+        """Battery, signal and ringer state in one frame."""
         self.phoneStatusChanged.emit(message)
         battery = message.get("battery")
         if isinstance(battery, dict) and int(battery.get("level", -1)) >= 0:
@@ -844,12 +764,7 @@ class CompanionClient(QObject):
         self.cameraStopped.emit()
 
     def _recv_caps(self, message: dict[str, Any]) -> None:
-        """The phone's list changed mid-session.
-
-        Sent when something is granted on the phone -- the projection
-        permission, so far -- rather than making the interface wait for the
-        next connection to notice.
-        """
+        """The phone's list changed mid-session."""
         self._capabilities = list(message.get("caps", []))
         self.capabilitiesChanged.emit(self._capabilities)
 
@@ -862,9 +777,7 @@ class CompanionClient(QObject):
     def _recv_audio_consent(self, message: dict[str, Any]) -> None:
         self.phoneAudioConsent.emit(message.get("message", ""))
 
-    # File transfer. One handler for the lot: the engine in
-    # backends/filetransfer.py owns the state machine, and splitting it across
-    # five near-identical methods here would only hide that.
+    # File transfer.
     def _recv_file_offer(self, message: dict[str, Any]) -> None:
         self.fileEvent.emit(message)
 
@@ -890,30 +803,17 @@ class CompanionClient(QObject):
         socket.write(QByteArray(encode_json(message)))
 
     def send_binary(self, header: dict[str, Any], payload: bytes) -> None:
-        """Send a JSON header and the bytes it describes, adjacently.
-
-        The two frames must not be separated: the receiver attaches a binary
-        frame to whatever header came immediately before it.
-        """
+        """Send a JSON header and the bytes it describes, adjacently."""
         socket = self._socket
         if socket is None or socket.state() != QAbstractSocket.SocketState.ConnectedState:
             raise ProtocolError("not connected to the phone")
         message = {**header, "binary": True, "length": len(payload)}
-        # One write, not two. The header and its payload have to stay adjacent
-        # anyway, and handing them over together means one TCP segment stream
-        # rather than a small packet waiting on an acknowledgement.
+        # One write, so the header and payload stay adjacent.
         socket.write(QByteArray(encode_json(message) + encode_binary(payload)))
 
     @property
     def pending_bytes(self) -> int:
-        """Bytes handed to the socket that have not reached the network yet.
-
-        `bytesToWrite` is the wrong question on a TLS socket: it counts
-        plaintext waiting to be encrypted, which is zero almost always, and
-        measuring a send with it showed an eight megabyte file "written" in ten
-        milliseconds with nothing pending. The encrypted queue is the real one,
-        and pacing against it is what keeps a large file out of memory.
-        """
+        """Bytes handed to the socket that have not reached the network yet."""
         socket = self._socket
         if socket is None:
             return 0
@@ -932,12 +832,7 @@ class CompanionClient(QObject):
         message: dict[str, Any],
         on_reply: Callable[[dict[str, Any]], None],
     ) -> None:
-        """Send *message* and deliver its reply to *on_reply*.
-
-        The correlation id travels as "req", deliberately not "id": several
-        commands carry their own "id" (a media item, a notification key), and
-        stamping the correlation id over the top silently corrupted them.
-        """
+        """Send *message* and deliver its reply to *on_reply*."""
         request_id = self._next_id
         self._next_id += 1
         self._pending[request_id] = on_reply
@@ -950,11 +845,7 @@ class CompanionClient(QObject):
     # -- liveness ------------------------------------------------------------
 
     def _send_heartbeat(self) -> None:
-        """Prove the link still works, and reconnect when it does not.
-
-        Switching networks leaves the old socket open but dead; without this the
-        app would sit "connected" forever, sending into a void.
-        """
+        """Prove the link still works, and reconnect when it does not."""
         if not self._authenticated:
             self._heartbeat.stop()
             return

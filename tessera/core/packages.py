@@ -1,25 +1,4 @@
-"""Telling the user how to install something, on whichever distribution.
-
-Every feature Tessera cannot do by itself leans on a program someone has to
-install: adb, scrcpy, ffmpeg, the PipeWire tools, a compiler. Saying so is
-easy; saying it *usefully* means naming the package and the command, and both
-differ by distribution -- "sudo dnf install android-tools" is wrong advice on
-Debian, Arch and openSUSE alike, and advice that does not work is barely
-better than none.
-
-So the program to install is named here by what it is for, and the package
-that supplies it is looked up per package manager.
-
-Two deliberate limits:
-
-* The Fedora names are the only ones verified against a real system, because
-  that is the system this was built on. The rest are the packages those
-  distributions are known to ship, and are the best available guess rather
-  than a promise.
-* A capability with no entry for the detected manager falls back to naming the
-  program itself. "Install ffmpeg" with no package name is honest; a made-up
-  package name is not.
-"""
+"""Telling the user how to install something, on whichever distribution."""
 
 from __future__ import annotations
 
@@ -137,9 +116,8 @@ PACKAGES: dict[str, dict[str, str]] = {
         "zypper": "ffmpeg", "apk": "ffmpeg", "xbps": "ffmpeg",
         "winget": "Gyan.FFmpeg", "choco": "ffmpeg", "scoop": "ffmpeg",
     },
-    # Out-of-tree kernel module, so the package is the DKMS build almost
-    # everywhere. It has to rebuild for each kernel, which is why the name
-    # differs from the plain module name.
+    # Out-of-tree kernel module, so the package is the DKMS build
+    # almost everywhere.
     "v4l2loopback": {
         "dnf": "v4l2loopback", "apt": "v4l2loopback-dkms",
         "pacman": "v4l2loopback-dkms", "zypper": "v4l2loopback-kmp-default",
@@ -163,10 +141,7 @@ PACKAGES: dict[str, dict[str, str]] = {
         "dnf": "gcc", "apt": "build-essential", "pacman": "base-devel",
         "zypper": "gcc", "apk": "build-base", "xbps": "gcc",
     },
-    # The only Python dependency. Deliberately the distribution's package
-    # rather than pip's: Fedora and Debian both mark the system interpreter as
-    # externally managed, so pip refuses to install into it, and a second copy
-    # of Qt in site-packages is not something to inflict on anyone.
+    # The only Python dependency.
     "pyside6": {
         "dnf": "python3-pyside6", "apt": "python3-pyside6.qtwidgets",
         "pacman": "pyside6", "zypper": "python3-pyside6",
@@ -192,20 +167,9 @@ PACKAGES: dict[str, dict[str, str]] = {
 
 
 #: Capabilities whose key is also what you would type at a package manager.
-#:
-#: For these the key is good advice on its own, which matters for a
-#: distribution with no table entry above: "emerge ffmpeg" resolves, and so
-#: does every other unambiguous program name. The distinction is only needed
-#: because the rest -- header sets, tool bundles, kernel modules -- have keys
-#: that are descriptions, not package names.
 PROGRAMS = frozenset({"adb", "scrcpy", "ffmpeg", "gcc", "curl", "pactl", "bluez"})
 
 #: How to describe a capability when no package name is known for it.
-#:
-#: The key itself is a fine fallback for a program -- "install ffmpeg" reads
-#: correctly -- and a poor one for anything else: printing "apk add
-#: ldac-headers" invents a package that does not exist, which is exactly the
-#: kind of advice this module exists to avoid.
 LABELS: dict[str, str] = {
     "pipewire-tools": "the PipeWire command-line tools (pw-dump, pw-link)",
     "pactl": "pactl",
@@ -234,16 +198,11 @@ def _os_release() -> dict[str, str]:
 
 
 def detect() -> Manager | None:
-    """The package manager this system uses, or None if it cannot be told.
-
-    os-release comes first because it is declarative and right even on a
-    system with several managers installed; the presence of a binary is the
-    fallback for a distribution not listed above.
-    """
+    """The package manager this system uses, or None if it cannot be told."""
     if platform.IS_WINDOWS:
-        # In preference order: winget is on the machine already, the others
-        # are only there if the user put them there -- but if they did, that
-        # is where their tools live.
+        # In preference order: winget is on the machine already, the others are
+        # only there if the user put them there -- but if they did, that is
+        # where their tools live.
         for key in ("scoop", "choco", "winget"):
             if platform.have_tool(MANAGERS[key].program):
                 return MANAGERS[key]
@@ -308,12 +267,7 @@ def install_command(*capabilities: str) -> str:
 
 
 def install_argv(*capabilities: str) -> list[str]:
-    """The install as an argv for running through polkit. Empty when unknown.
-
-    Covers only what can be named. Anything left over is caught by the caller
-    checking its dependencies again afterwards, which is a better outcome than
-    refusing to install the part that is known.
-    """
+    """The install as an argv for running through polkit. Empty when unknown."""
     manager = detect()
     named, _ = _split(capabilities, manager)
     if manager is None or not named:

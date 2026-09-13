@@ -1,14 +1,4 @@
-"""Keep a check run out of the real configuration.
-
-A check builds a `Config`, and anything it exercises that saves -- a volume
-slider, a settings switch, the mute box -- writes that object to disk. With a
-default `Config()` that is a blank configuration on top of the user's: pairing
-token, phone address and every preference gone, and the app asking to be paired
-again the next time it starts. It happened once; this makes it impossible.
-
-Import and call `isolate()` before importing anything from `tessera`, because
-the paths are read at import time.
-"""
+"""Keep a check run out of the real configuration."""
 
 from __future__ import annotations
 

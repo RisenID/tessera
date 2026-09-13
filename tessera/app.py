@@ -35,11 +35,7 @@ def configure_logging(verbose: bool = False) -> None:
 
 
 def _register_with_windows() -> None:
-    """Give the taskbar an application identity of our own.
-
-    Without it Windows groups the window under the Python interpreter, which
-    also means the pinned icon and the notifications are attributed to it.
-    """
+    """Give the taskbar an application identity of our own."""
     try:
         import ctypes
 
@@ -60,9 +56,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationDisplayName("Tessera")
     app.setDesktopFileName("dev.tessera.Tessera")
     if platform.IS_WINDOWS:
-        # Qt's own Windows style; Breeze is not there, and Fusion looks like
-        # neither platform. Also tell the shell this is its own application so
-        # the taskbar groups it and the tray icon gets a name.
+        # Qt's own Windows style; Breeze is not there, and Fusion looks
+        # like neither platform.
         for style in ("windows11", "windowsvista", "windows"):
             if style in {s.lower() for s in QStyleFactory.keys()}:
                 app.setStyle(style)

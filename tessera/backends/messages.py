@@ -1,15 +1,4 @@
-"""SMS/MMS conversations.
-
-Reading goes through the Telephony content provider over adb: the adb shell
-user holds READ_SMS, so the whole history is available without asking the phone
-to push it, and it is the same dependency the DND and hotspot features already
-need.
-
-Sending is different -- the shell user cannot send an SMS. That goes through
-KDE Connect's SMS plugin, whose Android app does hold SEND_SMS. If that plugin
-is unavailable, the message is handed to the phone's own messaging app
-pre-filled, which always works but needs a tap on the phone.
-"""
+"""SMS/MMS conversations."""
 
 from __future__ import annotations
 
@@ -33,12 +22,7 @@ TYPE_SENT = "2"
 
 
 def normalise_number(raw: str) -> str:
-    """Reduce a phone number to a comparable key.
-
-    Numbers arrive formatted inconsistently (+1 555-123-4567 vs 5551234567), so
-    matching uses the trailing digits, which survive country-code and
-    punctuation differences.
-    """
+    """Reduce a phone number to a comparable key."""
     digits = re.sub(r"\D", "", raw or "")
     return digits[-9:] if len(digits) > 9 else digits
 
@@ -110,10 +94,7 @@ def _to_datetime(raw: str) -> datetime | None:
 
 
 def load_contacts(serial: str) -> dict[str, str]:
-    """Map normalised phone numbers to contact names.
-
-    Failure is not fatal: conversations simply show raw numbers.
-    """
+    """Map normalised phone numbers to contact names."""
     try:
         rows = adb.content_query(
             serial, CONTACTS_URI, ["display_name", "data1"], timeout=40.0
@@ -181,11 +162,7 @@ def conversations(serial: str, limit: int = 500) -> list[Conversation]:
 
 
 def compose_on_phone(serial: str, address: str, body: str) -> None:
-    """Open the phone's messaging app with the message pre-filled.
-
-    The fallback when KDE Connect's SMS plugin is not available. The user still
-    has to press send on the phone, which is stated plainly in the UI.
-    """
+    """Open the phone's messaging app with the message pre-filled."""
     escaped = body.replace("\\", "\\\\").replace('"', '\\"')
     ok, out = adb.try_shell(
         serial,

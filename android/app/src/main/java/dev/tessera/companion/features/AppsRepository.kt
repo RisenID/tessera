@@ -7,14 +7,7 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * The phone's launchable apps.
- *
- * The desktop uses this to show a real launcher -- names and icons -- and then
- * asks scrcpy to open the chosen package on its own virtual display. Reading it
- * here rather than over adb means no `dumpsys` parsing and no guessing at
- * labels, which adb cannot resolve cheaply.
- */
+/** The phone's launchable apps. */
 object AppsRepository {
 
     fun launchable(context: Context): JSONArray {

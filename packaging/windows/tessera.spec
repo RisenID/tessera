@@ -28,8 +28,7 @@ EXCLUDED_QT = [
     "PySide6.QtBluetooth", "PySide6.QtCharts", "PySide6.QtDataVisualization",
     "PySide6.QtDBus", "PySide6.QtDesigner", "PySide6.QtHelp",
     # Not QtMultimedia: the phone's audio over the link plays through
-    # QAudioSink, on Windows as everywhere else. Excluding it left the Audio
-    # page saying Qt had no audio output.
+    # QAudioSink, on Windows as everywhere else.
     "PySide6.QtLocation", "PySide6.QtMultimediaWidgets",
     "PySide6.QtNfc", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",
     "PySide6.QtPdf", "PySide6.QtPdfWidgets", "PySide6.QtPositioning",

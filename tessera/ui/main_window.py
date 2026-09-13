@@ -39,11 +39,8 @@ from .popups import Popups
 from .theme import SPACE, Palette, tab_stylesheet
 from .widgets import themed_icon, tinted_icon
 
-#: name, icon theme name, text fallback, page class, and the feature switch
-#: that governs it. Settings has no switch: it is where the switches live.
-#:
-#: Icon names are the freedesktop ones, so the desktop's own icon theme draws
-#: them. The emoji are only for a system with no usable theme.
+#: name, icon theme name, text fallback, page class, and the feature
+#: switch that governs it.
 PAGES = [
     ("Overview", "go-home", "▦", HomePage, None),
     ("Calls", "call-start", "📞", CallsPage, "calls"),
@@ -69,9 +66,7 @@ IMPOSSIBLE = frozenset(
     if feature and not platform.supported(feature)
 )
 
-#: The ones that earn a permanent tab: the phone's content. Everything else is
-#: a device feature reached from the More menu -- ten worded tabs in one row
-#: was unreadable, and these are the five Phone Link puts up there.
+#: The ones that earn a permanent tab: the phone's content.
 PRIMARY = ("Overview", "Calls", "Messages", "Photos", "Apps")
 
 
@@ -111,9 +106,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Tessera")
         self.resize(1180, 780)
         self.setMinimumSize(900, 600)
-        # Files dropped anywhere on the window go to the phone. The Share page
-        # has its own target, but needing to find a page first is exactly the
-        # friction this feature exists to remove.
+        # Files dropped anywhere on the window go to the phone.
         self.setAcceptDrops(True)
 
         root = QWidget()
@@ -203,13 +196,7 @@ class MainWindow(QMainWindow):
         hub.fileReceived.connect(self._on_file_received)
 
     def _on_file_received(self, transfer) -> None:
-        """Say that a file arrived, where a file arriving is easy to miss.
-
-        A file that lands silently in a folder is a file nobody finds. The
-        desktop's own notification server gets it where there is one, because
-        that is the thing that survives the window being minimised; the status
-        line says it either way.
-        """
+        """Say that a file arrived, where a file arriving is easy to miss."""
         from ..backends.filetransfer import human
 
         self._set_status(f"{transfer.name} arrived · {human(transfer.size)}")
@@ -219,8 +206,7 @@ class MainWindow(QMainWindow):
         body = f"Saved to {transfer.path.parent}" if transfer.path else "Saved"
         if notifier is None or not notifier.available:
             # Windows, or a Linux session with no notification server: the
-            # tray's own popup, which is a real toast on Windows. Saying
-            # nothing there meant a file arrived with no sign of it.
+            # tray's own popup, which is a real toast on Windows.
             tray = getattr(self, "tray", None)
             if tray is not None and tray.isVisible():
                 tray.showMessage(transfer.name, body,
@@ -261,14 +247,11 @@ class MainWindow(QMainWindow):
             self._add_tab(name)
 
         #: The last tab holds whichever secondary page was opened from the More
-        #: menu, so the strip always says which page is showing. Selecting a
-        #: page with no tab of its own used to leave a different tab lit.
+        #: menu, so the strip always says which page is showing.
         self.slot = self._add_tab("Overview")
         self.tabs.setTabVisible(self.slot, False)
 
-        # Room for the label, the icon and the underline. Asking the bar for
-        # its size hint here is too early: it has not been polished yet, and
-        # the answer came back three pixels short.
+        # Room for the label, the icon and the underline.
         self.tabs.setMinimumHeight(
             max(20, self.tabs.fontMetrics().height()) + SPACE["lg"] + 2
         )
@@ -361,11 +344,7 @@ class MainWindow(QMainWindow):
         return not feature or bool(getattr(self.hub.config.features, feature, True))
 
     def _apply_feature_visibility(self) -> None:
-        """Hide what is switched off.
-
-        A page left reachable while its feature is disabled invites the obvious
-        bug report, so the strip and the menu both reflect what is available.
-        """
+        """Hide what is switched off."""
         for index in range(self.tabs.count()):
             name = self.tabs.tabData(index)
             if index == self.slot:
@@ -443,13 +422,7 @@ class MainWindow(QMainWindow):
             self.show_page("Share")
 
     def _from_panel(self, name: str) -> None:
-        """A panel switch whose work belongs to a page: run it, and show it.
-
-        Starting a hotspot, taking over the audio path or launching scrcpy is
-        not instant and can fail halfway, so the page that owns the sequence
-        comes forward to report on it rather than being reimplemented in a
-        tile.
-        """
+        """A panel switch whose work belongs to a page: run it, and show it."""
         if not self._enabled(name):
             self._set_status(f"{name} is switched off in Settings.")
             return
@@ -469,11 +442,7 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_panel_width(self) -> None:
-        """Give the rail the width saved for the mode the window is in.
-
-        A no-op when it already has it, so committing some unrelated setting
-        cannot yank the rail back to a number the user has since dragged past.
-        """
+        """Give the rail the width saved for the mode the window is in."""
         cfg = self.hub.config.panel
         wanted = max(MIN_WIDTH, min(MAX_WIDTH, int(getattr(cfg, self._display_mode()))))
         if self.panel.width() == wanted:
@@ -492,8 +461,6 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().changeEvent(event)
         # Maximising or going full screen switches to that mode's saved width.
-        # Deferred: the state change arrives before the new geometry, and
-        # applying a width against the old one gave the rail its minimum.
         if event.type() == event.Type.WindowStateChange:
             QTimer.singleShot(0, self._apply_panel_width)
 
@@ -546,11 +513,7 @@ class MainWindow(QMainWindow):
     # -- window lifecycle ----------------------------------------------------
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        """Closing hides to the tray; quitting really quits.
-
-        The point of this app is to be there when a notification arrives, so
-        the window closing should not stop it listening.
-        """
+        """Closing hides to the tray; quitting really quits."""
         if self._quitting or not self.tray.isVisible():
             self.hub.stop()
             event.accept()

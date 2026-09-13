@@ -26,22 +26,7 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 
-/**
- * The phone's storage, served over SFTP for the desktop to mount.
- *
- * Apache MINA SSHD with only the SFTP subsystem: no shell, no exec, no port
- * forwarding. A client that authenticates can read and write shared storage and
- * do nothing else, which is exactly the job.
- *
- * The password is random per server start and never leaves the phone except
- * over the companion link, which is already authenticated against the pinned
- * certificate. So is the host key's public half, which is what lets the desktop
- * refuse any server that is not this one -- the step a plain "mount the phone
- * over SFTP" usually skips.
- *
- * One server however many desktops mount it, counted, so the last one leaving
- * stops it.
- */
+/** The phone's storage, served over SFTP for the desktop to mount. */
 object StorageServer {
 
     private const val TAG = "TesseraStorage"
@@ -143,27 +128,14 @@ object StorageServer {
         users = 0
     }
 
-    /**
-     * What MINA SSHD assumes about a JVM that Android is not.
-     *
-     * It looks for a home directory, and it prefers BouncyCastle when it sees a
-     * provider by that name -- which Android registers, stripped down, and
-     * which then fails on the key types the server needs. Both are pointed at
-     * what the phone actually has.
-     */
+    /** What MINA SSHD assumes about a JVM that Android is not. */
     private fun prepare(context: Context) {
         System.setProperty("user.home", context.filesDir.path)
         System.setProperty("org.apache.sshd.security.provider.BC.enabled", "false")
         runCatching { PathUtils.setUserHomeFolderResolver { context.filesDir.toPath() } }
     }
 
-    /**
-     * Tell the phone's gallery and music apps about files the desktop changes.
-     *
-     * Without this a photo copied onto the phone from the computer is on the
-     * storage but invisible in the gallery until something else happens to
-     * rescan it.
-     */
+    /** Tell the phone's gallery and music apps about files the desktop changes. */
     private class MediaIndexing(
         private val context: Context,
         private val root: String,

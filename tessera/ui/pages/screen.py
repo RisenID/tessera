@@ -56,9 +56,8 @@ class ScreenPage(QWidget):
         self.screen_off.toggled.connect(self._set_screen_off)
         controls.addWidget(self.screen_off)
 
-        # Mirroring is the one feature still reached over adb, and adb over
-        # Wi-Fi does not survive a reboot. Tessera reconnects on its own when
-        # it can; this is for the first time, which needs the cable.
+        # Mirroring is the one feature still reached over adb, and adb over Wi-
+        # Fi does not survive a reboot.
         self.wireless_button = QPushButton("Set up over USB")
         self.wireless_button.clicked.connect(self._enable_wireless)
         self.wireless_button.setVisible(False)

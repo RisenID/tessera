@@ -1,13 +1,4 @@
-"""Central coordinator.
-
-Owns every backend and presents one surface to the UI, so pages never have to
-know whether a notification arrived over the companion link or KDE Connect, or
-whether Do Not Disturb is being read from the phone or mirrored to Plasma.
-
-Source preference is deliberate: the companion app first, because it is
-event-driven and costs no battery; KDE Connect and adb fill in when it is not
-paired yet.
-"""
+"""Central coordinator."""
 
 from __future__ import annotations
 
@@ -93,9 +84,7 @@ class Hub(QObject):
     #: How often to try bringing adb back. A failed connect costs seconds, and
     #: the phone is usually simply not listening, so this is deliberately slow.
     ADB_RETRY_SECONDS = 60.0
-    #: How long to leave a phone alone between automatic Bluetooth connects. A
-    #: phone that is off makes bluetoothctl wait for its whole timeout, so
-    #: trying on every watch would keep a worker busy for nothing.
+    #: How long to leave a phone alone between automatic Bluetooth connects.
     BLUETOOTH_RETRY_SECONDS = 60.0
     #: How long a fetched wallpaper is trusted before it is asked for again.
     WALLPAPER_RECHECK_SECONDS = 12 * 3600.0
@@ -105,23 +94,17 @@ class Hub(QObject):
         self.config = config
 
         self.companion = CompanionClient(self._load_phone(), self)
-        #: A second connection to the same phone that carries file transfers
-        #: and nothing else. On the main link a large file queued megabytes
-        #: ahead of audio frames and notifications; on its own socket TCP
-        #: shares the network between them. Opened once the main link is up,
-        #: and only if the phone offers it.
+        #: A second connection to the same phone that carries file
+        #: transfers and nothing else.
         self.files_link = CompanionClient(self.companion.phone, self, role="files")
         self.kdeconnect = KdeConnect(self)
         self.dnd = DndSync(config.dnd, self)
         # Two ways to get video: the companion app encodes on the phone and
         # sends frames over the existing link, or scrcpy pulls them over adb.
-        # The companion path is preferred -- it needs no adb at all.
         self.webcam = Webcam(config.webcam, self)
         self.companion_camera = CompanionCamera(config.webcam, self)
         self.phone_audio = PhoneAudio(config.phone_audio, self)
-        #: Files both ways. Owns no socket of its own: it sends through the
-        #: companion client and is fed the messages that arrive, which is what
-        #: lets the whole path be checked without a phone.
+        #: Files both ways.
         self.files = FileTransfers(self.files_link, config, self, fallback=self.companion)
         self.mirrors = mirror.MirrorManager(self)
         self.icons = IconStore(self.companion, self)
@@ -135,18 +118,12 @@ class Hub(QObject):
         self._device_caps: dict[str, Any] = {}
         self._call: dict[str, Any] = {"state": "idle"}
         self._bluetooth_name = ""
-        #: Whether the phone was connected at the previous check. None until
-        #: the first one, which is what tells a link coming up now -- worth
-        #: acting on -- apart from one that was already up before Tessera
-        #: started, which is somebody's existing arrangement to leave alone.
+        #: Whether the phone was connected at the previous check.
         self._bluetooth_settled: bool | None = None
         #: Set once the phone has told us which codecs it can send.
         self._codecs_learned = False
         self._bluetooth_streaming = False
-        #: Whether the phone should be connected over Bluetooth. Starts as the
-        #: setting says and then follows the buttons: a phone disconnected on
-        #: purpose must not be reconnected fifteen seconds later by the very
-        #: loop that is meant to keep it up.
+        #: Whether the phone should be connected over Bluetooth.
         self._bluetooth_wanted = bool(config.bluetooth.autoconnect)
         self._bluetooth_busy = False
         #: When the last automatic attempt was made, so a phone that is off or
@@ -316,12 +293,7 @@ class Hub(QObject):
         self.refresh_notifications()
 
     def reconnect(self) -> None:
-        """Force a fresh connection attempt.
-
-        Starts the address search again from scratch rather than continuing a
-        backoff, which is what someone wants after moving networks or waking
-        the phone.
-        """
+        """Force a fresh connection attempt."""
         self.statusChanged.emit("Reconnecting...")
         phone = self.companion.phone
         if phone.token and phone.fingerprint:
@@ -379,12 +351,7 @@ class Hub(QObject):
 
     @property
     def serial_is_usb(self) -> bool:
-        """Whether the phone is on a cable rather than the network.
-
-        A wireless serial is an address: "192.168.1.5:5555". Only a cable can
-        arm adb for the network, so this is what decides whether that is worth
-        offering.
-        """
+        """Whether the phone is on a cable rather than the network."""
         return bool(self._serial) and ":" not in self._serial
 
     def refresh_adb(self) -> None:
@@ -402,17 +369,7 @@ class Hub(QObject):
         )
 
     def _reconnect_adb(self) -> tuple[str, str]:
-        """Bring the wireless link back after it has dropped.
-
-        adb over Wi-Fi does not survive a reboot, a network change or a long
-        idle, and nothing used to notice: mirroring and the app launcher simply
-        stopped working until the user ran `adb connect` by hand. The phone is
-        plainly reachable -- the companion app is talking to it -- so the
-        address is already known.
-
-        Runs on a worker thread. Returns the serial it recovered and the
-        endpoint that worked, for remembering.
-        """
+        """Bring the wireless link back after it has dropped."""
         now = monotonic()
         if now < self._adb_next_try:
             return "", ""
@@ -453,11 +410,7 @@ class Hub(QObject):
         return targets
 
     def enable_wireless_adb(self) -> str:
-        """Arm adb over Wi-Fi while the cable is in, so it survives unplugging.
-
-        Blocks; callers dispatch through core.proc.submit. This does change the
-        phone's debugging state, so it happens only when asked for.
-        """
+        """Arm adb over Wi-Fi while the cable is in, so it survives unplugging."""
         serial = self._serial or adb.resolve_serial(self.config.adb_serial)
         host = adb.wifi_ip(serial)
         if not host:
@@ -542,9 +495,8 @@ class Hub(QObject):
             self.webcam.stop()
 
     def _wire_camera(self) -> None:
-        # The phone reports SPS/PPS once, in camera_started, separately from the
-        # frames. ffmpeg cannot decode a single frame without it, so it has to
-        # be pushed into the pipeline before anything else arrives.
+        # The phone reports SPS/PPS once, in camera_started,
+        # separately from the frames.
         self.companion.cameraStarted.connect(self._on_phone_camera_started)
         self.companion.cameraFrame.connect(self.companion_camera.feed)
         self.companion_camera.stopped.connect(self.cameraStopped)
@@ -571,14 +523,7 @@ class Hub(QObject):
     # -- finding the phone -----------------------------------------------------
 
     def ring_phone(self, on_done: Callable[[str], None] | None = None) -> None:
-        """Make the phone ring, so it can be found.
-
-        Through the companion app, which needs nothing granted and works on
-        every platform. KDE Connect is the fallback for a phone that has not
-        got the companion app -- it used to be the only route, which meant this
-        switch did nothing at all unless a second app was installed and
-        separately paired.
-        """
+        """Make the phone ring, so it can be found."""
         def say(message: str) -> None:
             if on_done is not None:
                 on_done(message)
@@ -617,13 +562,7 @@ class Hub(QObject):
         return self._phone_audio_pending
 
     def start_phone_audio(self) -> None:
-        """Ask the phone to send what it is playing.
-
-        Only ever from a button. Nothing about connecting starts this, which is
-        the rule for audio in this app -- and unlike the Bluetooth route it
-        could not take sound off the phone's headphones even if it tried: what
-        arrives is a copy of the phone's mix.
-        """
+        """Ask the phone to send what it is playing."""
         if not self.config.features.phone_audio:
             self.errorOccurred.emit(
                 "Playing the phone's audio is switched off in Settings."
@@ -652,13 +591,7 @@ class Hub(QObject):
         self.phone_audio.close()
 
     def set_phone_muted(self, muted: bool) -> None:
-        """Silence the phone while its audio plays here, or let it speak.
-
-        Saved for the next stream, and applied to the one already running:
-        the checkbox gets pressed *because* the phone is audibly playing the
-        same track, so waiting until the next start would answer the wrong
-        question.
-        """
+        """Silence the phone while its audio plays here, or let it speak."""
         self.config.phone_audio.mute_phone = bool(muted)
         self.config.save()
         if self.phone_audio.running and self.companion.connected:
@@ -696,17 +629,10 @@ class Hub(QObject):
         return platform.state_dir() / "wallpaper.jpg"
 
     def _maybe_fetch_wallpaper(self, capabilities: list) -> None:
-        """Ask for the wallpaper once per connection, and only if it can.
-
-        Cosmetic, so it must cost nothing when it fails: a phone that will not
-        share it says so once and the sidebar keeps its outline.
-        """
+        """Ask for the wallpaper once per connection, and only if it can."""
         if "wallpaper" not in capabilities:
             return
-        # Once per run, not once per connection. A phone on flaky Wi-Fi
-        # reconnects many times an hour, and a wallpaper does not change that
-        # often; the cached one is shown meanwhile, and a long-running session
-        # checks again after a while in case it did.
+        # Once per run, not once per connection.
         now = monotonic()
         if (self._wallpaper_asked is not None
                 and now - self._wallpaper_asked < self.WALLPAPER_RECHECK_SECONDS):
@@ -896,9 +822,7 @@ class Hub(QObject):
 
     def _on_phone_audio_started(self, header: dict) -> None:
         self._phone_audio_pending = False
-        #: Whether the phone actually went quiet. It is asked, not told: Do
-        #: Not Disturb makes changing the volume privileged, and this app does
-        #: not hold that access, so the answer can be no.
+        #: Whether the phone actually went quiet.
         self.phone_muted = bool(header.get("muted"))
         if header.get("muteAsked") and not self.phone_muted:
             self.errorOccurred.emit(
@@ -941,13 +865,7 @@ class Hub(QObject):
         return self._bluetooth_name
 
     def _apply_codec_preference(self) -> None:
-        """Offer the phone the codecs the settings ask for.
-
-        The list is advertised to BlueZ once, when the session manager starts,
-        so a changed list means restarting it -- done here only when the file
-        actually changes, which is at most once after an upgrade or a settings
-        change.
-        """
+        """Offer the phone the codecs the settings ask for."""
         if not platform.supported("bluetooth_audio"):
             return
         if not self.config.features.bluetooth_audio:
@@ -964,14 +882,7 @@ class Hub(QObject):
         submit(apply, on_error=lambda message: log.debug("codec setup: %s", message))
 
     def _learn_codecs(self, phone_codecs: list) -> None:
-        """Remember what the phone can send, and re-offer accordingly.
-
-        Only useful once: the list is a property of the phone, not of this
-        connection. Acting on it changes the advertised codecs, which restarts
-        the audio service, so it must not be repeated on every check -- and
-        _apply_codec_preference is itself a no-op when the file already says
-        what it should.
-        """
+        """Remember what the phone can send, and re-offer accordingly."""
         if not phone_codecs:
             return
         self._codecs_learned = True
@@ -993,16 +904,7 @@ class Hub(QObject):
         self.bluetoothBusyChanged.emit(busy)
 
     def connect_bluetooth(self, on_done=None, on_error=None) -> None:
-        """Connect the phone over Bluetooth without moving any audio.
-
-        The quiet connect: the hands-free profile only, so A2DP is never
-        brought up and Android has no newly connected output to promote. Track
-        details and call control arrive; the music stays wherever it is. The
-        card is then left able to accept a stream, because the phone offers one
-        for a few seconds when a profile comes up and a card on the silent
-        profile misses the offer -- that is what has to be ready before the
-        audio button can work at all.
-        """
+        """Connect the phone over Bluetooth without moving any audio."""
         if not platform.supported("bluetooth_audio"):
             self.errorOccurred.emit(
                 "This computer cannot do Bluetooth audio."
@@ -1088,14 +990,7 @@ class Hub(QObject):
         submit(bluetooth.disconnect, address, on_done=done, on_error=failed)
 
     def _autoconnect_bluetooth(self) -> None:
-        """Bring the link up by itself, if that is what the settings say.
-
-        Called from the same watch that parks unsolicited audio, so it costs no
-        timer of its own. Rate-limited because a phone that is off or out of
-        range makes `bluetoothctl connect` sit there for its full timeout, and
-        doing that every fifteen seconds would keep a worker permanently busy
-        for a phone that is simply not there.
-        """
+        """Bring the link up by itself, if that is what the settings say."""
         if not self._bluetooth_wanted or self._bluetooth_busy:
             return
         if not self.config.bluetooth.autoconnect:
@@ -1111,40 +1006,21 @@ class Hub(QObject):
             return
         self._bluetooth_tried = now
         log.info("connecting the phone over Bluetooth")
-        # Quietly. Nobody pressed anything, so a phone that is switched off or
-        # out of range is not a failure to report -- and reporting it would put
-        # a toast on screen every minute for a phone left at home.
+        # Quietly.
         self.connect_bluetooth(
             on_error=lambda message: log.info("automatic connect: %s", message)
         )
 
     def _watch_bluetooth(self) -> None:
-        """Park a Bluetooth link that takes the audio path without being asked.
-
-        Parking on our own connect button is not enough: the phone usually
-        initiates, and WirePlumber then picks a profile straight away. That is
-        what pulled audio off the headphones -- the phone switched its output
-        to this computer while nothing here was playing it back.
-
-        Only the moment the link comes up is treated that way. Once the phone
-        has been connected for a while, audio appearing on it is a deliberate
-        choice made on the phone -- the output picker -- and parking it then
-        snatched the sound back a few seconds later, which is why setting the
-        output to this computer appeared to do nothing at all. So after the
-        first sighting the link is left alone and the stream is made audible
-        instead.
-        """
+        """Park a Bluetooth link that takes the audio path without being asked."""
         if not self.config.features.bluetooth_audio:
             return
 
         # Parking is the whole point of this check, and turning auto_stream on
-        # asks for the opposite. The codec read below still has to happen
-        # either way: it is the only chance to learn what the phone can send.
+        # asks for the opposite.
         park = not self.config.bluetooth.auto_stream
 
-        # Only a link seen coming up counts. Treating "the first check of this
-        # session" as unsolicited tore down a stream that was already playing
-        # when Tessera started.
+        # Only a link seen coming up counts.
         appeared = park and self._bluetooth_settled is False
 
         def check() -> dict:
@@ -1159,8 +1035,6 @@ class Hub(QObject):
 
             # One question to BlueZ answers both of the next two: what the
             # media transport is doing, and which codecs the phone can send.
-            # The latter is only readable while it is connected, and "best
-            # available" cannot narrow the offer safely without it.
             transport = ""
             if park or not self._codecs_learned:
                 transport, codecs = bluetooth.media_state(device.address)
@@ -1170,27 +1044,16 @@ class Hub(QObject):
             if not park:
                 return state
 
-            # Keep the card able to accept a stream. The phone offers one the
-            # instant it connects and withdraws it within seconds, so a card
-            # left on the silent profile misses the offer every time -- which
-            # is precisely why the phone's audio never arrived here.
+            # Keep the card able to accept a stream.
             bt_audio.ready_to_receive(device.address)
 
             if appeared and transport:
-                # Nobody asked for this. Dropping the media profile is what
-                # Android acts on: it hands playback straight back to whatever
-                # was playing it before, usually a pair of headphones.
+                # Nobody asked for this.
                 bluetooth.release_audio(device.address)
                 log.info("released the media profile nobody asked for")
                 return state
 
-            # Chosen on the phone. Make it audible: the received audio is a
-            # playback stream nothing is connected to until something links it.
-            #
-            # Only worth looking while BlueZ says audio is on the wire. The
-            # stream node exists exactly then, and finding it means reading a
-            # fifth of a megabyte of pw-dump output -- not something to do
-            # every fifteen seconds for as long as the phone stays connected.
+            # Chosen on the phone.
             if transport in bluetooth.TRANSPORT_STREAMING:
                 node = bt_audio.phone_stream()
                 if node:
@@ -1234,10 +1097,7 @@ class Hub(QObject):
 
     @property
     def phone_status(self) -> dict[str, Any]:
-        """Battery detail, Wi-Fi and cellular signal, ringer mode.
-
-        Empty until the phone reports; only the companion app sends it.
-        """
+        """Battery detail, Wi-Fi and cellular signal, ringer mode."""
         return dict(self._phone_status)
 
     def set_ringer(self, mode: str) -> None:
@@ -1258,11 +1118,7 @@ class Hub(QObject):
 
     @property
     def hotspot_joined(self) -> bool:
-        """Whether this computer is on the phone's hotspot.
-
-        Held here rather than on the page so the panel's tile and the page
-        agree; the page is what actually starts and stops it.
-        """
+        """Whether this computer is on the phone's hotspot."""
         return self._hotspot_joined
 
     def set_hotspot_joined(self, joined: bool) -> None:
@@ -1279,12 +1135,7 @@ class Hub(QObject):
 
     @property
     def media(self) -> dict:
-        """What the phone is playing, as reported by the companion app.
-
-        Read from MediaSession rather than over Bluetooth: AVRCP would require
-        connecting A2DP, which makes this computer the phone's active output
-        and drags playback off whatever headphones are in use.
-        """
+        """What the phone is playing, as reported by the companion app."""
         return dict(self._media)
 
     def _on_media(self, message: dict) -> None:
@@ -1298,14 +1149,7 @@ class Hub(QObject):
         self.companion.send({"t": "media_command", "action": action})
 
     def _wire_media_player(self) -> None:
-        """Offer the phone to this desktop as a player of its own.
-
-        The phone's track then appears in the desktop's media applet and under
-        the keyboard's media keys, without Bluetooth -- which matters more now
-        that the audio itself can play here over the link: the sound comes out
-        of this computer, so the controls for it should be where every other
-        player's are.
-        """
+        """Offer the phone to this desktop as a player of its own."""
         if not mpris_server.available():
             return
         self.media_player = mpris_server.MprisServer(parent=self)
@@ -1364,11 +1208,7 @@ class Hub(QObject):
 
     @property
     def device_caps(self) -> dict[str, Any]:
-        """Cameras and hotspot bands as reported by the phone.
-
-        Empty until the phone has answered; pages fall back to a conservative
-        default so they still render while offline.
-        """
+        """Cameras and hotspot bands as reported by the phone."""
         return dict(self._device_caps)
 
     def refresh_device_caps(self) -> None:
@@ -1465,13 +1305,7 @@ class Hub(QObject):
     # -- one-time passcodes --------------------------------------------------
 
     def _check_otp(self, note: Notification) -> None:
-        """Surface a passcode as soon as its notification arrives.
-
-        Reading codes from notifications rather than the SMS database is not
-        just convenient: from Android 17, apps targeting API 37 have OTP-bearing
-        SMS withheld from the provider for three hours, while the notification
-        the messaging app posts is unaffected.
-        """
+        """Surface a passcode as soon as its notification arrives."""
         if not self.config.features.otp or note.id in self._otp_seen:
             return
         match = otp.find_code(note.body, note.app)

@@ -9,24 +9,7 @@ import android.graphics.drawable.Drawable
 import android.util.Log
 import java.io.ByteArrayOutputStream
 
-/**
- * The phone's wallpaper, for the desktop to show beside its name.
- *
- * Cosmetic, and deliberately so: a sidebar that shows *your* phone rather than
- * a generic outline is the difference between a tool and your phone on your
- * desk. It is also the one piece of the phone's own look the desktop can
- * honestly borrow.
- *
- * Two ways to get it, because Android has been tightening this for years:
- *
- *  * `WallpaperManager.getDrawable`, which works where the platform still
- *    allows an ordinary app to see it;
- *  * failing that, the wallpaper's *colours*, which need no permission at all
- *    and are enough for the desktop to tint its own tile.
- *
- * A live wallpaper has no still image; `getDrawable` returns its preview or
- * nothing, and the colours are the fallback there too.
- */
+/** The phone's wallpaper, for the desktop to show beside its name. */
 object Wallpaper {
 
     private const val TAG = "TesseraWallpaper"
@@ -47,15 +30,7 @@ object Wallpaper {
         }.getOrNull()
     }
 
-    /**
-     * A colour for the wallpaper, where the picture itself cannot be had.
-     *
-     * Sent for completeness rather than drawn with: the desktop shows a
-     * default wallpaper when the phone has none to give, because a flat colour
-     * does not look like a phone. The wallpaper's own colours first, then the
-     * accent Android 12 and later derive *from* the wallpaper and expose to
-     * every app without permission.
-     */
+    /** A colour for the wallpaper, where the picture itself cannot be had. */
     fun colour(context: Context): String? {
         val manager = runCatching { WallpaperManager.getInstance(context) }.getOrNull()
         for (flag in intArrayOf(WallpaperManager.FLAG_SYSTEM, WallpaperManager.FLAG_LOCK)) {
@@ -84,18 +59,14 @@ object Wallpaper {
         val manager = runCatching { WallpaperManager.getInstance(context) }.getOrNull()
             ?: return null
 
-        // The home screen first. Wrapped rather than checked: this throws
-        // SecurityException on the versions that have closed it off, and
-        // returns nothing for a live wallpaper. Both are "no picture", not a
-        // failure worth reporting.
+        // The home screen first.
         val drawable: Drawable? = runCatching { manager.drawable }
             .onFailure { Log.i(TAG, "no home wallpaper: ${it.message}") }
             .getOrNull()
         drawable?.let { toBitmap(it) }?.let { return it }
 
-        // Then the lock screen, which is very often a still photograph even on
-        // a phone whose home screen is a live wallpaper -- this phone being
-        // exactly that case.
+        // Then the lock screen, which is very often a still photograph even on a phone whose home
+        // screen is a live wallpaper -- this phone being exactly that case.
         return runCatching {
             manager.getWallpaperFile(WallpaperManager.FLAG_LOCK)?.use { descriptor ->
                 android.graphics.BitmapFactory.decodeFileDescriptor(descriptor.fileDescriptor)

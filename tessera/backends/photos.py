@@ -1,11 +1,4 @@
-"""Browse the phone's photo library over adb.
-
-Files are listed through MediaStore, which gives a date-sorted index without
-walking the filesystem. Images are fetched lazily -- a modern phone camera
-produces multi-megabyte files, so pulling a whole album up front would be slow
-and pointless. Each fetched file is cached, and a downscaled thumbnail is
-cached alongside it.
-"""
+"""Browse the phone's photo library over adb."""
 
 from __future__ import annotations
 
@@ -166,11 +159,7 @@ def fetch(serial: str, item: MediaItem, timeout: float = 120.0) -> Path:
 
 
 def thumbnail(serial: str, item: MediaItem, size: int = THUMB_SIZE) -> Path:
-    """Return a cached thumbnail, generating it (and pulling the file) if needed.
-
-    Videos have no still to scale without decoding, so they get no thumbnail and
-    the UI shows a placeholder instead.
-    """
+    """Return a cached thumbnail, generating it (and pulling the file) if needed."""
     thumb = item.thumb_path
     if thumb.exists() and thumb.stat().st_size > 0:
         return thumb

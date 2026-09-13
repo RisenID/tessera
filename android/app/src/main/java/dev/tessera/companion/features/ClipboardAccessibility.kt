@@ -15,23 +15,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-/**
- * Clipboard sharing that survives a reboot, for phones without Shizuku.
- *
- * Android lets an app read the clipboard only while one of its windows has
- * focus. An accessibility service may put a window above everything else, so
- * this does exactly that for the moment it takes to read: a one-pixel,
- * invisible, focusable window is added, the clipboard is read once it has
- * focus, and the window is removed. Touches pass straight through it.
- *
- * It must not do that on a timer -- stealing focus every two seconds would
- * close the keyboard under the user's fingers -- so it waits for something
- * that looks like a copy: a tap on a "Copy" button, the system's "copied"
- * overlay or toast. Only while a desktop is subscribed; otherwise it is idle.
- *
- * It asks for no window content. The events it receives carry only the text
- * of what was tapped, which is how "Copy" is recognised.
- */
+/** Clipboard sharing that survives a reboot, for phones without Shizuku. */
 class ClipboardAccessibility : AccessibilityService() {
 
     private val main = Handler(Looper.getMainLooper())

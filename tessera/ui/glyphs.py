@@ -1,21 +1,4 @@
-"""Icons for a platform whose icon theme is empty.
-
-`QIcon.fromTheme` returns nothing on Windows: there is no freedesktop icon
-theme to look in, and the emoji fallback made the whole interface look like a
-chat message. So the icons the app actually asks for are drawn here.
-
-Two kinds:
-
-* a fixed set of **line-art SVGs**, one per name, stroked in `currentColor` so
-  `tinted_icon` can recolour them like any other line art;
-* the **stepped families** -- Wi-Fi bars, cellular bars, battery fill -- which
-  are parameterised rather than enumerated, because there are thirty of them
-  and they differ only by a number.
-
-Deliberately plain: a 24-unit box, 2-unit strokes, round caps and joins. These
-stand in for the desktop's own artwork, so they should not try to be more
-interesting than it is.
-"""
+"""Icons for a platform whose icon theme is empty."""
 
 from __future__ import annotations
 
@@ -160,12 +143,7 @@ def _pen(painter: QPainter, width: float, size: int) -> None:
 
 
 def _bars(level: int, size: int, label: str = "") -> QPixmap:
-    """Signal strength as four rising bars, the filled ones solid.
-
-    Used for both Wi-Fi and cellular: the difference between the two on a
-    status bar is a curve against a staircase, and at 16 pixels the staircase
-    reads either way.
-    """
+    """Signal strength as four rising bars, the filled ones solid."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)

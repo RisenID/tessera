@@ -23,13 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
-/**
- * Keeps the phone reachable.
- *
- * A foreground service is required to hold a listening socket reliably, but the
- * cost is small: it waits on accept() and does nothing at all until a desktop
- * connects or the notification listener publishes an event.
- */
+/** Keeps the phone reachable. */
 class TesseraService : Service() {
 
     private lateinit var store: Store
@@ -75,10 +69,7 @@ class TesseraService : Service() {
 
     private fun startServer() {
         running = true
-        // Always name the types explicitly. With no type argument the platform
-        // applies every type declared in the manifest -- including camera --
-        // and a service started from the background is not allowed camera
-        // access, so the start dies with a SecurityException.
+        // Always name the types explicitly.
         startForeground(
             NOTIFICATION_ID,
             buildNotification("Waiting for your computer"),
@@ -112,15 +103,7 @@ class TesseraService : Service() {
         }
     }
 
-    /**
-     * Adds or drops the camera foreground-service type.
-     *
-     * The service normally runs as connectedDevice only. Android refuses camera
-     * access to a background app, so while a webcam stream is live the service
-     * must also be a camera foreground service -- and must stop being one as
-     * soon as the stream ends, so the phone is not left in a state that implies
-     * the camera is in use.
-     */
+    /** Adds or drops the camera foreground-service type. */
     fun setCameraActive(active: Boolean): Boolean {
         val types = if (active) {
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
@@ -132,9 +115,9 @@ class TesseraService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification(statusText()), types)
             true
         }.onFailure {
-            // Expected when the service was started from the background: such a
-            // service is barred from camera access for its whole lifetime, and
-            // only a start made while the app was in the foreground is eligible.
+            // Expected when the service was started from the background: such a service is barred
+            // from camera access for its whole lifetime, and only a start made while the app was in
+            // the foreground is eligible.
             Log.w(TAG, "could not raise the camera service type", it)
         }.getOrDefault(false)
     }
@@ -144,11 +127,6 @@ class TesseraService : Service() {
     /**
      * A MediaProjection to capture playback with, or null when the user has not
      * consented yet.
-     *
-     * The order matters and is Android's, not ours: from API 34 a projection
-     * may only be created while a foreground service of type mediaProjection is
-     * already running, so the type goes up first and comes back down if the
-     * projection is refused.
      */
     fun audioProjection(): MediaProjection? {
         val data = audioConsent ?: return null
@@ -179,21 +157,13 @@ class TesseraService : Service() {
         return projection
     }
 
-    /**
-     * Asks the user to allow playback capture, and runs [after] if they do.
-     *
-     * A dialog cannot be raised from here -- only an activity can ask, and a
-     * background app may not start one -- so this posts a notification for the
-     * user to tap. The desktop is told the same thing in words.
-     */
+    /** Asks the user to allow playback capture, and runs [after] if they do. */
     fun askForAudioConsent(after: () -> Unit): Boolean {
         pendingAudio = after
 
-        // The quiet path: with the projection app op granted, Android approves
-        // without drawing anything, so the request can be made and answered
-        // without the phone being touched -- or even woken. Starting an
-        // activity from a background service is barred, so the shell starts it,
-        // which is the same privilege that granted the op.
+        // The quiet path: with the projection app op granted, Android approves without
+        // drawing anything, so the request can be made and answered without the phone being
+        // touched -- or even woken.
         if (ProjectionGrant.allowed(this)) {
             val token = newConsentToken()
             val started = PrivilegedShell.run(
@@ -233,14 +203,7 @@ class TesseraService : Service() {
         return false
     }
 
-    /**
-     * A one-use password for the consent activity.
-     *
-     * That activity has to be exported so the shell can start it, which would
-     * otherwise let any app on the phone ask us to raise a capture request.
-     * Only a request carrying the token issued for a pending audio request is
-     * answered, and the token is spent on use.
-     */
+    /** A one-use password for the consent activity. */
     private fun newConsentToken(): String =
         java.util.UUID.randomUUID().toString().also { consentToken = it }
 
@@ -278,12 +241,7 @@ class TesseraService : Service() {
             ?.cancel(CONSENT_NOTIFICATION_ID)
     }
 
-    /**
-     * Adds or drops the mediaProjection foreground-service type.
-     *
-     * Same bargain as the camera: the type is only held while a stream is
-     * live, so the phone never implies it is being captured when it is not.
-     */
+    /** Adds or drops the mediaProjection foreground-service type. */
     fun setAudioActive(active: Boolean): Boolean {
         val types = if (active) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
@@ -312,17 +270,10 @@ class TesseraService : Service() {
         )
     }
 
-    /**
-     * Hand shared files (and text) to every connected desktop.
-     *
-     * Returns how many desktops took them, so the share sheet can say "sent"
-     * or "no computer connected" rather than closing silently either way.
-     */
+    /** Hand shared files (and text) to every connected desktop. */
     fun share(uris: List<android.net.Uri>, text: String = ""): Int {
-        // One target per desktop, not per connection: a desktop holds two, and
-        // files go down its file connection where it has one, so a large
-        // transfer never sits in front of its audio. Text is a clipboard
-        // message, which only the main link handles.
+        // One target per desktop, not per connection: a desktop holds two, and files go down its
+        // file connection where it has one, so a large transfer never sits in front of its audio.
         val desktops = sessions.filter { it.isAuthenticated }.groupBy { it.token }.values
         if (desktops.isEmpty()) return 0
         for (connections in desktops) {

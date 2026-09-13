@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the phone-audio path without a phone.
-
-Everything except the phone itself: the jitter buffer's arithmetic, the state
-machine the interface reads, the protocol frames in both directions, and a real
-QAudioSink fed real PCM so the sound card is actually opened. The phone's half
-is a stub that speaks the same frames the companion app does.
-
-Run it from the repository root:  python3 scripts/check-phone-audio.py
-"""
+"""Checks the phone-audio path without a phone."""
 
 from __future__ import annotations
 
@@ -172,9 +164,8 @@ def hub_state() -> None:
     from tessera.core.hub import Hub
 
     config = Config()
-    # The link route is the fallback now, off by default on a computer that
-    # has Bluetooth. Everything below is about the route itself, so switch it
-    # on rather than testing the switch twice.
+    # The link route is the fallback now, off by default on a computer
+    # that has Bluetooth.
     config.features.phone_audio = True
     hub = Hub(config)
     seen: list[bool] = []
@@ -353,11 +344,7 @@ def interface() -> None:
     )
 
     # Opening a sink can fail while an earlier one is still being destroyed,
-    # which only happens here: the app has exactly one player. Let Qt catch up
-    # and try again rather than reporting a failure the app cannot have. In
-    # real time, not in event-loop turns: the sound server tears the old
-    # stream down on its own schedule, and forty turns with no delay between
-    # them passed or failed depending on how busy the machine was.
+    # which only happens here: the app has exactly one player.
     import time
 
     hub._on_phone_audio_started(HEADER)
@@ -400,8 +387,7 @@ def main() -> int:
     QTimer.singleShot(0, lambda: None)
 
     # A closed sink is only released when Qt processes deleteLater, which in
-    # the app is the event loop's job. Without this the fourth sink in a row
-    # fails to open and the checks look flaky when the code is not.
+    # the app is the event loop's job.
     def settle() -> None:
         for _ in range(8):
             app.processEvents()

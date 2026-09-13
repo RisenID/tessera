@@ -1,19 +1,4 @@
-"""Repeating the phone's notifications on this desktop.
-
-Two routes, and the difference matters:
-
-* **the desktop's own notification server**, over D-Bus, which can carry
-  actions -- and on KDE and GNOME a reply box inside the popup itself. A
-  message from the phone is exactly the moment a reply is worth one keystroke,
-  and the phone half already works: the companion app sends replies through the
-  notification's own RemoteInput, the same thing the phone's shade uses.
-* **the tray icon**, which is all Qt offers everywhere else. Windows gets a
-  real toast out of it, but a toast with nothing to press.
-
-The phone's Do Not Disturb is honoured either way: a phone that is silenced
-silences its echo here too, which on Windows is the only "silence the desktop"
-anyone can offer -- Focus Assist cannot be set by another program.
-"""
+"""Repeating the phone's notifications on this desktop."""
 
 from __future__ import annotations
 
@@ -174,11 +159,7 @@ class Popups(QObject):
             self._by_phone.pop(phone_id, None)
 
     def _prune(self) -> None:
-        """Drop popups for notifications the phone no longer has.
-
-        A notification cleared on the phone should not leave a popup here
-        offering to reply to it.
-        """
+        """Drop popups for notifications the phone no longer has."""
         current = {note.id for note in self.hub.notifications}
         for phone_id in list(self._by_phone):
             if phone_id in current:

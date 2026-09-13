@@ -1,11 +1,4 @@
-"""Pull one-time passcodes out of notification text.
-
-Notifications carrying a login code are formatted inconsistently by every
-sender, so this is deliberately heuristic: find digit-ish runs that could be a
-code, then score them on the words around them. Only candidates that clear a
-threshold are offered, because a wrong code silently pasted into a login form
-is worse than showing nothing.
-"""
+"""Pull one-time passcodes out of notification text."""
 
 from __future__ import annotations
 

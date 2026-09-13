@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the desktop-notification path.
-
-Raises real notifications on whatever server this desktop runs, then closes
-them, so nothing is left on screen. What cannot be checked without a person is
-someone typing into the reply box; everything up to and including "the server
-told us the notification closed" is.
-
-Run it from the repository root:  python3 scripts/check-notifications.py
-"""
+"""Checks the desktop-notification path."""
 
 from __future__ import annotations
 

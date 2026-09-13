@@ -4,13 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import java.security.SecureRandom
 
-/**
- * Paired desktops and the server's identity.
- *
- * A desktop is identified by a token it presents on every connection. Tokens
- * are minted during pairing and can be revoked individually, so losing a laptop
- * does not mean re-pairing everything.
- */
+/** Paired desktops and the server's identity. */
 class Store(context: Context) {
 
     private val appContext = context.applicationContext
@@ -31,24 +25,15 @@ class Store(context: Context) {
             return generated
         }
 
-    /**
-     * What this phone calls itself.
-     *
-     * The user's own name for it, the one they typed in the phone's settings
-     * and the one their Bluetooth devices show -- not the model number. A
-     * sidebar saying "SM-S931B" is a part number; it is not the name of
-     * anybody's phone. The model is still sent separately, and the desktop
-     * shows it underneath.
-     */
+    /** What this phone calls itself. */
     var displayName: String
         get() = prefs.getString(KEY_NAME, null) ?: deviceName()
         set(value) = prefs.edit().putString(KEY_NAME, value).apply()
 
     private fun deviceName(): String {
         val resolver = appContext.contentResolver
-        // Settings.Global.DEVICE_NAME is where "Ruchit's S25" lives; the
-        // Bluetooth name is the same string on most phones and the fallback
-        // where it is not set.
+        // Settings.Global.DEVICE_NAME is where "Ruchit's S25" lives; the Bluetooth name is the same
+        // string on most phones and the fallback where it is not set.
         val named = runCatching {
             android.provider.Settings.Global.getString(resolver, "device_name")
         }.getOrNull()

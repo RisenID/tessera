@@ -1,23 +1,5 @@
 #!/usr/bin/env bash
-#
-# Teach this computer to receive LDAC.
-#
-# PipeWire can already decode LDAC: spa/plugins/bluez5/a2dp-codec-ldac.c has
-# the whole path behind ENABLE_LDAC_DEC, switched on at build time only when a
-# library providing ldacBT_decode() exists. Sony released the encoder and
-# nothing else, so no distribution has ever shipped one -- which is why
-# Fedora's PipeWire offers LDAC to headphones and cannot accept it from a
-# phone.
-#
-# This script supplies the missing library from libldacdec (a clean-room
-# decoder, vendored as a submodule), rebuilds just that one codec plugin
-# against the exact PipeWire release installed here, and puts both somewhere
-# WirePlumber will look first. Nothing owned by the package manager is touched
-# and nothing is installed system-wide: --uninstall removes it all.
-#
-#   scripts/build-ldac-decoder.sh              build, install, restart WirePlumber
-#   scripts/build-ldac-decoder.sh --uninstall  put everything back
-#   scripts/build-ldac-decoder.sh --check      report what is currently in place
+# 
 
 set -euo pipefail
 
@@ -39,16 +21,6 @@ dropin="$HOME/.config/systemd/user/wireplumber.service.d/50-tessera-ldac.conf"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/tessera"
 
 # Where PipeWire's own SPA plugins live.
-#
-# Not a constant. /usr/lib64/spa-0.2 is right on Fedora x86_64 and wrong
-# elsewhere -- /usr/lib/spa-0.2 on 32-bit and on distributions that do not
-# split lib64, /usr/lib/<triplet>/spa-0.2 on Debian and Ubuntu. Worse, a
-# machine with 32-bit PipeWire libraries installed alongside has *both*, and
-# picking the wrong one puts a plugin of the wrong architecture ahead of the
-# right one, which the loader then refuses.
-#
-# The running session manager is the ground truth: whatever directory it has
-# libspa-bluez5.so mapped from is the directory this plugin has to join.
 system_plugins() {
     local pid dir
 
@@ -81,11 +53,7 @@ else bold=''; red=''; off=''; fi
 
 say() { printf '\n%s%s%s\n' "$bold" "$*" "$off"; }
 
-# Whether this session is managed by systemd. The drop-in below is a systemd
-# unit override, and on Void, Artix, Alpine or any other init there is nothing
-# to read it -- so the environment has to be set by hand instead. Saying so is
-# the difference between a plugin that is ignored for no visible reason and a
-# one-line instruction.
+# Whether this session is managed by systemd.
 has_systemd() { command -v systemctl >/dev/null && [[ -d /run/systemd/system ]]; }
 
 restart_session_manager() {
@@ -104,14 +72,11 @@ die() { printf '%serror:%s %s\n' "$red" "$off" "$*" >&2; exit 1; }
 # -- what is in place right now ----------------------------------------------
 
 # The endpoints belong to WirePlumber's D-Bus name, not to any object under
-# org.bluez, so they cannot be listed from BlueZ's object manager. bluetoothd
-# logs each one as it is registered, and that log is the readable record of
-# what this computer is currently willing to receive.
+# org.bluez, so they cannot be listed from BlueZ's object manager.
 endpoints() {
-    # Every WirePlumber restart registers a fresh set under a new D-Bus name,
-    # so the endpoints that count are the ones belonging to the most recent
-    # sender. Reading the earlier sets as well would report codecs that were
-    # withdrawn hours ago.
+    # Every WirePlumber restart registers a fresh set under a new D-Bus
+    # name, so the endpoints that count are the ones belonging to the
+    # most recent sender.
     local log sender
     log="$(journalctl -b -t bluetoothd --no-pager 2>/dev/null |
            sed -n 's/.*Endpoint registered: sender=\([^ ]*\) path=\(.*\)/\1 \2/p')"
@@ -132,9 +97,7 @@ check() {
     if endpoints | grep -q 'A2DPSink/ldac'; then
         printf '\nLDAC can be received.\n'
     elif [[ -z $(endpoints) ]]; then
-        # No record either way. bluetoothd is the only thing that logs these,
-        # and a volatile journal or a differently named unit leaves nothing to
-        # read -- which is not the same as LDAC being unavailable.
+        # No record either way.
         printf '\nCannot tell: bluetoothd has logged no endpoint registrations\n'
         printf 'this boot. Reconnect the phone, or restart WirePlumber, and\n'
         printf 'run this again.\n'
@@ -176,11 +139,7 @@ esac
 have_header() { echo "#include <$1>" | gcc -E -x c - >/dev/null 2>&1; }
 
 # Package names differ by distribution, and advice that does not work is
-# barely better than none. The table is deliberately small -- this script needs
-# exactly three things -- and mirrors tessera/core/packages.py, which the app
-# uses for the same purpose.
-# The package manager family this system uses. One function, because both the
-# package names and the install command depend on it.
+# barely better than none.
 os_family() {
     local id like
     id="$(. /etc/os-release 2>/dev/null && printf '%s' "${ID:-}")"
@@ -206,15 +165,8 @@ os_family() {
     done
 }
 
-# Package names differ by distribution, and advice that does not work is barely
-# better than none. Deliberately small -- this script needs exactly three
-# things -- and it mirrors tessera/core/packages.py, which the app uses for the
-# same purpose. An unknown family falls back to the plain name, which is right
-# for gcc and curl and the best guess available for the rest.
-# Empty when no package name is known for this system. The caller keeps those
-# out of the command line and names them in words instead: putting
-# "libldac (development headers)" into an apk invocation is not advice, it is
-# a syntax error with parentheses in it.
+# Package names differ by distribution, and advice that does not work is
+# barely better than none.
 package_for() {
     case "$(os_family):$1" in
         dnf:gcc|zypper:gcc|xbps:gcc|emerge:gcc|eopkg:gcc) printf gcc ;;
@@ -288,9 +240,7 @@ version="$(pipewire --version 2>/dev/null | awk '/Linked with libpipewire/{print
 [[ -n $version ]] || die 'could not determine the running PipeWire version'
 
 # The plugin is loaded by libspa-bluez5.so, which refuses any codec plugin
-# built against a different SPA_VERSION_BLUEZ5_CODEC_MEDIA. Building from the
-# matching release is what keeps that check happy across PipeWire upgrades --
-# and why this script must be re-run after one.
+# built against a different SPA_VERSION_BLUEZ5_CODEC_MEDIA.
 src="$cache/pipewire-$version"
 if [[ ! -d $src ]]; then
     say "Fetching the PipeWire $version sources"

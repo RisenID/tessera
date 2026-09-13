@@ -1,10 +1,4 @@
-"""A page for a feature this platform cannot do.
-
-Every page is built at startup and kept in the window's stack, so a Linux-only
-one would run Linux probes on Windows merely by existing. This stands in its
-place: the same slot in the stack, the reason in plain words, and nothing that
-touches the system.
-"""
+"""A page for a feature this platform cannot do."""
 
 from __future__ import annotations
 

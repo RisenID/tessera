@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
-#
-# Installs Tessera's optional extras on Fedora.
-#
-# The Tessera RPM already pulls in everything the core features need. This
-# script only adds the three pieces Fedora does not ship itself:
-#
-#   ffmpeg, v4l2loopback  (RPM Fusion) - the virtual camera
-#   scrcpy                             - screen mirroring and app windows
-#
-# Install Tessera itself with:
-#   ./scripts/build-rpm.sh && sudo dnf install ~/rpmbuild/RPMS/noarch/tessera-*.rpm
-#
-# Safe to re-run: every step checks before it acts.
+# 
 
 set -euo pipefail
 

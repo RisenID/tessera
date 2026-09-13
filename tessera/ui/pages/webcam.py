@@ -1,7 +1,4 @@
-"""Use the phone as a webcam.
-
-Every choice is enumerated from the phone rather than hardcoded.
-"""
+"""Use the phone as a webcam."""
 
 from __future__ import annotations
 
@@ -25,10 +22,7 @@ from ..widgets import Card, Pill, Toast, heading
 FALLBACK_SIZES = ["1920x1080", "1280x720", "640x480"]
 FALLBACK_FPS = [30, 24, 15]
 
-#: The resolutions worth offering, tallest first. A modern phone reports twenty
-#: or more output sizes -- sensor crops, odd aspect ratios, thumbnail formats --
-#: and listing them all makes the menu unusable. Only these standard heights are
-#: shown, and only when the phone actually supports them.
+#: The resolutions worth offering, tallest first.
 STANDARD_HEIGHTS: tuple[tuple[int, str], ...] = (
     (2160, "2160p · 4K UHD"),
     (1440, "1440p · QHD"),
@@ -41,19 +35,12 @@ STANDARD_HEIGHTS: tuple[tuple[int, str], ...] = (
 #: Widescreen, used to pick between several widths offered at the same height.
 TARGET_ASPECT = 16 / 9
 
-#: Frame rates worth offering. A camera's auto-exposure ranges include odd upper
-#: bounds (26, 27, 53 on this phone) that exist for exposure control rather than
-#: as sensible capture rates; offering them just clutters the menu.
+#: Frame rates worth offering.
 COMMON_FPS: tuple[int, ...] = (240, 120, 90, 60, 50, 30, 25, 24, 15)
 
 
 def _standard_sizes(sizes: list[dict]) -> list[dict]:
-    """Reduce the phone's full size list to the standard resolutions.
-
-    A phone typically offers several widths at each height (1920x1080 alongside
-    2400x1080 and 1440x1080, say). The one closest to 16:9 is the one people
-    mean by "1080p", so that is what gets offered.
-    """
+    """Reduce the phone's full size list to the standard resolutions."""
     by_height: dict[int, list[dict]] = {}
     for entry in sizes:
         width, height = entry.get("w", 0), entry.get("h", 0)
@@ -246,12 +233,7 @@ class WebcamPage(QWidget):
         self._rebuild_fps()
 
     def _rebuild_fps(self) -> None:
-        """Frame rates the phone will honour at the chosen resolution.
-
-        The phone reports the rates its auto-exposure can target and a ceiling
-        per resolution; only the rates at or below that ceiling are offered, so
-        4K does not list 60fps it cannot deliver.
-        """
+        """Frame rates the phone will honour at the chosen resolution."""
         self._loading = True
         cfg = self.hub.config.webcam
         camera = self._current_camera()

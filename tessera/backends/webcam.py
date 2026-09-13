@@ -1,12 +1,4 @@
-"""Use the phone as a webcam.
-
-The pipeline is scrcpy -> v4l2loopback: scrcpy pulls an H.264 stream from the
-phone (either a camera or the screen) and writes decoded frames into a virtual
-video device, which every Linux app then sees as an ordinary webcam.
-
-Loading v4l2loopback needs root, so that one step goes through pkexec; nothing
-else here is privileged.
-"""
+"""Use the phone as a webcam."""
 
 from __future__ import annotations
 
@@ -36,13 +28,7 @@ class VideoDevice:
 
     @property
     def is_ours(self) -> bool:
-        """Whether this is a loopback device Tessera can write to.
-
-        Identified by the driver rather than the card label. The label is set
-        when the module loads and survives across upgrades, so a device created
-        under an older name would otherwise go unrecognised and the app would
-        insist no virtual camera existed while one sat there unused.
-        """
+        """Whether this is a loopback device Tessera can write to."""
         return self.virtual
 
     @property
@@ -117,11 +103,7 @@ def loopback_devices() -> list[VideoDevice]:
 
 
 def ensure_module(devices: int = 1) -> list[VideoDevice]:
-    """Load v4l2loopback if needed and return the virtual devices.
-
-    Raises :class:`WebcamError` with an actionable message when the module is
-    missing or the user dismisses the authentication prompt.
-    """
+    """Load v4l2loopback if needed and return the virtual devices."""
     existing = loopback_devices()
     if existing:
         return existing
@@ -192,11 +174,7 @@ _CAMERA_LINE = re.compile(r"--camera-id=(\d+)\s+\((\w+)(?:,\s*)?([^)]*)\)")
 
 
 def list_cameras(serial: str = "") -> list[PhoneCamera]:
-    """Ask scrcpy which cameras the phone exposes.
-
-    Returns an empty list when scrcpy is missing or the phone is unreachable;
-    the UI falls back to a plain front/back choice in that case.
-    """
+    """Ask scrcpy which cameras the phone exposes."""
     if not scrcpy_available():
         return []
     argv = ["scrcpy", "--list-cameras"]
@@ -311,13 +289,7 @@ class Webcam(QObject):
 
 
 class CompanionCamera(QObject):
-    """Feeds the companion app's H.264 stream into a virtual camera.
-
-    scrcpy needs adb; this path does not. The phone encodes with MediaCodec and
-    sends Annex-B frames over the existing TLS link, and ffmpeg turns them into
-    frames on a v4l2loopback device. From an application's point of view the
-    result is identical to the scrcpy route.
-    """
+    """Feeds the companion app's H.264 stream into a virtual camera."""
 
     started = Signal(str)
     stopped = Signal()

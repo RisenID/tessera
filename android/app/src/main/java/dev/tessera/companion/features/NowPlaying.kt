@@ -13,18 +13,7 @@ import android.util.Log
 import dev.tessera.companion.Bus
 import org.json.JSONObject
 
-/**
- * What the phone is playing, read from MediaSession.
- *
- * Deliberately not AVRCP. Reading the track over Bluetooth means connecting
- * A2DP, and Android makes a newly connected A2DP device the active output --
- * which drags playback off whatever headphones are in use. MediaSession has no
- * such side effect: it is the same source the phone's own lock screen reads,
- * it needs only the notification listener permission that is already granted,
- * and it works whether or not Bluetooth is connected at all.
- *
- * This is how Phone Link shows a track without taking over the audio.
- */
+/** What the phone is playing, read from MediaSession. */
 object NowPlaying {
 
     private const val TAG = "TesseraMedia"
@@ -34,14 +23,7 @@ object NowPlaying {
     private var callback: MediaController.Callback? = null
     private var users = 0
 
-    /**
-     * Callbacks are delivered on the main looper.
-     *
-     * MediaSessionManager builds a Handler from the calling thread, and these
-     * calls arrive on a session worker that has no Looper -- which threw
-     * "Can't create handler inside thread ... that has not called
-     * Looper.prepare()" and left the listener unregistered.
-     */
+    /** Callbacks are delivered on the main looper. */
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val sessionsListener =
@@ -102,12 +84,7 @@ object NowPlaying {
 
     // -- plumbing ------------------------------------------------------------
 
-    /**
-     * Follows whichever session is actually playing.
-     *
-     * Several apps commonly hold a session at once; the one making sound is
-     * the one worth showing, falling back to the most recent otherwise.
-     */
+    /** Follows whichever session is actually playing. */
     private fun attach(controllers: List<MediaController>) {
         val playing = controllers.firstOrNull {
             it.playbackState?.state == PlaybackState.STATE_PLAYING
@@ -145,14 +122,7 @@ object NowPlaying {
         Bus.publish(describe(controller))
     }
 
-    /**
-     * Why the phone might not be sending audio anywhere.
-     *
-     * Android suspends A2DP entirely while the phone is ringing or in a call,
-     * including calls owned by an app rather than the dialler. A desktop that
-     * only sees silence cannot tell that from a phone that was never selected
-     * as the output, so the phone says which it is.
-     */
+    /** Why the phone might not be sending audio anywhere. */
     private fun audioMode(context: Context?): String {
         val manager = context?.getSystemService(AudioManager::class.java) ?: return ""
         return when (manager.mode) {

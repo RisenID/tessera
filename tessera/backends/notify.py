@@ -1,19 +1,4 @@
-"""Desktop notifications with something to press.
-
-The tray icon can raise a notification on every platform, which is why it was
-the first thing used -- but a tray balloon is a dead end: it shows text and
-offers nothing. A message arriving from the phone is exactly the moment a reply
-is worth one keystroke, and the phone half of that already works (the
-Notifications page sends replies through the companion app).
-
-So on Linux this speaks to the desktop's own notification server over D-Bus,
-where a notification can carry actions and, on KDE and GNOME, a reply box
-inside the popup itself. Everything is negotiated rather than assumed: the
-server is asked what it supports, and what it does not support is not offered.
-
-Elsewhere -- Windows, or a session with no notification server -- the caller
-falls back to the tray, which is still better than nothing.
-"""
+"""Desktop notifications with something to press."""
 
 from __future__ import annotations
 
@@ -128,11 +113,7 @@ class Notifier(QObject):
         reply_placeholder: str = "Reply",
         urgent: bool = False,
     ) -> int:
-        """Raise a notification. Returns the server's id, or 0.
-
-        Only actions this server actually supports are offered: a button that
-        does nothing is worse than no button.
-        """
+        """Raise a notification. Returns the server's id, or 0."""
         if not self.available or not self._can_send:
             return 0
 
@@ -172,19 +153,7 @@ class Notifier(QObject):
     # -- plumbing ------------------------------------------------------------
 
     def _gdbus(self, method: str, *args: str) -> str:
-        """Call the notification server through gdbus.
-
-        Not for fun: the specification's second argument is an unsigned 32-bit
-        integer, and PySide6 marshals every Python int as a *signed* one, so
-        QtDBus cannot express this call at all -- the server answers "no such
-        method (signature sisssasa{sv}i)". gdbus can say `uint32 0`, comes with
-        glib on any system that has a notification server, and does not block
-        waiting for the notification to be answered the way `notify-send
-        --action` does.
-
-        Listening is still QtDBus: the signals carry no argument we cannot
-        express, and a live subscription is better than a polling child.
-        """
+        """Call the notification server through gdbus."""
         result = run(
             [
                 GDBUS, "call", "--session",

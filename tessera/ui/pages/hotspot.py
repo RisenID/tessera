@@ -23,16 +23,10 @@ class HotspotPage(QWidget):
         self.palette_tokens = palette
         self._busy = False
         #: Where the phone says it can be reached, sent while both ends are
-        #: still on the same network. Joining the hotspot destroys that
-        #: network, so this is collected before the jump, not after.
+        #: still on the same network.
         self._addresses: list[str] = []
 
-        # Watching for a hotspot switched on by hand. Without Shizuku the
-        # phone will not take the command, and the old behaviour -- open the
-        # tethering panel, then tell the user to press the button again --
-        # only ever opened the panel a second time. The phone can see its own
-        # soft AP come up without any privilege, so the wait happens here
-        # instead and the join follows by itself.
+        # Watching for a hotspot switched on by hand.
         self._waiting = QTimer(self)
         self._waiting.setInterval(2000)
         self._waiting.timeout.connect(self._poll_hotspot)
@@ -118,11 +112,7 @@ class HotspotPage(QWidget):
     }
 
     def _populate_bands(self, bands: list) -> None:
-        """Offer only the bands this phone's radio supports.
-
-        Before the phone reports in, assume 2.4 GHz alone: it is the one band
-        every device can do, so the default is never an unsupported choice.
-        """
+        """Offer only the bands this phone's radio supports."""
         supported = [b for b in ("2.4", "5", "6") if b in bands] or ["2.4"]
         if "6" in supported or "5" in supported:
             self.band_hint.setText(
@@ -153,13 +143,7 @@ class HotspotPage(QWidget):
         return label
 
     def quick_toggle(self) -> None:
-        """Start the hotspot and join it, or leave it if we are already on it.
-
-        The panel's tile calls this so one click does the whole sequence, which
-        is why it lives here rather than being reimplemented there: starting a
-        hotspot means asking the phone, waiting for the AP, joining it and then
-        finding the phone again on the new network.
-        """
+        """Start the hotspot and join it, or leave it if we are already on it."""
         if self._busy:
             self.status.setText("Already working on it...")
             return
@@ -211,9 +195,7 @@ class HotspotPage(QWidget):
 
     # -- a hotspot switched on by hand --------------------------------------
 
-    #: How long to keep watching. Long enough to find the toggle, unlock the
-    #: phone and dismiss whatever Samsung puts in the way; short enough that a
-    #: forgotten attempt does not poll all afternoon.
+    #: How long to keep watching.
     WAIT_SECONDS = 150
 
     def _wait_for_manual_hotspot(self) -> None:
@@ -274,12 +256,7 @@ class HotspotPage(QWidget):
         self._busy = False
 
     def _proceed(self, reply: dict) -> None:
-        """Join a hotspot the phone brought up on its own.
-
-        The phone only knows its own SSID and passphrase when it has the
-        privilege to read them, which by definition it does not here, so the
-        settings on this page are the fallback.
-        """
+        """Join a hotspot the phone brought up on its own."""
         self._stop_waiting()
         self._remember_addresses(reply.get("addresses"))
         cfg = self.hub.config.hotspot
@@ -331,8 +308,6 @@ class HotspotPage(QWidget):
         def work() -> tuple:
             ap = hotspot.start_phone_hotspot(serial, cfg)
             # Read after starting, so the tether interface is in the list.
-            # adb is about to become unreachable over the network too, so this
-            # is the last chance here as well.
             return ap, hotspot.phone_addresses(serial)
 
         def started(result: tuple) -> None:
@@ -379,10 +354,7 @@ class HotspotPage(QWidget):
     # -- picking the link back up ------------------------------------------
 
     def _find_phone_again(self) -> None:
-        """Reconnect over the hotspot: probe the addresses the phone gave.
-
-        See docs/PROTOCOL.md for why the phone has to send them first.
-        """
+        """Reconnect over the hotspot: probe the addresses the phone gave."""
         if not self._addresses:
             return
         port = self.hub.companion.phone.port or companion.DEFAULT_PORT

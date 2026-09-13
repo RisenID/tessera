@@ -28,17 +28,7 @@ from .theme import RADIUS, SPACE, Palette
 
 
 def themed_icon(*names: str) -> QIcon:
-    """The first of *names* this system can draw, symbolic for choice.
-
-    A "-symbolic" icon is single-colour line art meant to be recoloured, which
-    is exactly what small UI icons here are for. The full-colour version of the
-    same name is a picture: recolouring `camera-photo` or `smartphone` turned
-    them into solid white rectangles.
-
-    Where there is no icon theme at all -- Windows -- the app draws its own;
-    see ui/glyphs.py. Without that fallback the whole interface came out in
-    emoji.
-    """
+    """The first of *names* this system can draw, symbolic for choice."""
     for name in names:
         for candidate in (f"{name}-symbolic", name):
             icon = QIcon.fromTheme(candidate)
@@ -51,8 +41,6 @@ def themed_icon(*names: str) -> QIcon:
 
 
 #: Above this share of opaque pixels an icon is filled rather than stroked.
-#: Measured across the icons this app uses: strokes top out around a quarter of
-#: the box, pictures start above a third.
 _FILLED_COVERAGE = 0.30
 
 #: How far apart the lightest and darkest parts can be, and how wide a spread
@@ -61,18 +49,7 @@ _VALUE_SPREAD, _HUE_SPREAD = 0.45, 40
 
 
 def _tintable(pixmap: QPixmap) -> bool:
-    """Whether *pixmap* is line art or a flat shape rather than a picture.
-
-    Tinting replaces every colour with one. That suits strokes -- including
-    strokes with a coloured accent, like the red slash on a muted speaker --
-    and flat glyphs like a skip-forward triangle. It ruins a picture, which
-    comes back as its own silhouette: that is what turned `camera-photo` and
-    `smartphone` into solid white rectangles.
-
-    Two signals, either of which is enough. A small filled area means strokes
-    whatever colours they use; one colour throughout means a flat glyph however
-    much of the box it fills.
-    """
+    """Whether *pixmap* is line art or a flat shape rather than a picture."""
     image = pixmap.toImage()
     if image.isNull():
         return True
@@ -106,12 +83,7 @@ def _tintable(pixmap: QPixmap) -> bool:
 
 
 def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
-    """Recolour a single-colour icon to *colour*, or leave a picture alone.
-
-    Breeze's line art is drawn for one background and Tessera puts it on
-    several -- the window, a lit switch, a tab -- so painting it in the colour
-    of the text beside it is what makes it read at 16px on any theme.
-    """
+    """Recolour a single-colour icon to *colour*, or leave a picture alone."""
     if icon.isNull():
         return icon
     pixmap = icon.pixmap(size, size)
@@ -445,12 +417,7 @@ def row(*widgets: QWidget, spacing: int = SPACE["sm"], stretch_last: bool = Fals
 
 
 def heading(title: str, subtitle: str = "") -> QWidget:
-    """The standard page header.
-
-    Vertically fixed: in a header row beside a search box, and on a page whose
-    list is hidden behind an empty state, a growable header soaked up the spare
-    height and left the subtitle floating half a page below the title.
-    """
+    """The standard page header."""
     container = QWidget()
     container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
     layout = QVBoxLayout(container)
@@ -470,12 +437,7 @@ def heading(title: str, subtitle: str = "") -> QWidget:
 
 
 def header_row(layout) -> QWidget:
-    """Wrap a page's header layout so it keeps its own height.
-
-    A bare layout row grows into whatever space the page has spare, which
-    pushed titles into the middle of the page whenever the list below them was
-    hidden behind an empty state.
-    """
+    """Wrap a page's header layout so it keeps its own height."""
     holder = QWidget()
     holder.setLayout(layout)
     holder.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -492,11 +454,7 @@ def divider() -> QFrame:
 
 
 class OtpCard(Card):
-    """A passcode, big and copyable in one click.
-
-    Shared, not owned by the notifications page: a code is just as useful from
-    the overview and from the message it arrived in.
-    """
+    """A passcode, big and copyable in one click."""
 
     copied = Signal(str)
 

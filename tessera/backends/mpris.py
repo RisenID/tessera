@@ -1,11 +1,4 @@
-"""Now-playing information for a Bluetooth-connected phone.
-
-BlueZ exposes the phone's AVRCP player on the system bus, and its own
-`mpris-proxy` helper republishes that on the session bus as a standard MPRIS
-player. Reading MPRIS rather than AVRCP directly means the same code would work
-for any player, and it is the interface KDE's own media controls already use --
-so running the proxy makes the phone appear in the desktop's media applet too.
-"""
+"""Now-playing information for a Bluetooth-connected phone."""
 
 from __future__ import annotations
 
@@ -75,9 +68,7 @@ class MprisPlayer(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        #: MPRIS is a desktop bus interface. Where there is none, the phone's
-        #: own media state -- which the companion app reports anyway -- is all
-        #: there is, and every method here answers "nothing playing".
+        #: MPRIS is a desktop bus interface.
         self._usable = HAVE_QTDBUS and platform.supported("mpris")
         self._bus = session()
         self._proxy = ManagedProcess(self)
@@ -92,12 +83,7 @@ class MprisPlayer(QObject):
         return self._proxy.running
 
     def start_proxy(self) -> None:
-        """Run bluez's AVRCP-to-MPRIS bridge.
-
-        Without it the phone's player is only visible on the system bus in
-        BlueZ's own interface, and neither Tessera nor the desktop's media
-        controls can see it.
-        """
+        """Run bluez's AVRCP-to-MPRIS bridge."""
         if self._proxy.running:
             return
         if not self.proxy_available():
@@ -125,14 +111,7 @@ class MprisPlayer(QObject):
         ]
 
     def find_player(self, address: str = "", device_name: str = "") -> str:
-        """The MPRIS service for the phone, or '' when none is present.
-
-        mpris-proxy names its service after the device's *name*, not its
-        address -- a phone called "Ruchit's S25" becomes
-        org.mpris.MediaPlayer2.Ruchit_s_S25. Matching only on the address or
-        the word "bluez" therefore never found it, which is why now-playing
-        stayed empty while the data was sitting there on the bus.
-        """
+        """The MPRIS service for the phone, or '' when none is present."""
         candidates = self._services()
         if not candidates:
             return ""
@@ -178,14 +157,7 @@ class MprisPlayer(QObject):
         return _unwrap(values[0]) if values else None
 
     def _property(self, service: str, name: str) -> Any:
-        """Read one MPRIS property, decoded.
-
-        Qt is not used for this. A metadata dictionary is a{sv}, and PySide6
-        hands that back as a QDBusArgument whose asVariant() cannot be read
-        from Python -- so the values were silently unreadable and now-playing
-        stayed empty. busctl emits the same data as JSON, which decodes
-        cleanly.
-        """
+        """Read one MPRIS property, decoded."""
         result = run(
             [
                 "busctl", "--user", "--json=short", "get-property",

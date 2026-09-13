@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Checks clipboard sharing, and its fallback for a phone without Shizuku.
-
-The phone can share its clipboard three ways: the companion app through
-Shizuku, the companion app through its accessibility service, or -- with
-neither -- a helper the desktop starts over adb as the shell user. This covers
-the desktop's half: which route is chosen, that the helper runs only when it is
-the only way, that its lines are read correctly, and that a value never bounces
-back to where it came from.
-
-Run it from the repository root:  python3 scripts/check-clipboard.py
-"""
+"""Checks clipboard sharing, and its fallback for a phone without Shizuku."""
 
 from __future__ import annotations
 

@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Package visibility (Android 11+). Without this, queryIntentActivities
-         returns a filtered list and the desktop's app launcher would be missing
-         most apps. Asking only for launcher activities keeps the scope narrow;
-         QUERY_ALL_PACKAGES is neither needed nor justifiable here. -->
+    <!-- Launcher apps only, for the desktop's app list (Android 11 package visibility). -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -15,42 +12,22 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Required to start a foregroundServiceType="connectedDevice" service:
-         the platform demands FOREGROUND_SERVICE_CONNECTED_DEVICE *plus* one of
-         a set of connectivity permissions, and ACCESS_WIFI_STATE is not one of
-         them. Multicast is the honest choice here: the service advertises
-         itself over mDNS so the desktop can find it without a typed-in IP. -->
+    <!-- connectedDevice services also need a connectivity permission; mDNS uses this one. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <!-- Since Android 9 a background app cannot open the camera. Streaming the
-         webcam therefore needs the service to also run as a camera foreground
-         service for as long as the stream lasts. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <!-- Sending what the phone is playing to the desktop. Playback capture is
-         gated behind a MediaProjection, so the service must also be a
-         mediaProjection foreground service while a stream is live. RECORD_AUDIO
-         is required by AudioRecord even though the microphone is never opened:
-         the source is the phone's own media mix, a copy of it, which is why
-         this cannot take audio away from the phone's headphones. -->
+    <!-- Playback capture. RECORD_AUDIO is required by AudioRecord; the mic is never opened. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Reading and setting the interruption filter. Granted by the user in
-         Settings; this is what removes the need to poll over adb. -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
-    <!-- SMS needs telephony hardware, but the app is still useful without it
-         (photos, notifications, screen), so it must not be a hard requirement. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
-    <!-- Calls. ANSWER_PHONE_CALLS covers answering and hanging up and is an
-         ordinary runtime permission, so call control needs no privileged
-         access. CALL_PHONE only decides whether dialling happens immediately
-         or opens the dialer with the number ready. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
@@ -66,16 +43,10 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <!-- The phone's storage as a folder on the desktop. Android 11 and later
-         show an app the whole of shared storage only with "All files access";
-         it is granted in Settings, or through Shizuku from the desktop, and
-         nothing else in the app needs it. -->
+    <!-- All files access, for the phone storage mount only. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
-    <!-- Companion association. Beyond being the honest description of what this
-         app is, it keeps the service alive in the background without a battery
-         exemption prompt, and is the category Google names as exempt from the
-         Android 17 SMS OTP delay. -->
+    <!-- Keeps the service alive in the background without a battery exemption prompt. -->
     <uses-feature android:name="android.software.companion_device_setup" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND" />
@@ -100,12 +71,8 @@
             </intent-filter>
         </activity>
 
-        <!-- No launcher entry, no history, never in Recents: it exists only to
-             hold the projection request for a moment. -->
-        <!-- Exported only so the shell can start it, which is what makes the
-             audio start without the phone being touched. It answers nothing
-             without the single-use token the service issues, so an app that
-             starts it achieves exactly nothing. -->
+        <!-- Invisible; holds the projection request. Exported so the shell can start it,
+             but it ignores intents without the service's single-use token. -->
         <activity
             android:name=".ConsentActivity"
             android:exported="true"
@@ -114,9 +81,7 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Tessera.Invisible" />
 
-        <!-- "Share to Tessera" from any app on the phone. No interface: it
-             hands what it was given to the connected desktops and closes.
-             Exported because that is what a share target is. -->
+        <!-- Share target: forwards to connected desktops and closes. -->
         <activity
             android:name=".ShareActivity"
             android:exported="true"
@@ -152,7 +117,6 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice|camera|mediaProjection" />
 
-        <!-- Shizuku hands the app a shell-UID binder through this provider. -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"
@@ -161,8 +125,7 @@
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
-        <!-- Clipboard sharing without Shizuku; the user switches it on under
-             Accessibility, and it survives a reboot. -->
+        <!-- Clipboard without Shizuku. -->
         <service
             android:name=".features.ClipboardAccessibility"
             android:exported="false"

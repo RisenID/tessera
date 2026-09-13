@@ -1,22 +1,4 @@
-"""Files, both ways, over the connection the app already has.
-
-The link is already authenticated, encrypted and open, and it already carries
-binary frames for photos, camera video and audio. A file is the same shape of
-problem with two differences: it can be enormous, and it has to land somewhere
-the user can find afterwards.
-
-**Enormous** is the whole design. A QTcpSocket accepts everything it is given
-and buffers it, so handing it a two-gigabyte file turns into two gigabytes of
-memory before a byte reaches the phone. Instead the file is read and written a
-chunk at a time, and the next chunk is only sent once the socket has drained
-below a watermark -- so memory stays flat whatever the size, and the progress
-bar means something because it tracks bytes that have actually left.
-
-**Landing somewhere** is the other half. Incoming bytes are written to a
-`.part` file next to their destination and renamed only when the last chunk
-arrives, so an interrupted transfer never looks like a complete file, and an
-existing file is never half-overwritten by one that failed.
-"""
+"""Files, both ways, over the connection the app already has."""
 
 from __future__ import annotations
 
@@ -32,14 +14,10 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 log = logging.getLogger(__name__)
 
-#: 256 KiB. Large enough that the per-frame overhead disappears (a 1 GB file is
-#: 4,000 frames, not a million), small enough that one chunk is never a
-#: noticeable pause and the watermark below stays meaningful.
+#: 256 KiB.
 CHUNK = 256 * 1024
 
-#: How much unsent data to allow in the socket before pausing. Four chunks is
-#: enough to keep the network busy through a scheduling gap and small enough
-#: that cancelling stops almost immediately.
+#: How much unsent data to allow in the socket before pausing.
 HIGH_WATER = 4 * CHUNK
 
 #: Anything larger is refused rather than filling a disk by surprise.
@@ -50,18 +28,13 @@ WAITING, RUNNING, FINISHING, DONE, FAILED, CANCELLED = (
     "waiting", "running", "finishing", "done", "failed", "cancelled",
 )
 
-#: How long to wait for the phone to confirm a file it has been sent every
-#: byte of. Generous: the phone still has to flush it to storage, and a large
-#: file on a slow link is behind the socket, not lost.
+#: How long to wait for the phone to confirm a file it has been
+#: sent every byte of.
 CONFIRM_SECONDS = 120
 
 
 def default_directory() -> Path:
-    """Where received files go unless the settings say otherwise.
-
-    XDG's own answer where it has one, because that is the folder the user's
-    file manager already calls Downloads in their own language.
-    """
+    """Where received files go unless the settings say otherwise."""
     from ..core import platform
     from ..core.proc import run
 
@@ -112,11 +85,7 @@ def _windows_downloads() -> Path | None:                    # pragma: no cover
 
 
 def unique_path(directory: Path, name: str) -> Path:
-    """A path in *directory* that is not already taken.
-
-    "report.pdf" becomes "report (2).pdf" rather than overwriting: a file
-    arriving from a phone must never destroy one that is already here.
-    """
+    """A path in *directory* that is not already taken."""
     safe = safe_name(name)
     candidate = directory / safe
     if not candidate.exists():
@@ -130,12 +99,7 @@ def unique_path(directory: Path, name: str) -> Path:
 
 
 def safe_name(name: str) -> str:
-    """Reduce a name from the phone to something that cannot escape a folder.
-
-    The name comes from another device, so it is not trusted: a separator or a
-    "on the way up" component would write outside the download folder
-    entirely. Only the last component survives, and only its safe characters.
-    """
+    """Reduce a name from the phone to something that cannot escape a folder."""
     name = name.replace("\\", "/").split("/")[-1].strip()
     name = "".join(c for c in name if c.isprintable() and c not in '<>:"|?*')
     name = name.lstrip(".") or "file"
@@ -214,11 +178,7 @@ def human(size: float) -> str:
 
 
 class FileTransfers(QObject):
-    """The state machine for files in both directions.
-
-    Owns no socket. It is handed a client to send through and the messages
-    that arrive, which is what lets the whole thing be checked without a phone.
-    """
+    """The state machine for files in both directions."""
 
     #: Any change worth redrawing: a new transfer, progress, an ending.
     changed = Signal(object)           # Transfer
@@ -240,9 +200,7 @@ class FileTransfers(QObject):
         #: far through it we are.
         self._outgoing: dict[str, object] = {}
         self._incoming: dict[str, object] = {}
-        #: Queued while the link is busy with an earlier file. One at a time,
-        #: because two files sharing the pipe finish in twice the time each and
-        #: neither progress bar means anything.
+        #: Queued while the link is busy with an earlier file.
         self._queue: list[Path] = []
         self._sending = ""
 
@@ -350,12 +308,7 @@ class FileTransfers(QObject):
         if handle is None:
             return
 
-        # A budget for this pass rather than a check per chunk. The socket's
-        # own counter only catches up when the event loop next runs, so asking
-        # it between writes says "nothing pending" however much has just been
-        # handed over -- which is how an eight megabyte file ended up written
-        # in ten milliseconds and held in memory. Counting down what this pass
-        # has written is the part that cannot lie.
+        # A budget for this pass rather than a check per chunk.
         link = transfer.link
         budget = HIGH_WATER - link.pending_bytes
         while budget > 0:
@@ -366,14 +319,7 @@ class FileTransfers(QObject):
                 return
 
             if not chunk:
-                # Handed over, not delivered. "Done" waits for the phone to
-                # say it saved the file: until then up to a watermark of it is
-                # still in the socket, and a transfer that failed at the far
-                # end would otherwise be reported here as a success.
-                # State first, then the announcement. A reply can come back
-                # before send() returns -- it does in the checks, where both
-                # ends share a thread -- and setting the state afterwards
-                # would overwrite the answer with the question.
+                # Sent, but only done once the phone confirms it saved.
                 transfer.state = FINISHING
                 handle.close()                              # type: ignore[union-attr]
                 self._outgoing.pop(transfer.id, None)
@@ -525,9 +471,7 @@ class FileTransfers(QObject):
 
         partial = partial_path(transfer.path)
         try:
-            # Renamed only now. Until this moment the file on disk is a .part,
-            # so a transfer cut off halfway cannot be mistaken for a whole file
-            # by whatever opens it next.
+            # Drop the .part suffix only once the file is complete.
             partial.replace(transfer.path)                   # type: ignore[arg-type]
         except OSError as exc:
             transfer.state = FAILED
@@ -593,10 +537,7 @@ class FileTransfers(QObject):
     def _cancelled(self, message: dict) -> None:
         transfer = self._transfers.get(str(message.get("id") or ""))
         if transfer is None or not transfer.active:
-            # Nothing to stop. Worth saying rather than dropping: a phone that
-            # gives up while the last of the file is still in the socket would
-            # otherwise leave the interface claiming a success that did not
-            # happen.
+            # Nothing to stop.
             if transfer is not None and transfer.state == DONE:
                 transfer.state = FAILED
                 transfer.error = str(message.get("message") or "The phone gave up.")
@@ -671,8 +612,7 @@ def reveal(path: Path) -> None:
 
     if platform.IS_WINDOWS:
         # Explorer's own "select this file", one argument, no quotes of ours:
-        # Explorer parses its command line itself. It exits non-zero even when
-        # it worked, so its answer is not worth waiting for.
+        # Explorer parses its command line itself.
         if platform.REAL == "windows":                      # pragma: no cover
             import subprocess
             subprocess.Popen(["explorer", f"/select,{path}"],

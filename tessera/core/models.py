@@ -1,8 +1,4 @@
-"""Source-neutral data the UI renders.
-
-The same notification can arrive from the companion app or from KDE Connect,
-so the UI is given one shape and never has to ask where it came from.
-"""
+"""Source-neutral data the UI renders."""
 
 from __future__ import annotations
 
@@ -56,13 +52,6 @@ class Notification:
         )
 
     #: Packages that are somebody's default SMS app somewhere.
-    #:
-    #: Only a fallback. The companion app decides this properly, by asking the
-    #: platform which app is actually the default on that phone, and says so in
-    #: the notification. KDE Connect sends no package at all, so for that source
-    #: this list is all there is -- and it will quietly miss an SMS app nobody
-    #: thought of. That is the cost of KDE Connect not carrying the field, not
-    #: something to paper over by guessing harder.
     SMS_PACKAGES = (
         "com.google.android.apps.messaging",
         "com.samsung.android.messaging",
@@ -74,11 +63,7 @@ class Notification:
 
     @property
     def is_text_message(self) -> bool:
-        """Whether this notification is a text message arriving.
-
-        The Messages page reloads on this rather than polling the phone's SMS
-        database on a timer.
-        """
+        """Whether this notification is a text message arriving."""
         if self.sms:
             return True
         if self.package:

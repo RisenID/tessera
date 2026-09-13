@@ -9,22 +9,7 @@ import java.io.InputStreamReader
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
-/**
- * The phone's clipboard for a desktop that has adb and nothing else.
- *
- * Not part of the app's own process. The desktop runs this class out of the
- * installed APK as the shell user, the way scrcpy runs its server:
- *
- *     CLASSPATH=<base.apk> app_process / dev.tessera.companion.shell.ClipboardHelper
- *
- * The shell user may read the clipboard in the background, which no ordinary
- * app may, and the clipboard service tells it about each change -- so this
- * needs no Shizuku, no permission and no polling, only the adb connection it
- * is running over. When adb goes, the process goes with it.
- *
- * It speaks JSON, one object per line: `{"t":"clip","text":…}` out whenever
- * the clipboard changes, `{"t":"set","text":…}` and `{"t":"get"}` in.
- */
+/** The phone's clipboard for a desktop that has adb and nothing else. */
 object ClipboardHelper {
 
     private const val SHELL = "com.android.shell"
@@ -106,14 +91,7 @@ object ClipboardHelper {
         exitProcess(0)
     }
 
-    /**
-     * A change arrived that could not be read yet.
-     *
-     * The clipboard service returns nothing while the phone is locked -- a
-     * copy made just before locking, or text set by the desktop, is announced
-     * but unreadable. Rather than lose it, this rechecks every couple of
-     * seconds until it can read, which is to say until the phone is unlocked.
-     */
+    /** A change arrived that could not be read yet. */
     @Volatile
     private var unread = false
     private var rechecker: Thread? = null

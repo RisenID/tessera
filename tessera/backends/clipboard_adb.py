@@ -1,17 +1,4 @@
-"""The phone's clipboard over adb, for a phone without Shizuku.
-
-Android lets no ordinary app read the clipboard in the background, but the
-shell user may -- which is why the companion app's own clipboard route needs
-Shizuku. adb *is* the shell user. So when the phone cannot share its clipboard
-itself and adb is connected, this starts a small helper out of the installed
-companion APK, the way scrcpy starts its server:
-
-    adb shell CLASSPATH=<base.apk> app_process / dev.tessera.companion.shell.ClipboardHelper
-
-The clipboard service tells the helper about each change, so nothing polls.
-The helper speaks one JSON object per line on stdout and reads the same on
-stdin; it exits when adb goes away, and this notices and says so.
-"""
+"""The phone's clipboard over adb, for a phone without Shizuku."""
 
 from __future__ import annotations
 

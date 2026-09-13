@@ -1,17 +1,4 @@
-"""Joining a Wi-Fi network on Windows, through netsh.
-
-The Linux half of the hotspot flow talks to NetworkManager; this is the same
-set of questions asked of `netsh wlan`, which is present on every Windows
-install and needs no elevation for the profile of the user running it.
-
-netsh has no way to pass a passphrase on the command line, so joining a network
-for the first time means writing a profile: an XML document handed to
-`netsh wlan add profile`. That is also why the passphrase ends up in a file --
-written to the user's own temporary directory and deleted immediately, never
-into the profile store in clear (`keyMaterial` is protected once imported).
-
-Everything here blocks; callers dispatch through core.proc.submit.
-"""
+"""Joining a Wi-Fi network on Windows, through netsh."""
 
 from __future__ import annotations
 
@@ -67,12 +54,7 @@ def _wlan(*args: str, timeout: float = 20.0):
 
 
 def active_ssid() -> str:
-    """SSID of the network currently joined, or ''.
-
-    Read from `netsh wlan show interfaces`, whose output is a block per
-    adapter. Only a connected one has an SSID line, and "BSSID" has to be
-    skipped or it matches first.
-    """
+    """SSID of the network currently joined, or ''."""
     result = _wlan("show", "interfaces")
     if not result.ok:
         return ""
@@ -89,11 +71,7 @@ def active_ssid() -> str:
 
 
 def radio_on() -> bool:
-    """Whether any wireless adapter is up.
-
-    netsh reports a disabled radio as a "Software Off"/"Hardware Off" line, and
-    an adapter that is merely disconnected still shows a state.
-    """
+    """Whether any wireless adapter is up."""
     result = _wlan("show", "interfaces")
     if not result.ok:
         return False
@@ -123,11 +101,7 @@ def has_profile(ssid: str) -> bool:
 
 
 def scan_for(ssid: str, timeout: float = 30.0) -> bool:
-    """Wait for *ssid* to appear in a scan.
-
-    Windows rescans on its own schedule and offers no way to force one, so this
-    is a wait rather than a loop of rescans.
-    """
+    """Wait for *ssid* to appear in a scan."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         result = _wlan("show", "networks", "mode=bssid")

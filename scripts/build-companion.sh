@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-#
-# Builds the companion APK and, if a phone is attached, installs it.
-#
-# Gradle is run from ~/android rather than through a wrapper checked into the
-# tree, and every byte it writes is redirected to $TESSERA_BUILD_DIR. A build
-# leaves the source directory exactly as it found it.
+# 
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -29,9 +24,7 @@ if [[ -f "$APK" ]]; then
     printf '\nBuilt %s (%s), version %s\n' \
         "$APK" "$(du -h "$APK" | cut -f1)" "$VERSION"
     # A phone reachable over both USB and wireless debugging shows up twice,
-    # and adb refuses to guess between them. USB is preferred: it is faster and
-    # does not drop when the phone changes network -- which, for a hotspot
-    # build, it is about to.
+    # and adb refuses to guess between them.
     SERIAL="$(adb devices | awk 'NR>1 && $2=="device" {print $1}' |
               sort -t. -k1,1 | grep -v '\.' | head -1)"
     [[ -z $SERIAL ]] && SERIAL="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"

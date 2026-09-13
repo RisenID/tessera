@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Checks that the sidebar shows the phone, not a part number.
-
-A phone has a name its owner gave it -- "Ruchit's S25" -- and a model number
-printed on a label somewhere. The sidebar had been showing the second one. This
-covers the name, the model underneath it, and the tile that wears the phone's
-own wallpaper (or, where no app may read it, the colour the phone derives from
-it).
-
-Run it from the repository root:  python3 scripts/check-identity.py
-"""
+"""Checks that the sidebar shows the phone, not a part number."""
 
 from __future__ import annotations
 

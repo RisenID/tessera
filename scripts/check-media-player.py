@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the phone published to this desktop as an MPRIS player.
-
-Talks to the real session bus: the player is registered, queried the way a
-media applet queries it, pressed the way a keyboard's media key presses it, and
-then withdrawn. What cannot be checked from here is Plasma's applet drawing it,
-which is a matter of looking at the screen.
-
-Run it from the repository root:  python3 scripts/check-media-player.py
-"""
+"""Checks the phone published to this desktop as an MPRIS player."""
 
 from __future__ import annotations
 
@@ -94,9 +86,7 @@ def main() -> int:
     print("-- publishing")
     if not player.publish():
         # Almost always the app itself: Tessera publishes this name while it
-        # runs, and a second owner is not allowed. Everything below would then
-        # be reading the *running* app's player and reporting six failures for
-        # one cause, which is what it did.
+        # runs, and a second owner is not allowed.
         print("\nthe player name is already taken -- Tessera is running.")
         print("Close it (or run this before starting it) and try again.")
         return 0

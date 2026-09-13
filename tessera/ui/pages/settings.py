@@ -55,13 +55,7 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
 
 
 class SettingsPage(QWidget):
-    """Pairing, features and preferences.
-
-    Every control applies itself. There is no Save button: it used to sit
-    inside the "Screen and windows" card at the bottom of a scrolling page,
-    so a checkbox ticked in Startup or Sidebar looked like it had done
-    something and was thrown away at the next launch.
-    """
+    """Pairing, features and preferences."""
 
     featuresChanged = Signal()
 
@@ -384,19 +378,14 @@ class SettingsPage(QWidget):
         buttons.addStretch(1)
         audio.add(self._bar(buttons))
 
-        # Hidden until something runs. The build takes a while and downloads
-        # the PipeWire sources on its first run, so a silent spinner would look
-        # like a hang; the script's own output is the honest progress report.
+        # Hidden until something runs.
         self.ldac_log = QPlainTextEdit()
         self.ldac_log.setReadOnly(True)
         self.ldac_log.setMaximumHeight(150)
         self.ldac_log.setVisible(False)
         audio.add(self.ldac_log)
 
-        #: Which step is running: "tools", "setup" or "remove". Chaining the
-        #: build onto a package install needs this -- without it a Remove,
-        #: which also ends with the decoder absent and the tools present, looks
-        #: identical and reinstalls what was just removed.
+        #: Which step is running: "tools", "setup" or "remove".
         self._ldac_step = ""
         self._ldac_proc = ManagedProcess(self)
         self._ldac_proc.output.connect(self.ldac_log.appendPlainText)
@@ -450,12 +439,7 @@ class SettingsPage(QWidget):
     # -- the phone's audio ---------------------------------------------------
 
     def _grant_projection(self) -> None:
-        """Ask the phone to stop asking, through Shizuku.
-
-        Android makes consent single-use, so without this the phone has to be
-        picked up before every stream -- which defeats the point of the feature.
-        The grant is made once and can be undone in the companion app.
-        """
+        """Ask the phone to stop asking, through Shizuku."""
         self.grant_state.setText("Asking the phone...")
         self.grant_button.setEnabled(False)
 
@@ -515,11 +499,7 @@ class SettingsPage(QWidget):
     # -- LDAC setup ----------------------------------------------------------
 
     def _fill_codecs(self) -> None:
-        """Populate the quality list, keeping whatever was selected.
-
-        Rebuilt rather than built once: installing the decoder adds LDAC to it
-        without the page being reopened.
-        """
+        """Populate the quality list, keeping whatever was selected."""
         chosen = self.codec_choice.currentData() or self.hub.config.bluetooth.codec
         offer_ldac = btcodecs.ldac_receivable()
         self.codec_choice.blockSignals(True)
@@ -556,8 +536,7 @@ class SettingsPage(QWidget):
 
         self.ldac_action.setVisible(True)
         # Setting up is the action worth emphasising; once it is done the
-        # button is only there for a rebuild. Qt does not restyle on an
-        # objectName change on its own, hence the repolish.
+        # button is only there for a rebuild.
         self.ldac_action.setObjectName("" if installed else "Primary")
         self.ldac_action.style().unpolish(self.ldac_action)
         self.ldac_action.style().polish(self.ldac_action)
@@ -595,11 +574,7 @@ class SettingsPage(QWidget):
 
     def _run_ldac(self, argv: list[str] | None, what: str, action: str = "",
                   step: str = "setup") -> None:
-        """Run one step, with the script's own output as the progress report.
-
-        argv is None for the script itself, which has to be located first and
-        may not be there at all.
-        """
+        """Run one step, with the script's own output as the progress report."""
         if self._ldac_proc.running:
             return
         self._ldac_step = step
@@ -648,8 +623,6 @@ class SettingsPage(QWidget):
         # The codec list advertised to the phone is written from the saved
         # preference and does not mention LDAC until it can be decoded, so
         # installing a decoder changes nothing until that file is rewritten.
-        # Missing this is the difference between LDAC working and appearing to
-        # be installed while the phone keeps choosing aptX.
         choice = self.hub.config.bluetooth.codec
         if btcodecs.write_preference(choice):
             submit(btcodecs.reload_session, on_error=lambda _m: None)
@@ -751,9 +724,9 @@ class SettingsPage(QWidget):
         # the advertised codecs to one, and it can only do that once the phone
         # has said which ones it can send.
         phone_codecs = list(self.hub.config.bluetooth.phone_codecs)
-        # Only restart the audio service when the offer actually changed: it
-        # cuts this computer's sound for a moment, which is not something to do
-        # on every save.
+        # Only restart the audio service when the offer actually changed:
+        # it cuts this computer's sound for a moment, which is not
+        # something to do on every save.
         if btcodecs.write_preference(codec, phone_codecs):
             submit(btcodecs.reload_session, on_error=lambda _m: None)
 

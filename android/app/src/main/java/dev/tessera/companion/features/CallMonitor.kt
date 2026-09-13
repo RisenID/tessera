@@ -10,13 +10,7 @@ import dev.tessera.companion.Bus
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-/**
- * Watches the phone's call state and announces it to connected desktops.
- *
- * This is event-driven -- the platform calls us -- so it costs nothing while
- * no call is happening. Registration is scoped to having a subscriber, so a
- * phone with no desktop attached does no work at all.
- */
+/** Watches the phone's call state and announces it to connected desktops. */
 object CallMonitor {
 
     private const val TAG = "TesseraCalls"

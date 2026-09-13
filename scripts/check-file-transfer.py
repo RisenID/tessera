@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Checks file transfer by running both ends against each other.
-
-No phone. Two copies of the real engine are wired back to back through a fake
-socket, so a file genuinely travels: read from disk, chunked, framed, written
-at the other end, renamed, and compared byte for byte. The fake socket also
-buffers like a real one, which is the only way to test the thing most likely to
-go wrong at scale -- that a large file is not swallowed into memory whole.
-
-Run it from the repository root:  python3 scripts/check-file-transfer.py
-"""
+"""Checks file transfer by running both ends against each other."""
 
 from __future__ import annotations
 
@@ -47,12 +38,7 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 
 
 class Wire(QObject):
-    """One end of a fake link, with a socket-shaped write buffer.
-
-    `pending_bytes` is what a QTcpSocket has accepted but not yet put on the
-    network. Holding it above the watermark is how a real slow link looks, and
-    the sender is supposed to stop until `drain` lets it go.
-    """
+    """One end of a fake link, with a socket-shaped write buffer."""
 
     fileEvent = Signal(dict)
     fileChunk = Signal(dict, bytes)

@@ -12,19 +12,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 
-/**
- * Ringing the phone from the desktop, to find it.
- *
- * On the alarm stream, deliberately: a phone that has been silenced is exactly
- * the phone that gets lost down the side of a sofa, and an alarm is the one
- * thing Android still lets through. The volume is raised for the ring and put
- * back afterwards, so this borrows the phone's settings rather than changing
- * them.
- *
- * It stops when the desktop says so, when the notification is tapped, or after
- * [LIMIT_MS] regardless -- nothing here should be able to leave a phone
- * screaming in a pocket because a laptop went to sleep.
- */
+/** Ringing the phone from the desktop, to find it. */
 object FindPhone {
 
     private const val TAG = "TesseraRing"

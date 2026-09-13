@@ -1,14 +1,4 @@
-"""Setting up LDAC reception, from inside the app.
-
-The work itself is a shell script -- scripts/build-ldac-decoder.sh -- because
-it compiles C against whichever PipeWire the machine is running and there is
-nothing Python can usefully do about that. What this module adds is everything
-around it: finding the script wherever Tessera was installed from, checking the
-build dependencies before a run rather than after it fails, and naming the
-package that supplies each missing one.
-
-See btcodecs for why LDAC needs any of this.
-"""
+"""Setting up LDAC reception, from inside the app."""
 
 from __future__ import annotations
 
@@ -31,15 +21,7 @@ COMMAND = "tessera-ldac-decoder"
 
 
 def script_path() -> Path | None:
-    """The setup script, wherever this copy of Tessera came from.
-
-    Three layouts are real: a git clone, where it sits in scripts/; an
-    installed package, where it sits in the data directory beside the decoder
-    sources it builds; and either of those reached through the launcher on
-    PATH. TESSERA_LDAC_SCRIPT overrides the search, which is how the packaged
-    layout gets tested without installing it. Returning None means the feature
-    is unavailable rather than broken, and the UI says so.
-    """
+    """The setup script, wherever this copy of Tessera came from."""
     override = os.environ.get("TESSERA_LDAC_SCRIPT")
     if override:
         return Path(override) if Path(override).is_file() else None
@@ -70,14 +52,7 @@ def installed() -> bool:
     return btcodecs.ldac_receivable()
 
 
-#: What the script needs, and the Fedora package that supplies it. Headers are
-#: tested by asking the compiler rather than looking in /usr/include, which
-#: accounts for CPATH and for layouts other than Fedora's -- the same test the
-#: script makes, so the two can never disagree about whether a run will work.
-#: What the script needs, paired with the capability key that names the
-#: package supplying it. The package itself is looked up per distribution --
-#: see core.packages -- because it is libldac-devel on Fedora,
-#: libldacbt-enc-dev on Debian and libldac on Arch.
+#: What the script needs, and the Fedora package that supplies it.
 BUILD_REQUIREMENTS: tuple[tuple[str, str], ...] = (
     ("gcc", "gcc"),
     ("curl", "curl"),
@@ -109,13 +84,7 @@ def install_command(capabilities: list[str]) -> str:
 
 
 def install_argv(capabilities: list[str]) -> list[str]:
-    """The same thing through polkit, for running it from the app.
-
-    Installing packages is a bigger step than anything else Tessera does on its
-    own, so it is a button of its own with the command written next to it,
-    never folded silently into the setup run. Empty when this system's package
-    manager is not recognised, which the UI turns into an explanation.
-    """
+    """The same thing through polkit, for running it from the app."""
     return packages.install_argv(*capabilities)
 
 

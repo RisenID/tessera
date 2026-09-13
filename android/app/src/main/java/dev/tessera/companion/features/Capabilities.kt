@@ -11,14 +11,7 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * What this particular phone can actually do.
- *
- * The desktop used to offer a hardcoded list of resolutions and frame rates,
- * which meant it both hid capabilities the phone had (4K, 6 GHz) and offered
- * combinations it did not support. Everything here is read from the platform so
- * the UI can only present real choices.
- */
+/** What this particular phone can actually do. */
 object Capabilities {
 
     private const val TAG = "TesseraCaps"
@@ -28,11 +21,6 @@ object Capabilities {
     /**
      * Every camera, with the sizes the encoder can consume and the frame rates
      * each size supports.
-     *
-     * Sizes are queried for MediaCodec because that is what the stream is fed
-     * into; querying for a different target can report sizes the encoder cannot
-     * actually take. The per-size ceiling comes from the minimum frame duration,
-     * which is why 4K typically caps at 30fps while 1080p reaches 60.
      */
     fun cameras(context: Context): JSONArray {
         val manager = context.getSystemService(CameraManager::class.java)
@@ -111,12 +99,7 @@ object Capabilities {
 
     // -- hotspot -------------------------------------------------------------
 
-    /**
-     * Bands this phone can run a soft AP on.
-     *
-     * 6 GHz is reported only when the radio supports it; note that 6 GHz
-     * mandates WPA3-SAE, which is handled when the hotspot is configured.
-     */
+    /** Bands this phone can run a soft AP on. */
     fun hotspotBands(context: Context): JSONArray {
         val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
         val bands = JSONArray()

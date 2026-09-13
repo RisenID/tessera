@@ -20,13 +20,7 @@ import dev.tessera.companion.Bus
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-/**
- * Battery, network and ringer state, for the desktop's device panel.
- *
- * Every source is event-driven and scoped to having a subscriber, so a phone
- * with no desktop attached does no work. Every read is wrapped: a value the
- * platform refuses is simply left out, and the desktop shows what it has.
- */
+/** Battery, network and ringer state, for the desktop's device panel. */
 object PhoneStatus {
 
     private const val TAG = "TesseraStatus"
@@ -69,14 +63,7 @@ object PhoneStatus {
             .put("volume", mediaVolume(app))
     }
 
-    /**
-     * Sets the ringer to "normal", "vibrate" or "silent".
-     *
-     * Silencing needs notification policy access on API 23+, the same grant
-     * Do Not Disturb uses, so this fails rather than throwing when the user
-     * has not given it. The change is announced by the ringer broadcast we
-     * already listen for, so nothing is published from here.
-     */
+    /** Sets the ringer to "normal", "vibrate" or "silent". */
     fun setRinger(context: Context, mode: String): Boolean {
         val value = when (mode) {
             "normal" -> AudioManager.RINGER_MODE_NORMAL

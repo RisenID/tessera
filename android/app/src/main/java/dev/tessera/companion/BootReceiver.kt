@@ -5,14 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 
-/**
- * Brings the service back without the user having to open the app.
- *
- * Two cases matter: the phone rebooting, and the app being updated (which stops
- * the service). Before this existed, either one silently took the link down
- * until the app was opened by hand -- the desktop would just sit there
- * reconnecting to a port nothing was listening on.
- */
+/** Brings the service back without the user having to open the app. */
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {

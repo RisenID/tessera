@@ -5,24 +5,7 @@ import android.content.Context
 import android.os.Process
 import android.util.Log
 
-/**
- * Making Android stop asking before it will send this phone's audio.
- *
- * Playback capture is gated behind a MediaProjection, and Android 14 made that
- * consent single-use: every stream would mean a dialog on the phone. For a
- * feature whose whole point is that the phone can stay in a pocket, asking the
- * user to pick it up each time is not a feature at all.
- *
- * There is one supported way out, and it is the one the shell already uses: the
- * `PROJECT_MEDIA` app operation. An app whose op is set to *allow* is handed a
- * projection without a dialog. Setting it needs shell privileges, which this
- * app already borrows through Shizuku for the hotspot -- so it is a single
- * grant, made once, surviving reboots, and revocable from the same screen.
- *
- * Nothing here weakens anything silently: the grant is an explicit action in
- * the app's own checklist, and the phone still shows its screen-capture
- * indicator whenever audio is actually being captured.
- */
+/** Making Android stop asking before it will send this phone's audio. */
 object ProjectionGrant {
 
     private const val TAG = "TesseraProjection"

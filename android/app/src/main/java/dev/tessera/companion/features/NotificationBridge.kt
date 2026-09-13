@@ -13,13 +13,7 @@ import dev.tessera.companion.TesseraService
 import dev.tessera.companion.Store
 import org.json.JSONObject
 
-/**
- * Mirrors notifications to the desktop and carries dismissals and replies back.
- *
- * Requires notification listener access, granted once by the user in Settings.
- * The platform pushes every event, so the app costs nothing while idle -- there
- * is no wakelock, no timer and no polling.
- */
+/** Mirrors notifications to the desktop and carries dismissals and replies back. */
 class NotificationBridge : NotificationListenerService() {
 
     override fun onListenerConnected() {
@@ -27,11 +21,9 @@ class NotificationBridge : NotificationListenerService() {
         instance = this
         Log.i(TAG, "notification listener connected")
 
-        // The platform binds this listener on boot, after an update and after
-        // the process is reclaimed, which makes it a far more dependable
-        // trigger than BOOT_COMPLETED for getting the link back up. Without
-        // this the desktop reconnects forever to a port nothing is listening on
-        // until someone opens the app by hand.
+        // The platform binds this listener on boot, after an update and after the process is
+        // reclaimed, which makes it a far more dependable trigger than BOOT_COMPLETED for
+        // getting the link back up.
         if (Store(this).pairedCount > 0) {
             runCatching { TesseraService.start(this) }
                 .onFailure { Log.w(TAG, "could not start the service", it) }
@@ -66,14 +58,7 @@ class NotificationBridge : NotificationListenerService() {
         )
     }
 
-    /**
-     * Who is calling, taken from the dialer's own notification.
-     *
-     * From Android 12 the telephony callbacks no longer carry the number, and
-     * the call log has no entry until the call ends -- so during a ringing call
-     * the notification the dialer posts is the only reliable source of the
-     * caller's identity, and it needs no extra permission.
-     */
+    /** Who is calling, taken from the dialer's own notification. */
     fun callerHint(): Pair<String, String>? = runCatching {
         activeNotifications.orEmpty()
             .firstOrNull { it.notification?.category == Notification.CATEGORY_CALL }
@@ -95,12 +80,7 @@ class NotificationBridge : NotificationListenerService() {
             .onFailure { Log.d(TAG, "could not dismiss $key: ${it.message}") }
     }
 
-    /**
-     * Sends an inline reply.
-     *
-     * Returns false when the notification has no reply action, which the
-     * desktop turns into a visible message rather than a silent no-op.
-     */
+    /** Sends an inline reply. */
     fun reply(key: String, text: String): Boolean {
         val sbn = activeNotifications.orEmpty().firstOrNull { it.key == key } ?: return false
         val action = replyAction(sbn.notification) ?: return false
@@ -120,21 +100,7 @@ class NotificationBridge : NotificationListenerService() {
         }.onFailure { Log.w(TAG, "reply to $key failed: ${it.message}") }.getOrDefault(false)
     }
 
-    /**
-     * Whether a notification is a text message arriving.
-     *
-     * The desktop uses this to refresh the Messages tab the moment one lands,
-     * instead of polling the SMS provider on a timer. The test is made here
-     * because only the phone can make it correctly: the default SMS app is a
-     * per-device setting, so any list of package names kept on the desktop
-     * would be a guess that breaks the first time someone switches from
-     * Samsung Messages to Google Messages.
-     *
-     * Both halves matter. The package check keeps chat apps out -- they post
-     * CATEGORY_MESSAGE too, and none of them appear in the SMS database. The
-     * category check keeps the messaging app's own housekeeping notifications
-     * ("Sending failed", backup reminders) from triggering a reload.
-     */
+    /** Whether a notification is a text message arriving. */
     private fun isTextMessage(sbn: StatusBarNotification): Boolean {
         val fromSmsApp = sbn.packageName == Telephony.Sms.getDefaultSmsPackage(this)
         return fromSmsApp && sbn.notification.category == Notification.CATEGORY_MESSAGE

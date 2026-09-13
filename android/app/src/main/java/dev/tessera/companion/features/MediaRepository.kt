@@ -13,13 +13,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-/**
- * The phone's photo and video library.
- *
- * Thumbnails come from MediaStore's own thumbnail pipeline, so browsing an
- * album costs kilobytes rather than the tens of megabytes that pulling full
- * frames over adb would.
- */
+/** The phone's photo and video library. */
 object MediaRepository {
 
     private const val TAG = "TesseraMedia"
@@ -36,9 +30,8 @@ object MediaRepository {
 
     fun canRead(context: Context): Boolean {
         val permissions = when {
-            // Android 14+ lets the user grant access to a chosen subset, which
-            // denies READ_MEDIA_IMAGES and grants this instead. Treating that as
-            // "no access" would wrongly show an empty gallery.
+            // Android 14+ lets the user grant access to a chosen subset, which denies
+            // READ_MEDIA_IMAGES and grants this instead.
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> listOf(
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
@@ -66,9 +59,8 @@ object MediaRepository {
             } else {
                 MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             }
-            // No "LIMIT n" in the sort order: Android 11+ rejects SQL keywords
-            // there with "Invalid token LIMIT". The cursor is lazy, so reading
-            // only the rows we need costs nothing.
+            // No "LIMIT n" in the sort order: Android 11+ rejects SQL keywords there with
+            // "Invalid token LIMIT".
             val wanted = limit + offset
             runCatching {
                 context.contentResolver.query(

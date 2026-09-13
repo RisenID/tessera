@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Checks the Bluetooth connection without touching a Bluetooth adapter.
-
-The connection this app makes is meant to be the quiet one: it brings up the
-hands-free profile and leaves the media profile alone, so connecting never
-pulls the phone's music off whatever is playing it. Audio moves only when the
-button asks. That is the property worth guarding, because it is invisible until
-it goes wrong -- and when it goes wrong, it goes wrong in someone's headphones.
-
-The BlueZ backend is replaced with a recorder, so this runs anywhere and
-changes nothing: no adapter, no phone, no profile switched.
-
-Run it from the repository root:  python3 scripts/check-bluetooth.py
-"""
+"""Checks the Bluetooth connection without touching a Bluetooth adapter."""
 
 from __future__ import annotations
 
@@ -99,13 +87,7 @@ class Radio:
 
 
 def connects(radio: "Radio") -> list[str]:
-    """Connection attempts only.
-
-    The hub's own watch runs on a timer while these checks wait, and it asks
-    BlueZ for the phone and keeps the card able to receive. Those are not
-    connection attempts, and counting them as such failed checks that were
-    actually passing.
-    """
+    """Connection attempts only."""
     return [call for call in radio.calls if call.startswith("connect")]
 
 

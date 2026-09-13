@@ -1,13 +1,4 @@
-"""Subprocess helpers.
-
-Two flavours are used throughout the app:
-
-* :func:`run` -- blocking, for short commands (adb queries, nmcli, netsh).
-  Always called from a worker thread via :func:`submit`, never from the GUI
-  thread.
-* :class:`ManagedProcess` -- a QProcess wrapper for long-running children
-  (scrcpy) that need live log capture and a clean shutdown.
-"""
+"""Subprocess helpers."""
 
 from __future__ import annotations
 
@@ -77,29 +68,17 @@ class CommandError(RuntimeError):
 
 
 def have(program: str) -> bool:
-    """True when *program* can be found.
-
-    Not merely PATH: on Windows the tools this app drives are routinely
-    installed somewhere that is not on it. See core.platform.find_tool.
-    """
+    """True when *program* can be found."""
     return bool(platform.find_tool(program))
 
 
 def tool_path(program: str) -> str:
-    """Where *program* is, or its bare name if it was not found.
-
-    Callers build argv with this so a tool off PATH still runs.
-    """
+    """Where *program* is, or its bare name if it was not found."""
     return platform.find_tool(program) or platform.tool(program)
 
 
 def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) -> Result:
-    """Run *argv* to completion and capture its output.
-
-    Never raises for a non-zero exit; inspect :attr:`Result.ok`. A timeout or a
-    missing binary is reported as a synthetic failure so callers only have one
-    error path to handle.
-    """
+    """Run *argv* to completion and capture its output."""
     argv = [str(a) for a in argv]
     # The first word is a tool name, which on Windows may be neither on PATH
     # nor suffixed. Resolve it once, here, so no caller has to.
@@ -159,24 +138,14 @@ class _Task(QRunnable):
 
     @staticmethod
     def _emit(signal: Any, payload: Any) -> None:
-        """Deliver a result, unless there is no longer anyone to deliver it to.
-
-        Shutdown waits for queued work, but only for a few seconds, and some of
-        this work legitimately takes longer -- sweeping a subnet, waiting for a
-        Wi-Fi network to come up. A task that finishes after Qt has torn its
-        objects down would otherwise end the process with a traceback about a
-        deleted signal source, which looks like a crash and is not one.
-        """
+        """Deliver a result, unless there is no longer anyone to deliver it to."""
         try:
             signal.emit(payload)
         except RuntimeError:
             log.debug("dropped a result: the application had already shut down")
 
 
-#: Tasks currently running. QThreadPool takes ownership of the QRunnable, but
-#: nothing keeps the Python object alive, so without this the _Signals QObject
-#: can be collected mid-flight and the emit fails with "Signal source has been
-#: deleted" -- silently losing the callback.
+#: Tasks currently running.
 _INFLIGHT: set[_Task] = set()
 _INFLIGHT_LOCK = threading.Lock()
 
@@ -188,11 +157,7 @@ def submit(
     on_error: Callable[[str], None] | None = None,
     **kwargs: Any,
 ) -> None:
-    """Run *fn* on the global thread pool, delivering results on the GUI thread.
-
-    Callbacks are queued connections by virtue of the emitting thread differing
-    from the receiver's, so handlers may touch widgets safely.
-    """
+    """Run *fn* on the global thread pool, delivering results on the GUI thread."""
     task = _Task(fn, args, kwargs)
 
     def release(*_args: Any) -> None:

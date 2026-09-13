@@ -7,19 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 
-/**
- * "Share to Tessera" from anywhere on the phone.
- *
- * This is the half of file transfer people actually use. Sending *to* the
- * phone starts on the computer, where there is a mouse and a file manager;
- * sending *from* the phone starts wherever the file already is -- the gallery,
- * a browser, a chat -- and the share sheet is the only thing that reaches all
- * of them. It is Android's own equivalent of dropping a file on a window.
- *
- * The activity has no interface. It takes what it was given, hands it to the
- * connected desktops, says so, and closes: a screen asking "which computer?"
- * for the one computer that is connected would be a screen for nothing.
- */
+/** "Share to Tessera" from anywhere on the phone. */
 class ShareActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,9 +28,8 @@ class ShareActivity : Activity() {
         }
         val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
 
-        // Read permission on a shared Uri belongs to this task and dies with
-        // it, so the service is handed the Uris while that grant still holds
-        // and reads them immediately.
+        // Read permission on a shared Uri belongs to this task and dies with it, so the service is
+        // handed the Uris while that grant still holds and reads them immediately.
         uris.forEach { uri ->
             runCatching {
                 grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)

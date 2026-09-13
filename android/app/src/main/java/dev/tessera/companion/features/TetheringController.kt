@@ -13,24 +13,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import java.util.function.Supplier
 
-/**
- * Starts and stops the Wi-Fi hotspot with shell-level privileges.
- *
- * Why this exists, and why it is not simply `cmd wifi start-softap`:
- *
- * `TETHER_PRIVILEGED` is signature|privileged, so no ordinary app can hold it,
- * which is why Windows' Instant Hotspot only works through an OEM-preinstalled
- * system app. But `com.android.shell` *does* hold it. The obvious route --
- * running `cmd wifi start-softap` through Shizuku -- fails anyway, because
- * WifiShellCommand gates every softap subcommand on the *root* uid: as shell
- * even `cmd wifi --help` returns "Uid 2000 does not have access".
- *
- * The permission is not the obstacle; the shell command handler is. So this
- * goes straight to the tethering binder instead. Shizuku hands us that binder
- * with the shell uid as the caller, the permission check passes, and the
- * platform's own TetheringManager does all the marshalling -- which avoids
- * hand-writing AIDL whose transaction codes shift between releases.
- */
+/** Starts and stops the Wi-Fi hotspot with shell-level privileges. */
 object TetheringController {
 
     private const val TAG = "TesseraTether"
@@ -63,13 +46,7 @@ object TetheringController {
 
     fun available(): Boolean = PrivilegedShell.hasPermission()
 
-    /**
-     * Turns the hotspot on. Returns null on success, or a message to show.
-     *
-     * When [ssid] and [passphrase] are supplied the hotspot is configured with
-     * them, so the desktop already knows what to join; otherwise the phone's
-     * saved hotspot configuration is used and the desktop must know it already.
-     */
+    /** Turns the hotspot on. Returns null on success, or a message to show. */
     fun start(
         context: Context,
         ssid: String,
@@ -87,13 +64,7 @@ object TetheringController {
 
             val useCustomConfig = ssid.isNotBlank() && passphrase.length >= 8
             if (useCustomConfig) {
-                // Write the configuration into the platform's soft-AP store
-                // first. Passing it only inside the TetheringRequest is not
-                // enough on One UI: Samsung's SemWifiApConfigStore reconciles
-                // the request against its own saved hotspot settings ("AOSP
-                // softap and Samsung config differ") and keeps its own band, so
-                // the SSID and security take effect while the band silently
-                // falls back to 2.4 GHz. Storing it makes the band stick.
+                // Write the configuration into the platform's soft-AP store first.
                 val stored = storeSoftApConfig(context, ssid, passphrase, band)
 
                 if (stored) {
@@ -153,14 +124,7 @@ object TetheringController {
         )
     }
 
-    /**
-     * Saves the soft-AP configuration as the shell user.
-     *
-     * `setSoftApConfiguration` needs NETWORK_SETTINGS, which com.android.shell
-     * holds, so this goes through the wifi binder the same way tethering does.
-     * Returns false if the platform will not take it, leaving the caller to
-     * fall back to configuring through the tethering request.
-     */
+    /** Saves the soft-AP configuration as the shell user. */
     private fun storeSoftApConfig(
         context: Context,
         ssid: String,

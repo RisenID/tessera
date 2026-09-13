@@ -13,15 +13,7 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Recent calls, and control of the one happening now.
- *
- * Answering and hanging up need ANSWER_PHONE_CALLS, which is an ordinary
- * runtime permission -- unlike most of what Tessera does on the phone, this
- * needs no Shizuku and no privileged access. Placing a call needs CALL_PHONE;
- * without it the dialer is opened with the number filled in instead, which
- * costs one tap and no permission.
- */
+/** Recent calls, and control of the one happening now. */
 object CallsRepository {
 
     private const val TAG = "TesseraCalls"

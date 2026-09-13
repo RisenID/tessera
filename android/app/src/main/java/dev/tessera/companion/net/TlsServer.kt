@@ -16,18 +16,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
 import javax.security.auth.x500.X500Principal
 
-/**
- * TLS listener whose identity is a self-signed certificate held in AndroidKeyStore.
- *
- * The desktop pins this certificate's SHA-256 fingerprint when it pairs, so the
- * certificate *is* the phone's long-term identity and is never rotated --
- * rotating it would invalidate every pairing.
- *
- * AndroidKeyStore generates the self-signed certificate itself, which avoids
- * both shipping a certificate library and reflecting into the platform's
- * hidden Bouncy Castle copy (blocked from Android 12 onwards). The private key
- * is hardware-backed where the device supports it and cannot be extracted.
- */
+/** TLS listener whose identity is a self-signed certificate held in AndroidKeyStore. */
 class TlsServer {
 
     private var serverSocket: SSLServerSocket? = null
@@ -94,9 +83,8 @@ class TlsServer {
         KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     private fun ensureIdentity(keyStore: KeyStore) {
-        // Identities generated before the decrypt purpose was added cannot
-        // complete an RSA-key-exchange handshake, so they are replaced rather
-        // than reused. This changes the fingerprint, which means re-pairing.
+        // Identities generated before the decrypt purpose was added cannot complete an RSA-key-
+        // exchange handshake, so they are replaced rather than reused.
         if (keyStore.containsAlias(LEGACY_ALIAS)) {
             runCatching { keyStore.deleteEntry(LEGACY_ALIAS) }
             Log.i(TAG, "removed the old TLS identity; desktops must pair again")
@@ -108,13 +96,7 @@ class TlsServer {
 
         val spec = KeyGenParameterSpec.Builder(
             ALIAS,
-            // Signing alone is not enough. An ECDHE handshake only needs the
-            // server to sign, but the client may negotiate an RSA key-exchange
-            // suite instead, where the server decrypts the premaster secret
-            // with RSA/ECB/NoPadding. Without DECRYPT and the matching
-            // encryption paddings, Keystore rejects that with
-            // INCOMPATIBLE_PADDING_MODE and the handshake dies with an opaque
-            // "Failure in SSL library".
+            // Signing alone is not enough.
             KeyProperties.PURPOSE_SIGN or
                 KeyProperties.PURPOSE_VERIFY or
                 KeyProperties.PURPOSE_DECRYPT or

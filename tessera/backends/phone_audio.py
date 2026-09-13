@@ -1,21 +1,4 @@
-"""Playing the phone's audio on this computer, over the companion link.
-
-The other audio backend in this directory switches a Bluetooth profile: it asks
-the phone to become an A2DP source, which takes its sound away from whatever it
-was playing through. This one never can. The phone sends a *copy* of its media
-mix over the connection the app already holds, so headphones stay exactly where
-they are -- and it works on any platform Qt has an audio output for, with no
-pairing, no profile switch and no codec negotiation.
-
-What arrives is signed 16-bit PCM at 48 kHz stereo, 20 ms at a time. Qt plays
-it through the system's default output, which means it follows the user's own
-audio routing -- including to their headphones, if that is where they are.
-
-The only real problem here is jitter. Frames arrive over Wi-Fi in bursts and
-occasionally late, while the sound card consumes them at a constant rate, so
-there is a buffer in between: long enough to ride out a gap, capped so that a
-backlog is dropped rather than turning into a growing delay.
-"""
+"""Playing the phone's audio on this computer, over the companion link."""
 
 from __future__ import annotations
 
@@ -71,10 +54,7 @@ def _bytes_for(milliseconds: int) -> int:
 
 
 class PhoneAudio(QObject):
-    """Plays the PCM the companion app sends.
-
-    Fed by the hub, one frame at a time, for as long as the phone is streaming.
-    """
+    """Plays the PCM the companion app sends."""
 
     started = Signal()
     stopped = Signal()
@@ -111,11 +91,7 @@ class PhoneAudio(QObject):
     # -- the stream ----------------------------------------------------------
 
     def open(self, header: dict) -> None:
-        """Start playing, using the format the phone declared.
-
-        *header* is the phone's `audio_started` message. A format this does not
-        understand is refused out loud: playing it anyway would be noise.
-        """
+        """Start playing, using the format the phone declared."""
         if not HAVE_QTMULTIMEDIA:
             self.failed.emit(
                 "This build of Qt has no audio output, so the phone's audio "
@@ -183,9 +159,7 @@ class PhoneAudio(QObject):
         self._pending += payload
         self._emit_level(payload)
 
-        # Fill the buffer before playing anything, once. Starting on the first
-        # frame means starving immediately and clicking through the first
-        # second of every stream.
+        # Fill the buffer before playing anything, once.
         if self._priming:
             if len(self._pending) < _bytes_for(self._config.buffer_ms):
                 return
@@ -210,13 +184,7 @@ class PhoneAudio(QObject):
         self._played += written
 
     def _trim(self) -> None:
-        """Drop the oldest audio when the backlog has grown too far.
-
-        A backlog is delay, and delay never recovers on its own: the phone
-        keeps sending at exactly the rate the sound card consumes. Dropping is
-        audible once; keeping it would be audible for as long as the stream
-        lasts.
-        """
+        """Drop the oldest audio when the backlog has grown too far."""
         cap = _bytes_for(MAX_BACKLOG_MS)
         if len(self._pending) <= cap:
             return

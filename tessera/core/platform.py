@@ -1,17 +1,4 @@
-"""What this computer is, and what it can therefore do.
-
-One place decides the platform, so the rest of the app asks rather than
-guessing. Two kinds of question live here:
-
-* **Where things go** -- config, state and cache directories, and where a tool
-  like adb is likely to be found.
-* **What is possible** -- the features that cannot work on this platform at
-  all, each with the reason, so the interface can say so instead of offering a
-  button that fails.
-
-``TESSERA_PLATFORM`` overrides detection. It exists so the Windows paths can be
-exercised from a Linux checkout, which is the only way they get tested here.
-"""
+"""What this computer is, and what it can therefore do."""
 
 from __future__ import annotations
 
@@ -46,22 +33,12 @@ IS_WINDOWS = NAME == "windows"
 IS_LINUX = NAME == "linux"
 IS_MACOS = NAME == "macos"
 
-#: The kernel actually underneath, which TESSERA_PLATFORM cannot change. NAME
-#: decides policy -- which features exist, where files go -- and this decides
-#: the handful of things that would break if they disagreed, like a Windows
-#: process-creation flag on a Linux kernel.
+#: The kernel actually underneath, which TESSERA_PLATFORM cannot change.
 REAL = "windows" if sys.platform.startswith("win") else (
     "macos" if sys.platform == "darwin" else "linux"
 )
 
-#: Features that cannot work on a platform, and why. The interface reads this
-#: to hide them and to explain; nothing else is allowed to assume an OS.
-#:
-#: Two of the Windows entries are "not written yet", not "cannot be done", and
-#: they say so: Windows 10 2004 and later can receive Bluetooth audio through
-#: AudioPlaybackConnection, and Windows 11 22H2 and later can host a user-mode
-#: virtual camera through MFCreateVirtualCamera. Focus Assist and D-Bus are the
-#: ones the platform really does not offer. See docs/WINDOWS.md.
+#: Features that cannot work on a platform, and why.
 UNSUPPORTED: dict[str, dict[str, str]] = {
     "windows": {
         "bluetooth_audio":
@@ -151,9 +128,7 @@ def cache_dir() -> Path:
 
 # -- finding the tools -------------------------------------------------------
 
-#: Where installers actually put things, checked after PATH. Windows users
-#: install adb with the Android SDK, winget, Chocolatey or Scoop, and only
-#: some of those put it on PATH.
+#: Where installers actually put things, checked after PATH.
 _EXTRA_PATHS: dict[str, tuple[str, ...]] = {
     "windows": (
         r"%LOCALAPPDATA%\Android\Sdk\platform-tools",
@@ -178,11 +153,7 @@ def tool(name: str) -> str:
 
 
 def find_tool(name: str) -> str:
-    """Full path to *name*, looking where its installers put it.
-
-    Returns an empty string when it is not installed. PATH first: a user who
-    has arranged their own copy means it.
-    """
+    """Full path to *name*, looking where its installers put it."""
     found = shutil.which(tool(name)) or shutil.which(name)
     if found:
         return found
@@ -204,11 +175,7 @@ def have_tool(name: str) -> bool:
 
 
 def no_window_flags() -> int:
-    """Creation flags that keep a console window from flashing on Windows.
-
-    A windowed build has no console, so every short-lived helper -- adb, netsh
-    -- would open and close one of its own without this.
-    """
+    """Creation flags that keep a console window from flashing on Windows."""
     if REAL != "windows":
         return 0
     return int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))

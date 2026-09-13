@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Checks mounting the phone's storage, without a phone or a mount.
-
-The parts that can hurt somebody are checked hardest: that the mount trusts
-only the key the phone sent over the paired link, that the password never
-appears on a command line, that the file manager's sidebar files come back
-exactly as they were, and that unmounting can never delete the phone's files.
-
-Run it from the repository root:  python3 scripts/check-storage.py
-"""
+"""Checks mounting the phone's storage, without a phone or a mount."""
 
 from __future__ import annotations
 

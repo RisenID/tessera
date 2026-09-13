@@ -6,23 +6,7 @@ import android.util.Log
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 
-/**
- * Runs shell commands with the shell UID, via Shizuku.
- *
- * This exists for one reason: starting a Wi-Fi hotspot. `TETHER_PRIVILEGED` is
- * a signature|privileged permission, so no normal app can hold it -- not even a
- * device owner, since DevicePolicyManager cannot grant signature permissions.
- * That is why Windows' own Instant Hotspot only works through Link to Windows,
- * which OEMs preinstall as a privileged system app.
- *
- * The shell UID *is* allowed to run `cmd wifi start-softap`, and Shizuku exposes
- * a shell-UID process to ordinary apps after the user starts it once via adb or
- * wireless debugging. So this is the closest a sideloaded app can get to what
- * Phone Link does, at the cost of restarting Shizuku after each reboot.
- *
- * Everything here degrades quietly: if Shizuku is not running, callers fall back
- * to opening the tethering panel for a single tap.
- */
+/** Runs shell commands with the shell UID, via Shizuku. */
 object PrivilegedShell {
 
     private const val TAG = "TesseraShell"
@@ -46,13 +30,7 @@ object PrivilegedShell {
             .onFailure { Log.w(TAG, "permission request failed: ${it.message}") }
     }
 
-    /**
-     * Executes *command* as the shell user.
-     *
-     * `Shizuku.newProcess` is hidden from the public API surface of the Shizuku
-     * library, so it is reached reflectively; a failure here simply means the
-     * privileged path is unavailable.
-     */
+    /** Executes *command* as the shell user. */
     fun run(command: String, timeoutMillis: Long = 30_000): Output {
         if (!hasPermission()) return Output(-1, "Shizuku is not available")
 
@@ -91,32 +69,14 @@ object PrivilegedShell {
     }
 }
 
-/**
- * Hotspot control, best path first.
- *
- * Reports which mechanism is actually usable so the desktop can say "one click"
- * or "one tap on your phone" honestly, instead of offering a button that
- * silently does nothing.
- */
+/** Hotspot control, best path first. */
 object Hotspot {
 
     private const val TAG_HOTSPOT = "TesseraHotspot"
 
     enum class Mode { PRIVILEGED, PANEL_ONLY }
 
-    /**
-     * Whether `cmd wifi` is actually usable, cached after the first probe.
-     *
-     * Holding a Shizuku shell is not sufficient. WifiShellCommand gates its
-     * softap subcommands on the *root* uid, so as the shell user every one of
-     * them -- even `--help` -- comes back with
-     * "Uid 2000 does not have access to ... wifi command".
-     *
-     * Note this is a limitation of the shell command handler, not of
-     * permissions: com.android.shell does hold TETHER_PRIVILEGED. Reaching
-     * tethering from a Shizuku shell therefore means calling the tethering
-     * binder directly rather than going through `cmd wifi`.
-     */
+    /** Whether `cmd wifi` is actually usable, cached after the first probe. */
     @Volatile
     private var wifiCommandUsable: Boolean? = null
 
@@ -137,21 +97,13 @@ object Hotspot {
     fun mode(): Mode =
         if (TetheringController.available() || canDriveWifi()) Mode.PRIVILEGED else Mode.PANEL_ONLY
 
-    /**
-     * Turns the hotspot on.
-     *
-     * The tethering binder is tried first: it is the only route that works on
-     * a current Android build, because `cmd wifi`'s softap subcommands are
-     * gated on root even for the shell user. `cmd wifi` remains as a fallback
-     * for builds where it is still permitted.
-     */
+    /** Turns the hotspot on. */
     fun start(context: android.content.Context, ssid: String, passphrase: String, band: String): String? {
         if (!PrivilegedShell.hasPermission()) return "Shizuku is not running on the phone."
 
         if (TetheringController.available()) {
-            // A hotspot that is already running keeps the configuration it
-            // started with, so asking for a different SSID, passphrase or band
-            // silently does nothing. Restart it when the settings changed.
+            // A hotspot that is already running keeps the configuration it started with, so asking
+            // for a different SSID, passphrase or band silently does nothing.
             val wantsCustom = ssid.isNotBlank() && passphrase.length >= 8
             if (wantsCustom && activeBand() != null) {
                 android.util.Log.i(TAG_HOTSPOT, "restarting the hotspot to apply new settings")
@@ -223,27 +175,17 @@ object Hotspot {
         }
     }
 
-    /**
-     * The band the hotspot is actually running on, read back after starting.
-     *
-     * One UI keeps its own hotspot band preference and reconciles any config we
-     * set against it ("AOSP softap and Samsung config differ"), so a requested
-     * band is not necessarily the band you get. Reporting the real one lets the
-     * desktop say so instead of quietly lying.
-     *
-     * Returns the band ("2.4", "5", "6") and the frequency in MHz, or null.
-     */
+    /** The band the hotspot is actually running on, read back after starting. */
     fun activeBand(): Pair<String, Int>? {
         if (!PrivilegedShell.hasPermission()) return null
 
-        // The AP publishes its channel a moment after tethering reports
-        // started, so a single read straight after the callback usually finds
-        // an empty info map. A handful of quick retries covers the gap.
+        // The AP publishes its channel a moment after tethering reports started, so a single read
+        // straight after the callback usually finds an empty info map.
         var frequency = 0
         repeat(6) { attempt ->
-            // Read the live info map rather than the first "frequency=" in the
-            // dump: the dump also contains callback log lines carrying
-            // "frequency= 0" and stale values from earlier sessions.
+            // Read the live info map rather than the first "frequency=" in the dump: the
+            // dump also contains callback log lines carrying "frequency= 0" and stale values
+            // from earlier sessions.
             val result = PrivilegedShell.run("dumpsys wifi | grep mCurrentSoftApInfoMap")
             frequency = Regex("frequency\\s*=\\s*(\\d+)")
                 .findAll(result.text)

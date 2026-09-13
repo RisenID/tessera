@@ -10,25 +10,7 @@ import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 import java.lang.reflect.Method
 
-/**
- * Reads and writes the phone's clipboard from inside the app.
- *
- * From Android 10 an app may only read the clipboard while it has focus or is
- * the active input method, so a background companion cannot use
- * ClipboardManager directly -- reads return nothing.
- *
- * Two routes get past that, best first:
- *
- *  * **Shizuku.** The clipboard service will serve the shell user, so the calls
- *    go through Shizuku like the tethering ones do. Lost at every reboot until
- *    Shizuku is started again.
- *  * **The accessibility service.** Enabled once, it survives reboots; it
- *    notices a copy and reads the clipboard through a focusable window of its
- *    own for an instant. See [ClipboardAccessibility].
- *
- * Where neither is available the desktop can still reach the clipboard over
- * adb, without this app at all -- see [dev.tessera.companion.shell.ClipboardHelper].
- */
+/** Reads and writes the phone's clipboard from inside the app. */
 object ClipboardBridge {
 
     private const val TAG = "TesseraClipboard"

@@ -12,15 +12,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
-/**
- * Publishes clipboard changes to connected desktops.
- *
- * Android gives a background app no callback for clipboard changes -- the
- * listener only fires for an app allowed to read the clipboard in the first
- * place -- so the value is polled. To keep that honest about battery, polling
- * runs only while a desktop is actually subscribed, and reading the clipboard
- * is a single cheap binder call.
- */
+/** Publishes clipboard changes to connected desktops. */
 object ClipboardWatcher {
 
     private const val TAG = "TesseraClipboard"
@@ -41,9 +33,7 @@ object ClipboardWatcher {
     fun addUser(context: Context? = null) {
         users++
         if (context != null) watchScreen(context)
-        // Polling is for Shizuku only. The accessibility route reads by taking
-        // focus for an instant, which on a timer would close the keyboard
-        // under the user's fingers; it calls checkNow() when it sees a copy.
+        // Polling is for Shizuku only.
         if (executor == null && ClipboardBridge.viaShizuku()) {
             lastSeen = ClipboardBridge.read()
             executor = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -68,15 +58,7 @@ object ClipboardWatcher {
         }
     }
 
-    /**
-     * Whether the poll should do anything at all right now.
-     *
-     * The clipboard cannot change while the phone's screen is off: something
-     * has to copy, and nobody is there. Polling anyway woke the phone every two
-     * seconds for an answer that could not have changed -- the one part of this
-     * app that cost battery for nothing. Reading the screen state is one cheap
-     * call, and a receiver keeps it current without asking again.
-     */
+    /** Whether the poll should do anything at all right now. */
     @Volatile
     private var screenOn = true
 

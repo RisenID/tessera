@@ -21,8 +21,7 @@ cp -a tessera packaging docs "${stage}/"
 cp README.md LICENSE pyproject.toml "${stage}/"
 
 # The LDAC decoder ships as source: it has to be compiled against whichever
-# PipeWire the machine is running, so there is nothing to prebuild here. The
-# submodule is optional -- without it the package simply omits the feature.
+# PipeWire the machine is running, so there is nothing to prebuild here.
 mkdir -p "${stage}/native/ldac-decoder" "${stage}/scripts"
 cp native/ldac-decoder/ldacBT_dec.c native/ldac-decoder/README.md "${stage}/native/ldac-decoder/"
 cp scripts/build-ldac-decoder.sh "${stage}/scripts/"

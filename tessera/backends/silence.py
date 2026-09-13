@@ -1,22 +1,4 @@
-"""Silencing desktop notifications, on whichever desktop this is.
-
-Plasma implements Inhibit/UnInhibit/Inhibited on org.freedesktop.Notifications
-and Tessera uses it where it exists: it is reversible, it hands back a cookie,
-and it leaves an inhibition the user set themselves alone. But it is a Plasma
-extension rather than part of the notification specification, and nobody else
-implements it. GNOME, Cinnamon, XFCE and the standalone daemons each have their
-own switch, so on those desktops Do Not Disturb sync used to appear to work --
-the service is registered, so the check passed -- and then quietly do nothing.
-
-Each backend here is chosen by whether its *read* succeeds. That matters more
-than it looks: it means an entry for a desktop nobody has tested is either
-correct or skipped, never selected and then silently ineffective.
-
-Deliberately absent: mako. Its modes mechanism can be told to add a
-do-not-disturb mode whether or not the user's config defines one, so the read
-would succeed and the write would do nothing -- exactly the failure this
-module exists to avoid.
-"""
+"""Silencing desktop notifications, on whichever desktop this is."""
 
 from __future__ import annotations
 
@@ -43,8 +25,7 @@ class Silencer:
     #: True when the setting means "show notifications" rather than "silence".
     inverted: bool = False
     #: Desktops this setting is honoured by, matched against
-    #: XDG_CURRENT_DESKTOP. Empty means any -- which is right only for a
-    #: backend that talks to the notification daemon itself.
+    #: XDG_CURRENT_DESKTOP.
     desktops: tuple[str, ...] = ()
     #: Set for a backend that is not a command at all; see OWN_POPUPS.
     key: str = ""
@@ -54,14 +35,7 @@ class Silencer:
         return self.read[0] if self.read else ""
 
     def running_desktop(self) -> bool:
-        """Whether this is the desktop in front of the user.
-
-        A readable setting is not proof that anything acts on it. gsettings
-        and GNOME's notification schema are installed on this KDE machine as a
-        dependency of other software, so the GNOME read succeeds here and
-        setting show-banners=false silences precisely nothing. The session has
-        to be asked as well.
-        """
+        """Whether this is the desktop in front of the user."""
         if not self.desktops:
             return True
         current = ":".join(
@@ -141,10 +115,7 @@ BACKENDS: tuple[Silencer, ...] = (
 
 
 #: Tessera's own popups, which is all a platform with no scriptable switch
-#: lets anyone silence. Windows Focus Assist cannot be set by another program,
-#: so this is the honest extent of "silence the desktop" there: the phone's
-#: notifications stop being repeated on this screen, and Windows keeps its own
-#: setting. The state is in this process, not in the system.
+#: lets anyone silence.
 OWN_POPUPS = Silencer(
     desktop="Tessera's own popups", read=(), on=(), off=(), key="tessera",
 )

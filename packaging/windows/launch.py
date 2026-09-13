@@ -1,8 +1,4 @@
-"""Entry point for the frozen Windows build.
-
-PyInstaller needs a script rather than a module, and a frozen build must not
-rely on the working directory, so this is deliberately the whole of it.
-"""
+"""Entry point for the frozen Windows build."""
 
 import multiprocessing
 import sys

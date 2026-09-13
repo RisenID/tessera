@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the Windows and Linux paths from wherever this is run.
-
-The Windows target cannot be tested on the machine it was written on, so
-everything about it that *can* be checked without Windows is checked here:
-where files go, which features are offered, what the commands look like, what
-the registry would be given, and that nothing Linux-only is reached.
-
-`TESSERA_PLATFORM` is what makes that possible -- it moves the app's idea of
-the platform without pretending the kernel changed. Anything that genuinely
-needs Windows (netsh, winreg, a real toast) is stubbed and the call recorded.
-
-    python3 scripts/check-platform.py
-
-Exits non-zero on the first disagreement, listing them all.
-"""
+"""Exercise the Windows and Linux paths from wherever this is run."""
 
 from __future__ import annotations
 
@@ -398,9 +384,7 @@ def interface_checks() -> None:
     from tessera.core.models import Notification
 
     # Two routes: the desktop's notification server where there is one, the
-    # tray everywhere else -- which is what Windows actually gets. This machine
-    # has a session bus even while pretending to be Windows, so the check is
-    # "the user was told", by whichever route is in force.
+    # tray everywhere else -- which is what Windows actually gets.
     shown: list[tuple[str, str]] = []
     window.popups.tray.showMessage = lambda title, body, *_a: shown.append((title, body))
     window.popups.tray.isVisible = lambda: True

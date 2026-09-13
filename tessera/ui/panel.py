@@ -1,9 +1,4 @@
-"""The device panel: the phone itself, down the left of the window.
-
-Everything here is about the phone rather than the app -- what it is, how it is
-doing, its switches, what it is playing and what has just arrived. Navigation
-lives in the tab strip instead. See docs/DESIGN.md.
-"""
+"""The device panel: the phone itself, down the left of the window."""
 
 from __future__ import annotations
 
@@ -57,9 +52,7 @@ SCALE_CEILING = 1.6
 #: What the ringer button steps through, in order.
 RINGER_CYCLE = ("normal", "vibrate", "silent")
 
-#: Icon and fallback glyph for each ringer mode. One family, so the switch
-#: reads as one control: Breeze's phone-vibrate is a full-colour device icon
-#: with no line-art version, and it disappeared into a dark panel.
+#: Icon and fallback glyph for each ringer mode.
 RINGER_ICONS = {
     "normal": ("audio-volume-high", "\N{BELL}"),
     "vibrate": ("audio-volume-low", "\N{MOBILE PHONE}"),
@@ -67,9 +60,9 @@ RINGER_ICONS = {
 }
 
 
-#: Every switch the panel can carry: icons (first one the theme has wins),
-#: fallback glyph, tooltip, whether it latches, and the feature that governs
-#: it. Which of them are actually shown is config.panel.tiles.
+#: Every switch the panel can carry: icons (first one the theme has
+#: wins), fallback glyph, tooltip, whether it latches, and the
+#: feature that governs it.
 TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
     # The Do Not Disturb roundel, not a crossed-out bell: the bell reads as
     # "notifications off", which is a different switch.
@@ -78,9 +71,9 @@ TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
     "ringer": (("audio-volume-high",), "\N{BELL}", "Ringer", False, ""),
     "clipboard": (("edit-paste",), "\N{CLIPBOARD}", "Clipboard sharing",
                   True, "clipboard"),
-    # A bell, not a handset: the ringer switch next to it is a speaker, and
-    # Breeze's phone-ringing is a full-colour device icon that vanishes on a
-    # dark panel.
+    # A bell, not a handset: the ringer switch next to it is a speaker,
+    # and Breeze's phone-ringing is a full-colour device icon that
+    # vanishes on a dark panel.
     "ring": (("notifications", "audio-volume-high"), "\N{BELL}", "Ring phone",
              False, ""),
     "hotspot": (("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
@@ -105,12 +98,7 @@ TILE_LABELS = {
 
 
 def _stepped(prefix: str, fraction: float, suffix: str = "") -> str:
-    """A Breeze status icon name for a level: network-wireless-60, battery-080.
-
-    Breeze draws these in steps of twenty (signal) or ten (battery), which is
-    how a status bar shows strength, so the desktop's own artwork does the
-    work instead of glyphs we would have to draw ourselves.
-    """
+    """A Breeze status icon name for a level: network-wireless-60, battery-080."""
     step = 10 if prefix.startswith("battery") else 20
     # Half up, not Python's round(): half a bar is worth showing as the higher
     # step, and round(2.5) is 2.
@@ -121,11 +109,7 @@ def _stepped(prefix: str, fraction: float, suffix: str = "") -> str:
 
 
 class Complication(QWidget):
-    """One at-a-glance reading: an icon and a short value.
-
-    Hides itself when there is nothing to say, so the strip only ever shows
-    what the phone actually reported.
-    """
+    """One at-a-glance reading: an icon and a short value."""
 
     def __init__(self, glyph: str, palette: Palette,
                  parent: QWidget | None = None):
@@ -180,11 +164,7 @@ class Complication(QWidget):
 
 
 class PanelOtp(QFrame):
-    """The newest passcode, copyable without leaving the rail.
-
-    The full OtpCard is too wide for 300 pixels, so this is the same idea at
-    the rail's scale: the digits, where they came from, and one button.
-    """
+    """The newest passcode, copyable without leaving the rail."""
 
     copied = Signal(str)
 
@@ -231,11 +211,7 @@ class PanelOtp(QFrame):
 
 
 class FeedRow(QFrame):
-    """A notification in the panel: app, time and one line of text.
-
-    A frame rather than a plain widget: a scroll area's children are forced
-    transparent so cards sit on the page, and this one needs its own surface.
-    """
+    """A notification in the panel: app, time and one line of text."""
 
     opened = Signal()
     dismissed = Signal(str)
@@ -410,11 +386,7 @@ class DevicePanel(QWidget):
     # -- size ----------------------------------------------------------------
 
     def _rescale(self) -> None:
-        """Match what is drawn to the width the rail has been dragged to.
-
-        Quantised to one decimal place: re-laying out on every pixel of a drag
-        would rebuild the feed dozens of times over for no visible change.
-        """
+        """Match what is drawn to the width the rail has been dragged to."""
         scale = min(SCALE_CEILING, round(self.width() / MIN_WIDTH, 1))
         if scale == self._scale:
             return
@@ -489,14 +461,7 @@ class DevicePanel(QWidget):
         return header
 
     def _paint_phone_tile(self) -> None:
-        """A little phone showing its wallpaper.
-
-        The wallpaper where the phone would give us one, and a default where it
-        would not -- which is most phones now: a live wallpaper has no still
-        image, and recent Android will not hand one over to an ordinary app
-        anyway. Either way it is a picture behind a phone-shaped bezel, because
-        a coloured rectangle is not a phone.
-        """
+        """A little phone showing its wallpaper."""
         width, height = self.phone_tile.width(), self.phone_tile.height()
         if width <= 0 or height <= 0:
             return
@@ -563,12 +528,7 @@ class DevicePanel(QWidget):
     def _paint_default_wallpaper(
         painter: QPainter, inset: float, width: float, height: float
     ) -> None:
-        """The stand-in, for a phone that will not share its own.
-
-        Drawn rather than shipped: a gradient with a soft light in one corner
-        is what a phone wallpaper looks like from across a desk, and it costs
-        no file and no licence.
-        """
+        """The stand-in, for a phone that will not share its own."""
         gradient = QLinearGradient(inset, inset, inset + width, inset + height)
         gradient.setColorAt(0.0, QColor("#243B6B"))
         gradient.setColorAt(0.55, QColor("#3C2A63"))
@@ -635,10 +595,7 @@ class DevicePanel(QWidget):
         layout.addWidget(self.reconnect_button)
 
         # Bluetooth has its own connection, separate from the companion link
-        # above, and until now the only way to make it was the Audio page. It
-        # belongs next to the other connection: it is what track details, call
-        # control and the audio button all need, and it is the thing to press
-        # when the phone has wandered off and come back.
+        # above, and until now the only way to make it was the Audio page.
         self.bluetooth_button = QPushButton()
         self.bluetooth_button.setObjectName("Ghost")
         self.bluetooth_button.setFixedSize(24, 24)
@@ -692,11 +649,7 @@ class DevicePanel(QWidget):
     # -- the switches --------------------------------------------------------
 
     def _build_tiles(self) -> QWidget:
-        """The phone's switches as squares, Phone Link's arrangement.
-
-        A grid rather than a row: which ones are here is the user's choice, and
-        they reflow to however many fit as the rail is dragged wider.
-        """
+        """The phone's switches as squares, Phone Link's arrangement."""
         self.tile_host = QWidget()
         self.tile_grid = QGridLayout(self.tile_host)
         self.tile_grid.setContentsMargins(0, SPACE["xs"], 0, SPACE["xs"])
@@ -775,13 +728,7 @@ class DevicePanel(QWidget):
             button.setIconSize(QSize(size, size))
 
     def _reflow_tiles(self) -> None:
-        """As many squares per row as the panel is wide enough for.
-
-        Which tiles are showing is read from the flag apply_tiles sets, not
-        from isHidden(): before the window is first shown every child reports
-        itself hidden, and filtering on that left half the tiles out of the
-        grid for good.
-        """
+        """As many squares per row as the panel is wide enough for."""
         buttons = [
             b for b in getattr(self, "_tile_buttons", [])
             if b.property("feature_off") is not True
@@ -798,11 +745,7 @@ class DevicePanel(QWidget):
         self.tile_grid.setColumnStretch(columns, 1)
 
     def apply_tiles(self) -> None:
-        """Show the switches the user chose, minus any that cannot work.
-
-        A feature switched off in Settings hides its switch; so does one this
-        platform cannot do at all, which is not the user's choice to make.
-        """
+        """Show the switches the user chose, minus any that cannot work."""
         chosen = [key for key in self.hub.config.panel.tiles if key in TILES]
         features = self.hub.config.features
         for key, button in self.tiles.items():
@@ -971,11 +914,7 @@ class DevicePanel(QWidget):
         self.hub.set_phone_dnd("priority" if self.dnd_toggle.isChecked() else "off")
 
     def _cycle_ringer(self) -> None:
-        """Step the phone's ringer: normal, vibrate, silent.
-
-        All three rather than only the two asked for: a button that can put the
-        phone on silent has to be able to take it off again.
-        """
+        """Step the phone's ringer: normal, vibrate, silent."""
         current = self.hub.ringer
         following = (
             RINGER_CYCLE[(RINGER_CYCLE.index(current) + 1) % len(RINGER_CYCLE)]

@@ -1,10 +1,4 @@
-"""Clipboard sharing between the desktop and the phone.
-
-The hard part is not moving the text but stopping it bouncing: applying a value
-received from the phone changes the local clipboard, which would otherwise be
-read as a local change and sent straight back. Every value applied from the
-other side is recorded first, and echoes of it are ignored.
-"""
+"""Clipboard sharing between the desktop and the phone."""
 
 from __future__ import annotations
 

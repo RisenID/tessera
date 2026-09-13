@@ -74,12 +74,7 @@ class CompanionConfig:
 
 @dataclass
 class FeatureConfig:
-    """Which optional features are active.
-
-    Every one costs something -- a permission on the phone, a poll, a
-    subscription, or a background process -- so each can be turned off
-    independently rather than being all-or-nothing.
-    """
+    """Which optional features are active."""
 
     notifications: bool = True
     otp: bool = True             # surface one-time passcodes from notifications
@@ -93,16 +88,8 @@ class FeatureConfig:
     apps: bool = True            # the launcher, opening one app per window
     hotspot: bool = True
     bluetooth_audio: bool = True
-    #: Playing what the phone is playing, over the companion link rather than
-    #: Bluetooth. Separate from bluetooth_audio: it needs no pairing, works on
-    #: every platform, and cannot take audio off the phone's own headphones.
-    #:
-    #: Off where Bluetooth can do the job, which is the route this app leads
-    #: with: it is the one that moves the sound rather than copying it, and it
-    #: is the only one that can carry a call. This is the fallback, switched on
-    #: here for a computer with no Bluetooth -- and on such a computer it is
-    #: the only route there is, so it starts on rather than leaving the feature
-    #: unreachable.
+    #: Playing what the phone is playing, over the companion link
+    #: rather than Bluetooth.
     phone_audio: bool = field(
         default_factory=lambda: not platform.supported("bluetooth_audio")
     )
@@ -115,12 +102,7 @@ class FeatureConfig:
 
 @dataclass
 class PhoneAudioConfig:
-    """Playing the phone's audio here, over the companion link.
-
-    The buffer is the whole trade-off: long enough to ride out Wi-Fi jitter,
-    short enough that pausing on the phone does not keep playing here. 120 ms
-    is about the point where both are true on a quiet network.
-    """
+    """Playing the phone's audio here, over the companion link."""
 
     #: Which way to play the phone's audio when the switch in the sidebar is
     #: pressed. Both routes stay available on the Audio page whatever this
@@ -136,13 +118,6 @@ class PhoneAudioConfig:
     route: str = "bluetooth"
 
     #: Whether the phone goes quiet while its audio is playing here.
-    #:
-    #: What the link sends is a copy, so by default the same track comes out of
-    #: the phone and the computer at once, a fraction of a second apart. Most
-    #: people press this button at a desk with the phone next to them, so the
-    #: default is to silence the phone; a phone playing to its own headphones
-    #: is the case for switching it off. Android restores the volume itself,
-    #: and does so even if this app dies while streaming.
     mute_phone: bool = True
 
     volume: int = 100              # percent
@@ -164,9 +139,7 @@ class BluetoothConfig:
     #: profile alone entirely, so nothing moves off the phone's own headphones
     #: -- see `bluetooth.connect_quietly`. Audio moves only from the button.
     autoconnect: bool = True
-    #: Start streaming as soon as the phone connects. Off by default: taking
-    #: over the audio path uninvited interrupts whatever is already playing,
-    #: and connecting is often only wanted for track info and call control.
+    #: Start streaming as soon as the phone connects.
     auto_stream: bool = False
     #: Move call audio to this computer when a call starts. Also off by
     #: default, for the same reason -- it silently reroutes a headset.
@@ -174,12 +147,7 @@ class BluetoothConfig:
     #: Which codecs to offer the phone for music. See backends.btcodecs.
     codec: str = "auto"
     #: What the phone said it can send, read from its Bluetooth endpoints the
-    #: first time it connected. Remembered because "best available" has to
-    #: narrow the offer to one codec to work at all, and narrowing it to one
-    #: the phone cannot manage would leave nothing but SBC. BlueZ only
-    #: publishes these while the phone is connected, so without a copy here
-    #: the offer would swing between wide and narrow on every launch, and each
-    #: swing restarts the audio service.
+    #: first time it connected.
     phone_codecs: list[str] = field(default_factory=list)
 
 
@@ -202,9 +170,7 @@ class FilesConfig:
 class StorageConfig:
     """The phone's storage, mounted as a folder on this computer."""
 
-    #: Mount it whenever the phone connects. The server on the phone costs
-    #: nothing while idle, and a folder that is only there after pressing a
-    #: button is a folder nobody opens.
+    #: Mount it whenever the phone connects.
     auto_mount: bool = True
     #: Put it in the file manager's sidebar while it is mounted.
     sidebar: bool = True
@@ -238,12 +204,7 @@ DEFAULT_TILES = ("dnd", "ringer", "clipboard", "ring", "hotspot", "camera")
 
 @dataclass
 class PanelConfig:
-    """The device panel: how wide, and which switches it carries.
-
-    Two widths, because a rail that suits a window is too narrow when the
-    window is filling a large screen, and one shared number meant dragging it
-    in one mode spoiled the other.
-    """
+    """The device panel: how wide, and which switches it carries."""
 
     width: int = 320
     width_fullscreen: int = 400
@@ -313,11 +274,7 @@ class Config:
 
 
 def _from_dict(cls: type, raw: dict[str, Any]) -> Any:
-    """Rebuild a dataclass from JSON, dropping unknown or mistyped keys.
-
-    Being lenient here means a config written by a newer version, or hand-edited
-    slightly wrong, degrades to defaults instead of refusing to start.
-    """
+    """Rebuild a dataclass from JSON, dropping unknown or mistyped keys."""
     # `from __future__ import annotations` makes Field.type a string, so the
     # annotations have to be resolved before they can be compared against.
     hints = get_type_hints(cls)
@@ -331,10 +288,7 @@ def _from_dict(cls: type, raw: dict[str, Any]) -> Any:
             kwargs[f.name] = _from_dict(declared, value)
         elif get_origin(declared) is list and isinstance(value, list):
             # list[str] is not a type, so the isinstance check below silently
-            # rejects it and the field falls back to its default. That is how
-            # the phone's codec list was being lost on every launch, which in
-            # turn made the app re-advertise the wide codec set and restart the
-            # audio service twice before settling back on the narrow one.
+            # rejects it and the field falls back to its default.
             item = (get_args(declared) or (Any,))[0]
             kwargs[f.name] = [
                 entry for entry in value

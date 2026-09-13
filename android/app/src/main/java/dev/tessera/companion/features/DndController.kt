@@ -4,14 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.service.notification.NotificationListenerService
 
-/**
- * Reads and writes the phone's interruption filter (Do Not Disturb).
- *
- * Nothing here polls. The filter is read once on connect and thereafter the
- * platform calls [NotificationBridge.onInterruptionFilterChanged] whenever it
- * changes, which is the whole reason for using a companion app instead of
- * querying `settings get global zen_mode` over adb on a timer.
- */
+/** Reads and writes the phone's interruption filter (Do Not Disturb). */
 object DndController {
 
     /** Protocol names, deliberately matching the desktop's vocabulary. */
@@ -48,13 +41,7 @@ object DndController {
         return manager.isNotificationPolicyAccessGranted
     }
 
-    /**
-     * Applies a new filter.
-     *
-     * Prefers the notification listener, which is allowed to change the filter
-     * without separate policy access; falls back to NotificationManager when
-     * the listener is not connected.
-     */
+    /** Applies a new filter. */
     fun apply(context: Context, name: String): Boolean {
         val filter = toFilter(name)
 

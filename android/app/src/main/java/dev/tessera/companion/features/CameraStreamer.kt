@@ -20,15 +20,7 @@ import android.view.Surface
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Streams a phone camera to the desktop as H.264.
- *
- * Camera2 feeds MediaCodec's input surface directly, so frames are encoded in
- * hardware and never travel through the app's own memory as bitmaps. The
- * desktop pipes the resulting Annex-B stream into ffmpeg, which writes to a
- * v4l2loopback device -- which is what makes the phone appear as an ordinary
- * webcam to every Linux application.
- */
+/** Streams a phone camera to the desktop as H.264. */
 class CameraStreamer(
     private val context: Context,
     private val facing: String,

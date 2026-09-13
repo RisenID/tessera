@@ -1,22 +1,4 @@
-"""The phone's storage, as a folder in this computer's file manager.
-
-The phone runs an SFTP server and this side mounts it. SFTP rather than a
-protocol of our own because every desktop can already mount it: `sshfs` puts it
-in the filesystem where every application sees it, and GVfs (`gio mount`) is
-the fallback where sshfs is not installed. It is the design Sefirah uses, and
-it is the right one.
-
-Where this departs from Sefirah is trust. Sefirah mounts with
-`StrictHostKeyChecking=no`, which accepts whatever answers on that address. The
-phone here sends its SSH host key over the companion link -- which is already
-authenticated against the certificate pinned at pairing -- and the mount checks
-the server against exactly that key, so nothing else on the network can pose as
-the phone's storage.
-
-The password is random, made by the phone for each server start, and travels
-the same way. It is handed to sshfs on stdin, never on a command line where any
-other user's `ps` could read it.
-"""
+"""The phone's storage, as a folder in this computer's file manager."""
 
 from __future__ import annotations
 
@@ -245,12 +227,7 @@ def _mount_sshfs(info: ServerInfo, name: str) -> Mount:
 
 
 def _mount_gio(info: ServerInfo, name: str) -> Mount:
-    """GVfs, for a desktop without sshfs.
-
-    GVfs reads the user's own known_hosts and has no way to be handed another,
-    so the verified key goes there -- replacing any stale line for the same
-    address, which is exactly what a phone that regenerated its key leaves.
-    """
+    """GVfs, for a desktop without sshfs."""
     ssh_dir = Path.home() / ".ssh"
     ssh_dir.mkdir(mode=0o700, exist_ok=True)
     known_hosts = ssh_dir / "known_hosts"
@@ -278,8 +255,8 @@ def unmount(mounted: Mount) -> None:
     path = Path(mounted.location)
     if is_mounted(path):
         # Lazy when the ordinary way fails: the phone is usually gone by the
-        # time this runs, and a file manager still looking at the folder
-        # would otherwise keep it mounted and hanging.
+        # time this runs, and a file manager still looking at the folder would
+        # otherwise keep it mounted and hanging.
         if not _fusermount(path, lazy=False):
             _fusermount(path, lazy=True)
     _remove_empty(path)
@@ -296,11 +273,7 @@ def _fusermount(path: Path, lazy: bool) -> bool:
 
 
 def _remove_empty(path: Path) -> None:
-    """Remove an unmounted mount point, but only if it really is empty.
-
-    rmdir, never anything recursive: if the unmount did not take, the folder
-    still shows the phone's files, and those are not ours to delete.
-    """
+    """Remove an unmounted mount point, but only if it really is empty."""
     try:
         if not is_mounted(path):
             path.rmdir()
@@ -345,13 +318,7 @@ def _kde_places() -> Path:
 
 
 def add_place(mounted: Mount) -> None:
-    """Show the phone in the file manager's sidebar.
-
-    Both lists, because both exist on most desktops: GTK's bookmarks, which
-    GNOME's Files and every GTK file dialog read, and KDE's places, which
-    Dolphin and every KDE dialog read. KDE's file is only edited if it already
-    exists -- creating one would replace Dolphin's defaults with a single entry.
-    """
+    """Show the phone in the file manager's sidebar."""
     remove_place(mounted)
 
     bookmarks = _gtk_bookmarks()

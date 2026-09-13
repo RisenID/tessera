@@ -1,17 +1,4 @@
-"""Do Not Disturb synchronisation between the phone and Plasma.
-
-KDE Connect has no DND plugin, so the phone side is read and written through
-adb:
-
-* read  -- `settings get global zen_mode` (0 off, 1 priority, 2 silence, 3 alarms)
-* write -- `cmd notification set_dnd <off|priority|alarms|none>`
-
-The desktop side uses the freedesktop notification inhibition API, which Plasma
-implements as its "Do not disturb" state.
-
-Android offers no push channel for zen_mode, so the phone is polled. The poll
-is deliberately cheap (a single `settings get`) and runs off the GUI thread.
-"""
+"""Do Not Disturb synchronisation between the phone and Plasma."""
 
 from __future__ import annotations
 
@@ -166,15 +153,7 @@ class DndSync(QObject):
             self._phone = None       # force a fresh read against the new device
 
     def set_pushed(self, pushed: bool) -> None:
-        """Whether something else is reporting the phone's state as it changes.
-
-        The companion app pushes every interruption-filter change over its own
-        link, which makes this poll redundant while it is connected -- and the
-        poll is not free: it runs an adb shell command against the phone every
-        few seconds, which is the battery cost the companion app exists to
-        avoid. Polling stands down while a live source is supplying, and takes
-        a fresh reading the moment one stops.
-        """
+        """Whether something else is reporting the phone's state as it changes."""
         if pushed == self._pushed:
             return
         self._pushed = pushed
@@ -216,14 +195,7 @@ class DndSync(QObject):
         return values[0] if values else None
 
     def _read_inhibited(self) -> bool | None:
-        """The Inhibited property, or None when the server has no such thing.
-
-        The distinction is the whole point. Registering
-        org.freedesktop.Notifications says nothing about implementing
-        Inhibit -- that is Plasma's extension, and GNOME's daemon registers
-        the same name without it. Taking registration as proof is what made
-        Do Not Disturb sync look supported on GNOME and then do nothing.
-        """
+        """The Inhibited property, or None when the server has no such thing."""
         if not self._bus.isConnected():
             return None
         if not self._bus.interface().isServiceRegistered(NOTIFY_SERVICE).value():
@@ -270,16 +242,7 @@ class DndSync(QObject):
         return found.silenced() if found else False
 
     def _uninhibit(self, cookie: int) -> bool:
-        """Drop inhibition *cookie*.
-
-        This has to go through gdbus rather than Qt: UnInhibit takes a uint32,
-        and PySide6 marshals every Python int as int32, which the server
-        rejects outright. Plasma does not check that the release comes from the
-        connection that took the inhibition, so a one-shot gdbus call works --
-        verified against plasma's notification server. Inhibit itself must stay
-        on our own long-lived connection, because an inhibition dies with the
-        connection that created it.
-        """
+        """Drop inhibition *cookie*."""
         if not have("gdbus"):
             return False
         result = run(
@@ -369,14 +332,7 @@ class DndSync(QObject):
             self._push_to_phone(state)
 
     def _watch_silencer(self) -> None:
-        """Notice the user's own toggle, on a desktop with no change signal.
-
-        Plasma announces its toggle through PropertiesChanged, which is how a
-        change made in the tray reaches us for nothing. gsettings, xfconf and
-        dunst say nothing, so on those desktops the only way to see the user
-        flip their own Do Not Disturb is to look -- and without this, sync
-        would work in one direction only there.
-        """
+        """Notice the user's own toggle, on a desktop with no change signal."""
         if self._inhibit_supported() or self._config.mode == MODE_OFF:
             return
         if self._config.mode not in (MODE_DESKTOP_TO_PHONE, MODE_TWO_WAY):

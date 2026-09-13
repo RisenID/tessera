@@ -1,36 +1,4 @@
-"""Which Bluetooth codec the phone's music arrives in.
-
-Receiving audio is not the mirror image of sending it. A codec needs an
-encoder to send and a decoder to receive, and the two are shipped separately:
-
-    Endpoint registered: /MediaEndpoint/A2DPSource/ldac      <- can be sent
-    Endpoint registered: /MediaEndpoint/A2DPSink/aptx_hd     <- can be received
-    Endpoint registered: /MediaEndpoint/A2DPSink/aptx        <- can be received
-    Endpoint registered: /MediaEndpoint/A2DPSink/aac         <- can be received
-    Endpoint registered: /MediaEndpoint/A2DPSink/sbc         <- can be received
-
-LDAC is the odd one out as distributions ship it. Sony released the encoder
-(libldacBT_enc) and no decoder, so stock PipeWire can drive LDAC headphones
-and cannot accept LDAC from a phone -- and LDAC is the only codec a Galaxy
-actually offers above aptX. Of the rest, aptX HD looks best on paper at 576
-kbit/s, but a Galaxy S25 does not offer it: asked for aptX HD alone it
-negotiates plain SBC, which is worse than the aptX it would otherwise have
-used. That is the whole reason the default offers everything and lets the
-phone choose, and why the Audio page reports the codec that was negotiated
-rather than the one that was asked for.
-
-scripts/build-ldac-decoder.sh closes the gap. PipeWire's LDAC plugin already
-contains a complete decode path, compiled out for want of a library providing
-ldacBT_decode(); the script supplies one from libldacdec and rebuilds that one
-plugin. When it has been run, A2DPSink/ldac appears and LDAC becomes the best
-option by a wide margin -- 909 kbit/s at up to 96 kHz. Everything here reads
-that state rather than assuming it, so the app behaves correctly on a machine
-where the script was never run.
-
-SBC is always offered whatever the preference. It is the only codec A2DP
-requires every device to implement, so dropping it risks a phone that connects
-and then has nothing to speak.
-"""
+"""Which Bluetooth codec the phone's music arrives in."""
 
 from __future__ import annotations
 
@@ -56,8 +24,6 @@ def ldac_receivable() -> bool:
 
 
 #: Codec sets by preference, in the order they are offered to the phone.
-#: "auto" offers everything and lets the phone choose, which is what its own
-#: Developer options setting then decides.
 CHOICES: dict[str, tuple[str, ...]] = {
     "auto": ("ldac", "aptx_hd", "aptx", "aac", "sbc_xq", "sbc"),
     "ldac": ("ldac", "sbc"),
@@ -127,20 +93,7 @@ def best_shared(phone_codecs: "tuple[str, ...] | list[str]") -> str:
 
 
 def codecs_for(choice: str, phone_codecs: "tuple[str, ...] | list[str]" = ()) -> tuple[str, ...]:
-    """The codecs to advertise, minus any this computer cannot decode.
-
-    Offering LDAC without the decoder installed is not merely useless: the
-    phone would negotiate it and then send audio nothing here can turn back
-    into sound.
-
-    "Best the phone offers" narrows the list to one codec rather than handing
-    over everything, because a phone offered everything does not pick the best
-    one -- it picks whatever its own ranking prefers, and an S25 given LDAC,
-    aptX and the rest settles on aptX every time. Given LDAC and SBC it takes
-    LDAC. So the choice has to be made on this side, and it can be made safely
-    only once the phone has said what it supports: narrowing blind is how
-    asking for aptX HD ended in plain SBC. Until then the wide list stands.
-    """
+    """The codecs to advertise, minus any this computer cannot decode."""
     if choice == "auto" and phone_codecs:
         best = best_shared(phone_codecs)
         # SBC is the floor either way, so there is nothing to narrow to.
@@ -173,17 +126,7 @@ def session_managed_by_systemd() -> bool:
 
 
 def reload_session() -> bool:
-    """Restart WirePlumber so the new codec list is advertised.
-
-    The codecs are advertised to BlueZ once, when the session manager starts,
-    so a change only takes effect after this. Audio on this computer stops for
-    about a second; anything playing resumes on its own.
-
-    False on a system with no systemd user session -- Void, Artix, Alpine and
-    the like. The file is still written, so the new list takes effect the next
-    time WirePlumber starts; there is simply no supported way from here to make
-    that happen now.
-    """
+    """Restart WirePlumber so the new codec list is advertised."""
     if not session_managed_by_systemd():
         log.info("no systemd user session; the codec list applies at next start")
         return False
