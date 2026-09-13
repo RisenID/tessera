@@ -62,6 +62,13 @@ SVG: dict[str, str] = {
     "notifications-disabled":
         '<path d="M6 16V11a6 6 0 0 1 9.5-4.9"/><path d="M18 12v4l1.5 2.5H7"/>'
         '<path d="M10 21a2.2 2.2 0 0 0 4 0"/><path d="M3 3l18 18"/>',
+    # A page with an arrow leaving it: sending a file, in the same line-art
+    # vocabulary as the rest.
+    "document-send":
+        '<path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11'
+        'a1.5 1.5 0 0 0 1.5-1.5V9z"/>'
+        '<path d="M13 3v6h6"/>'
+        '<path d="M12 18v-6"/><path d="M9.5 14.5 12 12l2.5 2.5"/>',
     "process-stop":
         '<circle cx="12" cy="12" r="9"/><path d="M7.5 12h9"/>',
     "edit-paste":

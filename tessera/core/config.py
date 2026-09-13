@@ -106,6 +106,8 @@ class FeatureConfig:
         default_factory=lambda: not platform.supported("bluetooth_audio")
     )
     calls: bool = True
+    #: Files in both directions, and the phone's share sheet.
+    file_transfer: bool = True
 
 
 @dataclass
@@ -179,6 +181,21 @@ class BluetoothConfig:
 
 
 @dataclass
+class FilesConfig:
+    """Where files from the phone land, and what happens when they do."""
+
+    #: Empty means the desktop's own download folder, asked for by name so it
+    #: is the one the file manager already shows.
+    save_to: str = ""
+    #: Raise a desktop notification when a file finishes arriving. On, because
+    #: a file that appears silently in a folder is a file nobody finds.
+    notify: bool = True
+    #: Open the Share page when a transfer starts, so progress is visible
+    #: without going looking for it.
+    show_progress: bool = True
+
+
+@dataclass
 class ClipboardConfig:
     #: off | phone_to_desktop | desktop_to_phone | two_way
     mode: str = "two_way"
@@ -233,6 +250,7 @@ class Config:
     bluetooth: BluetoothConfig = field(default_factory=BluetoothConfig)
     webcam: WebcamConfig = field(default_factory=WebcamConfig)
     phone_audio: PhoneAudioConfig = field(default_factory=PhoneAudioConfig)
+    files: FilesConfig = field(default_factory=FilesConfig)
     hotspot: HotspotConfig = field(default_factory=HotspotConfig)
     panel: PanelConfig = field(default_factory=PanelConfig)
 

@@ -9,7 +9,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        21%{?dist}
+Release:        22%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -164,6 +164,23 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Sun Sep 13 2026 Tessera contributors - 1.10.0-22
+- Files, both ways, over the connection the app already has. Drop them on the
+  window or pick them on the new Share page; on the phone, share anything to
+  Tessera from any app and it lands in this computer's download folder. No
+  pairing beyond what is already there, and nothing leaves the local network.
+- Neither end ever holds a whole file in memory: 256 kB chunks, paced against
+  what the socket has actually put on the network, written to a temporary name
+  and renamed only when the last chunk lands. An interrupted transfer leaves
+  nothing behind that could be mistaken for a complete file.
+- A send is finished when the phone says it saved the file, not when the last
+  bytes reach the socket. The difference is a whole watermark of data, and
+  reporting the earlier moment meant claiming success for files that never
+  arrived.
+- Measured against the phone rather than assumed: 24 MB each way, byte for
+  byte, at the speed of the link -- which on the network it was tested on is
+  what adb itself manages over the same Wi-Fi.
+
 * Sun Sep 13 2026 Tessera contributors - 1.10.0-21
 - Bluetooth connects on its own now, shortly after the app starts and again if
   the link drops. Connecting is still not playing: it brings up the hands-free

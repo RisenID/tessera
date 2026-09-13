@@ -312,6 +312,22 @@ class TesseraService : Service() {
         )
     }
 
+    /**
+     * Hand shared files (and text) to every connected desktop.
+     *
+     * Returns how many desktops took them, so the share sheet can say "sent"
+     * or "no computer connected" rather than closing silently either way.
+     */
+    fun share(uris: List<android.net.Uri>, text: String = ""): Int {
+        val live = sessions.toList()
+        if (live.isEmpty()) return 0
+        live.forEach { session ->
+            if (uris.isNotEmpty()) session.offerFiles(uris)
+            if (text.isNotEmpty() && uris.isEmpty()) session.offerText(text)
+        }
+        return live.size
+    }
+
     private fun statusText(): String = when (val count = sessions.size) {
         0 -> "Ready on port ${tls.localPort}"
         1 -> "Connected to 1 computer"

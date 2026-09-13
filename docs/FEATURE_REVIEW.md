@@ -39,7 +39,7 @@ for free.
 | ~~Now playing on the desktop~~ | Published as our own MPRIS player | **done** |
 | ~~Desktop popups~~ | The desktop's server, with inline reply | **done** |
 | Screen mirroring, app windows | scrcpy over adb, reconnecting on its own | **partly done** — over the link is the remaining half |
-| **File transfer** | absent | **add** — the link already carries binaries |
+| ~~File transfer~~ | Chunked, both ways, plus the phone's share sheet | **done** |
 
 ---
 
@@ -153,9 +153,14 @@ in case something was copied on the lock screen. **Done.**
 
 ## Add
 
-### File transfer
+### File transfer — done
 
-There is none. Photos come *from* the phone through `MediaRepository`, and
+~~There is none.~~ There is now: chunked transfers in both directions over the
+same link, a drop target on the desktop window, and "Share to Tessera" on the
+phone's share sheet, which is the half that gets used. See `docs/PROTOCOL.md`
+for the message flow. What follows was the original entry.
+
+There was none. Photos come *from* the phone through `MediaRepository`, and
 nothing goes the other way. The link already carries binary frames in both
 directions (photos, camera frames, audio), so the transport exists — what is
 missing is a "send to phone" action, a drop target on the window, and a

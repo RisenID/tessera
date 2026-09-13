@@ -22,6 +22,7 @@ from ..core import platform
 from ..core.hub import Hub
 from .pages.apps import AppsPage
 from .pages.audio import AudioPage
+from .pages.share import SharePage
 from .pages.home import HomePage
 from .pages.calls import CallsPage
 from .pages.dnd import DndPage
@@ -49,6 +50,7 @@ PAGES = [
     ("Messages", "mail-message", "💬", MessagesPage, "messages"),
     ("Photos", "folder-pictures", "🖼", PhotosPage, "photos"),
     ("Apps", "view-list-icons", "▦", AppsPage, "apps"),
+    ("Share", "document-send", "📤", SharePage, "file_transfer"),
     ("Notifications", "notifications", "🔔", NotificationsPage, "notifications"),
     ("Screen", "smartphone", "📱", ScreenPage, "screen"),
     ("Webcam", "camera-web", "🎥", WebcamPage, "webcam"),
@@ -109,6 +111,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Tessera")
         self.resize(1180, 780)
         self.setMinimumSize(900, 600)
+        # Files dropped anywhere on the window go to the phone. The Share page
+        # has its own target, but needing to find a page first is exactly the
+        # friction this feature exists to remove.
+        self.setAcceptDrops(True)
 
         root = QWidget()
         root.setObjectName("Root")
@@ -194,6 +200,33 @@ class MainWindow(QMainWindow):
 
         hub.statusChanged.connect(self._set_status)
         hub.errorOccurred.connect(self._set_status)
+        hub.fileReceived.connect(self._on_file_received)
+
+    def _on_file_received(self, transfer) -> None:
+        """Say that a file arrived, where a file arriving is easy to miss.
+
+        A file that lands silently in a folder is a file nobody finds. The
+        desktop's own notification server gets it where there is one, because
+        that is the thing that survives the window being minimised; the status
+        line says it either way.
+        """
+        from ..backends.filetransfer import human
+
+        self._set_status(f"{transfer.name} arrived · {human(transfer.size)}")
+        if not self.hub.config.files.notify:
+            return
+        notifier = getattr(self.popups, "notifier", None)
+        if notifier is None or not notifier.available:
+            return
+        notifier.send(
+            f"{transfer.name}",
+            f"Saved to {transfer.path.parent}" if transfer.path else "Saved",
+            icon="document-save",
+            # Neither of the phone's actions applies to a file on this disk:
+            # there is nothing to dismiss on the phone and nothing to reply to.
+            repliable=False,
+            clearable=False,
+        )
 
     # -- tab strip -----------------------------------------------------------
 
@@ -379,6 +412,27 @@ class MainWindow(QMainWindow):
 
     def _set_status(self, message: str) -> None:
         self.panel.set_status(message)
+
+    # -- dropped files -------------------------------------------------------
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if (
+            event.mimeData().hasUrls()
+            and self.hub.config.features.file_transfer
+            and any(url.isLocalFile() for url in event.mimeData().urls())
+        ):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        paths = [
+            url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
+        ]
+        if not paths:
+            return
+        event.acceptProposedAction()
+        self.hub.send_files(paths)
+        if self.hub.config.files.show_progress:
+            self.show_page("Share")
 
     def _from_panel(self, name: str) -> None:
         """A panel switch whose work belongs to a page: run it, and show it.

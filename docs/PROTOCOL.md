@@ -67,6 +67,41 @@ correlation silently overwrites them.
 
 Errors come back as `{"t":"error","rid":N,"message":"..."}`.
 
+## File transfer
+
+Either end may offer a file; the other accepts or refuses before any bytes
+move. Chunks are 256 KiB, each a JSON header followed immediately by its binary
+frame.
+
+```
+sender   -> peer     {"t":"file_offer","id":"<hex>","name":"a.pdf","size":12345,"mime":"application/pdf"}
+peer     -> sender   {"t":"file_accept","id":"<hex>"}
+                 or  {"t":"file_reject","id":"<hex>","message":"why not"}
+sender   -> peer     {"t":"file_chunk","id":"<hex>","binary":true,"length":262144} + binary frame
+                     ... repeated ...
+sender   -> peer     {"t":"file_done","id":"<hex>"}
+peer     -> sender   {"t":"file_saved","id":"<hex>","path":"<where it went>"}
+either   -> other    {"t":"file_cancel","id":"<hex>","message":"why"}
+```
+
+Three rules make this safe rather than merely working:
+
+* **`file_saved` is what finishes a transfer**, not `file_done`. The sender has
+  only handed its last bytes to a socket at that point; treating that as
+  success reported files as delivered that the receiver never wrote.
+* **Nothing is loaded whole.** The sender reads a chunk at a time and stops
+  when its socket has a watermark's worth outstanding; the receiver writes each
+  chunk as it lands. Memory does not grow with the size of the file at either
+  end.
+* **A name is not a path.** The receiver takes the last component of `name` and
+  strips anything that could escape its download folder, and writes to a
+  temporary name until the transfer completes, so an interrupted transfer never
+  looks like a finished file.
+
+The phone's share sheet ("Share to Tessera") is an offer in the phone-to-desktop
+direction; text shared this way arrives as an ordinary `clipboard` message
+instead.
+
 ## Subscriptions
 
 ```

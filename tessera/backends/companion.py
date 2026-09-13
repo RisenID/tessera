@@ -321,6 +321,15 @@ class CompanionClient(QObject):
     #: The phone's own audio, over this link rather than Bluetooth.
     phoneAudioStarted = Signal(dict)     # codec, rate, channels
     phoneAudioFrame = Signal(bytes)      # 20 ms of PCM
+    #: File transfer, both directions. The JSON half of the conversation
+    #: (offers, acceptances, completions, cancellations) and the chunks.
+    fileEvent = Signal(dict)
+    fileChunk = Signal(dict, bytes)
+    #: The socket has written some of what it was holding. Whoever is sending a
+    #: file waits on this rather than handing Qt a whole file at once: a
+    #: QTcpSocket buffers everything it is given, so a gigabyte would become a
+    #: gigabyte of memory before a byte of it reached the phone.
+    flushed = Signal()
     phoneAudioStopped = Signal()
     #: Android asks the user on the phone before capturing playback, and only
     #: an activity can ask -- so the phone says "I have put a notification up".
@@ -515,7 +524,17 @@ class CompanionClient(QObject):
         socket.setPeerVerifyMode(QSslSocket.PeerVerifyMode.QueryPeer)
         socket.sslErrors.connect(self._on_ssl_errors)
         socket.encrypted.connect(self._on_encrypted)
+        # Nagle's algorithm holds a small write back until the previous one is
+        # acknowledged, and every chunk of a file is exactly that pattern: a
+        # short JSON header followed by a large payload. The stall it caused
+        # was about 150 ms per chunk -- a file moved at a megabyte a second
+        # over a link that manages far more.
+        socket.setSocketOption(QAbstractSocket.SocketOption.LowDelayOption, 1)
         socket.readyRead.connect(self._on_ready_read)
+        # encryptedBytesWritten, not bytesWritten: on a TLS socket the plain
+        # side reports everything as written the moment it is encrypted, so
+        # the ordinary signal says nothing about what has reached the network.
+        socket.encryptedBytesWritten.connect(lambda _n: self.flushed.emit())
         socket.disconnected.connect(self._on_disconnected)
         socket.errorOccurred.connect(self._on_socket_error)
         self._socket = socket
@@ -668,6 +687,9 @@ class CompanionClient(QObject):
         if header.get("t") == "audio_frame":
             self.phoneAudioFrame.emit(payload)
             return
+        if header.get("t") == "file_chunk":
+            self.fileChunk.emit(header, payload)
+            return
         rid = header.get("rid")
         if isinstance(rid, int):
             callback = self._pending.pop(rid, None)
@@ -811,6 +833,18 @@ class CompanionClient(QObject):
     def _recv_audio_consent(self, message: dict[str, Any]) -> None:
         self.phoneAudioConsent.emit(message.get("message", ""))
 
+    # File transfer. One handler for the lot: the engine in
+    # backends/filetransfer.py owns the state machine, and splitting it across
+    # five near-identical methods here would only hide that.
+    def _recv_file_offer(self, message: dict[str, Any]) -> None:
+        self.fileEvent.emit(message)
+
+    _recv_file_accept = _recv_file_offer
+    _recv_file_reject = _recv_file_offer
+    _recv_file_done = _recv_file_offer
+    _recv_file_saved = _recv_file_offer
+    _recv_file_cancel = _recv_file_offer
+
     def _recv_error(self, message: dict[str, Any]) -> None:
         rid = message.get("rid")
         if isinstance(rid, int) and rid in self._pending:
@@ -825,6 +859,37 @@ class CompanionClient(QObject):
         if socket is None or socket.state() != QAbstractSocket.SocketState.ConnectedState:
             raise ProtocolError("not connected to the phone")
         socket.write(QByteArray(encode_json(message)))
+
+    def send_binary(self, header: dict[str, Any], payload: bytes) -> None:
+        """Send a JSON header and the bytes it describes, adjacently.
+
+        The two frames must not be separated: the receiver attaches a binary
+        frame to whatever header came immediately before it.
+        """
+        socket = self._socket
+        if socket is None or socket.state() != QAbstractSocket.SocketState.ConnectedState:
+            raise ProtocolError("not connected to the phone")
+        message = {**header, "binary": True, "length": len(payload)}
+        # One write, not two. The header and its payload have to stay adjacent
+        # anyway, and handing them over together means one TCP segment stream
+        # rather than a small packet waiting on an acknowledgement.
+        socket.write(QByteArray(encode_json(message) + encode_binary(payload)))
+
+    @property
+    def pending_bytes(self) -> int:
+        """Bytes handed to the socket that have not reached the network yet.
+
+        `bytesToWrite` is the wrong question on a TLS socket: it counts
+        plaintext waiting to be encrypted, which is zero almost always, and
+        measuring a send with it showed an eight megabyte file "written" in ten
+        milliseconds with nothing pending. The encrypted queue is the real one,
+        and pacing against it is what keeps a large file out of memory.
+        """
+        socket = self._socket
+        if socket is None:
+            return 0
+        pending = int(socket.encryptedBytesToWrite())
+        return pending or int(socket.bytesToWrite())
 
     def send(self, message: dict[str, Any]) -> None:
         """Fire-and-forget a message, ignoring it if we are offline."""

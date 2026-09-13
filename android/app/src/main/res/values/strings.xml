@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tessera</string>
+
+    <!-- File transfer and the share sheet. -->
+    <string name="share_label">Send to my computer</string>
+    <string name="share_not_running">Tessera is not running</string>
+    <string name="share_no_desktop">No computer connected</string>
+    <string name="share_one_sent">Sending to your computer</string>
+    <string name="share_many_sent">Sending %1$d files to your computer</string>
+    <string name="share_text_sent">Copied to your computer\'s clipboard</string>
+    <string name="file_received_title">File from your computer</string>
+    <string name="channel_files">Files</string>
+    <string name="channel_files_description">Files arriving from a connected computer</string>
     <string name="app_long_name">Tessera Companion</string>
     <string name="stop">Stop</string>
     <string name="start">Start</string>

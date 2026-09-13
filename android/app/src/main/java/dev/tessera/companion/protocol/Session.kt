@@ -9,6 +9,7 @@ import dev.tessera.companion.Store
 import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
+import dev.tessera.companion.features.FileTransfer
 import dev.tessera.companion.features.CameraStreamer
 import dev.tessera.companion.features.CallMonitor
 import dev.tessera.companion.features.CallsRepository
@@ -34,7 +35,9 @@ import java.net.Socket
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * One connected desktop.
@@ -50,7 +53,10 @@ class Session(
     private val store: Store,
 ) : Runnable {
 
-    private val input = DataInputStream(socket.getInputStream().buffered())
+    // A 64 kB buffer rather than the default 8: every file chunk is 256 kB,
+    // and refilling eight kilobytes at a time was pure overhead on the one
+    // path where throughput matters.
+    private val input = DataInputStream(socket.getInputStream().buffered(64 * 1024))
     private val output = BufferedOutputStream(socket.getOutputStream())
     private val writeLock = Any()
     private val open = AtomicBoolean(true)
@@ -65,8 +71,34 @@ class Session(
     private var camera: CameraStreamer? = null
     private var audio: AudioStreamer? = null
 
+    /** Files arriving from the desktop, by transfer id. */
+    private val incoming = java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Incoming>()
+    /** The file going the other way. One at a time: two files sharing the
+     *  link finish in twice the time each and neither progress bar means
+     *  anything. */
+    private var outgoing: FileTransfer.Outgoing? = null
+    private val toSend = java.util.concurrent.ConcurrentLinkedQueue<android.net.Uri>()
+
+    /**
+     * How many chunks may be queued for the writer at once.
+     *
+     * The writer's queue is unbounded, so reading a file as fast as the disk
+     * allows would put the whole thing in memory while the network took it a
+     * packet at a time -- the exact failure this chunking exists to avoid. A
+     * permit is released as each chunk leaves.
+     */
+    private val sendWindow = Semaphore(8)
+
+    /** The header whose binary frame has not arrived yet. */
+    private var pendingBinary: JSONObject? = null
+
     override fun run() {
         Log.i(TAG, "session from ${socket.inetAddress?.hostAddress}")
+        // Without this a file chunk -- a small header, then a large payload --
+        // waits for an acknowledgement between the two, which cost about
+        // 150 ms per chunk and held transfers to a megabyte a second on a link
+        // capable of far more.
+        runCatching { socket.tcpNoDelay = true }
         try {
             loop()
         } catch (_: ClosedException) {
@@ -80,11 +112,25 @@ class Session(
 
     private fun loop() {
         while (open.get()) {
-            val message = Frames.readJson(input)
-            if (!authenticated) {
-                handleHandshake(message)
-            } else {
-                handleCommand(message)
+            val frame = Frames.read(input)
+            when (frame.type) {
+                Frames.TYPE_JSON -> {
+                    val message = JSONObject(String(frame.payload, Charsets.UTF_8))
+                    when {
+                        !authenticated -> handleHandshake(message)
+                        // A header that says "binary" describes the frame
+                        // immediately after it, and is not a command in
+                        // itself. Until files, every binary frame went the
+                        // other way, so this direction had never needed it.
+                        message.optBoolean("binary") -> pendingBinary = message
+                        else -> handleCommand(message)
+                    }
+                }
+                Frames.TYPE_BINARY -> {
+                    if (!authenticated) throw ProtocolException("binary frame before auth")
+                    handleBinary(frame.payload)
+                }
+                else -> Log.d(TAG, "ignoring frame type ${frame.type}")
             }
         }
     }
@@ -166,6 +212,9 @@ class Session(
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
+        // Files both ways, and the phone's share sheet: MediaStore's Downloads
+        // collection needs no permission, so this is always available.
+        add("file_transfer")
         if (CallsRepository.canReadLog(context)) add("calls")
         if (CallsRepository.canControl(context)) add("call_control")
         // Only claim "hotspot" if the phone will actually take the command.
@@ -285,6 +334,17 @@ class Session(
                 FindPhone.stop(context)
                 reply(id, JSONObject().put("ringing", false))
             }
+
+            // -- files, both directions ------------------------------------
+            "file_offer" -> receiveOffer(message)
+            "file_done" -> finishIncoming(message)
+            "file_cancel" -> cancelTransfer(message)
+            "file_accept" -> startOutgoing(message)
+            "file_reject" -> {
+                Log.i(TAG, "the desktop refused a file: ${message.optString("message")}")
+                endOutgoing()
+            }
+            "file_saved" -> Log.i(TAG, "the desktop saved ${message.optString("path")}")
 
             "audio_start" -> startAudio(id, message.optBoolean("mute", false))
             "audio_stop" -> stopAudio(notify = true)
@@ -591,6 +651,175 @@ class Session(
         streamer.start()
     }
 
+    // -- files ---------------------------------------------------------------
+
+    /**
+     * The desktop is offering a file.
+     *
+     * Accepted before a byte arrives, or refused with a reason: a transfer
+     * that fails at the start costs nothing, and one that fails at the end
+     * costs the whole file.
+     */
+    private fun receiveOffer(message: JSONObject) {
+        val id = message.optString("id")
+        if (id.isEmpty()) return
+        val name = message.optString("name", "file")
+        val size = message.optLong("size", 0L)
+
+        val transfer = FileTransfer.Incoming(
+            context, id, name, size, message.optString("mime"),
+        )
+        val problem = transfer.open()
+        if (problem != null) {
+            send(JSONObject().put("t", "file_reject").put("id", id).put("message", problem))
+            return
+        }
+        incoming[id] = transfer
+        send(JSONObject().put("t", "file_accept").put("id", id))
+    }
+
+    private fun handleBinary(payload: ByteArray) {
+        val header = pendingBinary
+        pendingBinary = null
+        if (header == null || header.optString("t") != "file_chunk") return
+        val id = header.optString("id")
+        val transfer = incoming[id] ?: return
+        runCatching { transfer.write(payload) }.onFailure { error ->
+            Log.w(TAG, "could not write an incoming file", error)
+            incoming.remove(id)?.discard()
+            send(
+                JSONObject().put("t", "file_cancel").put("id", id)
+                    .put("message", error.message ?: "the phone could not write the file")
+            )
+        }
+    }
+
+    /** The last chunk has landed: publish it and say where it went. */
+    private fun finishIncoming(message: JSONObject) {
+        val id = message.optString("id")
+        val transfer = incoming.remove(id) ?: return
+        val uri = transfer.finish()
+        if (uri.isEmpty()) {
+            // The writer failed at the last moment. Saying "saved" here would
+            // leave the desktop showing a success for a file that is not on
+            // the phone at all.
+            send(
+                JSONObject().put("t", "file_cancel").put("id", id)
+                    .put("message", "the phone could not finish writing the file")
+            )
+            return
+        }
+        FileTransfer.announce(context, transfer.name, uri)
+        send(JSONObject().put("t", "file_saved").put("id", id).put("path", uri))
+    }
+
+    private fun cancelTransfer(message: JSONObject) {
+        val id = message.optString("id")
+        incoming.remove(id)?.discard()
+        if (outgoing?.id == id) endOutgoing()
+    }
+
+    /**
+     * Send files to this desktop. Called by the share sheet.
+     *
+     * Queued rather than started: one file at a time uses the whole link for
+     * that file, which is both faster per file and honest about progress.
+     */
+    fun offerFiles(uris: List<android.net.Uri>) {
+        if (!open.get() || !authenticated) return
+        toSend.addAll(uris)
+        startNextOutgoing()
+    }
+
+    /** Text shared from the phone, put on the desktop's clipboard. */
+    fun offerText(text: String) {
+        if (!open.get() || !authenticated || text.isEmpty()) return
+        send(JSONObject().put("t", "clipboard").put("text", text))
+    }
+
+    @Synchronized
+    private fun startNextOutgoing() {
+        if (outgoing != null) return
+        val uri = toSend.poll() ?: return
+        val (name, size, mime) = FileTransfer.describe(context, uri)
+        val transfer = FileTransfer.Outgoing(
+            context, Store.randomHex(8), uri, name, size, mime,
+        )
+        if (!transfer.open()) {
+            Log.w(TAG, "could not read $name")
+            startNextOutgoing()
+            return
+        }
+        outgoing = transfer
+        send(
+            JSONObject().put("t", "file_offer").put("id", transfer.id)
+                .put("name", name).put("size", size).put("mime", mime)
+        )
+    }
+
+    /** The desktop accepted: read the file and write it out, chunk by chunk. */
+    private fun startOutgoing(message: JSONObject) {
+        val transfer = outgoing ?: return
+        if (message.optString("id") != transfer.id) return
+
+        thread(name = "tessera-file") {
+            var failed = false
+            while (open.get()) {
+                val chunk = try {
+                    transfer.next()
+                } catch (e: Exception) {
+                    Log.w(TAG, "reading ${transfer.name} failed", e)
+                    failed = true
+                    null
+                } ?: break
+
+                // Wait for room rather than queueing the whole file: the
+                // writer's queue is unbounded, and reading from storage is far
+                // faster than a Wi-Fi link, so without this the file would sit
+                // in memory in its entirety.
+                if (!sendWindow.tryAcquire(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                    if (!open.get()) break
+                    continue
+                }
+                val header = JSONObject().put("t", "file_chunk").put("id", transfer.id)
+                    .put("binary", true).put("length", chunk.size)
+                submitWrite {
+                    try {
+                        Frames.writeJson(output, header)
+                        Frames.writeBinary(output, chunk)
+                        output.flush()
+                    } finally {
+                        sendWindow.release()
+                    }
+                }
+                // Nothing else to do until there is room; the permit released
+                // by the writer is what paces this loop.
+            }
+
+            if (open.get()) {
+                if (failed) {
+                    send(
+                        JSONObject().put("t", "file_cancel").put("id", transfer.id)
+                            .put("message", "the phone could not read the file")
+                    )
+                } else {
+                    send(JSONObject().put("t", "file_done").put("id", transfer.id))
+                }
+            }
+            endOutgoing()
+        }
+    }
+
+    @Synchronized
+    private fun endOutgoing() {
+        outgoing?.let {
+            it.cancel()
+            it.close()
+        }
+        outgoing = null
+        startNextOutgoing()
+    }
+
     /** Stops the stream and tells the desktop, whoever asked. */
     private fun stopAudio(notify: Boolean = false) {
         val streamer = audio ?: run {
@@ -680,6 +909,14 @@ class Session(
 
     fun close() {
         if (!open.compareAndSet(true, false)) return
+        // Half-written files are thrown away rather than published: an
+        // interrupted transfer must not look like a complete download.
+        incoming.values.forEach { it.discard() }
+        incoming.clear()
+        toSend.clear()
+        outgoing?.cancel()
+        outgoing?.close()
+        outgoing = null
         subscriber?.let {
             Bus.unsubscribe(it)
             ClipboardWatcher.removeUser(context)

@@ -43,6 +43,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("apps", "Apps", "Launch one app into its own window"),
     ("hotspot", "Hotspot", "Start the phone's hotspot and join it"),
     ("bluetooth_audio", "Calls and music", "Bluetooth audio to and from the phone"),
+    ("file_transfer", "File transfer",
+     "Files both ways, and the phone's share sheet"),
     ("phone_audio", "Phone audio over the link",
      "The fallback where there is no Bluetooth: a copy of the phone's mix, "
      "which cannot carry a call"),

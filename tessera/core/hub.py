@@ -24,6 +24,7 @@ from ..backends import bluetooth, btcodecs
 from ..backends.companion import CompanionClient, PairedPhone, b64decode
 from ..backends.dnd import MODE_OFF, DndSync, ZenMode
 from ..backends import mpris_server
+from ..backends.filetransfer import FileTransfers
 from ..backends.kdeconnect import KdeConnect
 from ..backends.phone_audio import PhoneAudio
 from ..backends.webcam import CompanionCamera, Webcam, WebcamError
@@ -62,6 +63,10 @@ class Hub(QObject):
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     bluetoothStreamingChanged = Signal(bool)
+    #: A file started, progressed, or ended. Carries the Transfer.
+    transferChanged = Signal(object)
+    #: A file finished arriving, and its path now exists.
+    fileReceived = Signal(object)
     #: Connected or not, for the sidebar's Bluetooth button.
     bluetoothConnectedChanged = Signal(bool)
     #: True while a connect or disconnect this app asked for is in flight.
@@ -99,6 +104,10 @@ class Hub(QObject):
         self.webcam = Webcam(config.webcam, self)
         self.companion_camera = CompanionCamera(config.webcam, self)
         self.phone_audio = PhoneAudio(config.phone_audio, self)
+        #: Files both ways. Owns no socket of its own: it sends through the
+        #: companion client and is fed the messages that arrive, which is what
+        #: lets the whole path be checked without a phone.
+        self.files = FileTransfers(self.companion, config, self)
         self.mirrors = mirror.MirrorManager(self)
         self.icons = IconStore(self.companion, self)
         self.clipboard = ClipboardSync(self.companion, config.clipboard, self)
@@ -149,6 +158,7 @@ class Hub(QObject):
         self._wire_camera()
         self._wire_phone_audio()
         self._wire_media_player()
+        self._wire_files()
         self._apply_codec_preference()
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
@@ -623,6 +633,29 @@ class Hub(QObject):
         # An error from the phone while we are waiting on consent is the end of
         # that attempt, whatever it was: stop claiming to be starting.
         self.companion.errorOccurred.connect(self._on_phone_error_for_audio)
+
+    # -- files ---------------------------------------------------------------
+
+    def _wire_files(self) -> None:
+        self.files.changed.connect(self.transferChanged)
+        self.files.received.connect(self.fileReceived)
+        self.files.failed.connect(self.errorOccurred)
+
+    def send_files(self, paths) -> None:
+        """Send files to the phone. Called by the page and by a drop."""
+        if not self.config.features.file_transfer:
+            self.errorOccurred.emit("File transfer is switched off in Settings.")
+            return
+        if not self.connected:
+            self.errorOccurred.emit("The companion app is not connected.")
+            return
+        if "file_transfer" not in self.companion.capabilities:
+            self.errorOccurred.emit(
+                "This phone cannot take files yet: its companion app is older "
+                "than this feature."
+            )
+            return
+        self.files.send(paths)
 
     def _on_phone_audio_started(self, header: dict) -> None:
         self._phone_audio_pending = False
