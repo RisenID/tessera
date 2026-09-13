@@ -45,6 +45,9 @@ def _unwrap(value: Any) -> Any:
     return value
 
 
+PLACEHOLDER_TITLES = {"not provided", "unknown", "no title"}
+
+
 @dataclass
 class Track:
     title: str = ""
@@ -188,8 +191,12 @@ class MprisPlayer(QObject):
                 return ", ".join(str(v) for v in value if str(v))
             return str(value) if value is not None else ""
 
+        title = text("xesam:title")
+        # AVRCP players report a placeholder when the phone sends no metadata.
+        if title.strip().lower() in PLACEHOLDER_TITLES:
+            title = ""
         return Track(
-            title=text("xesam:title"),
+            title=title,
             artist=text("xesam:artist"),
             album=text("xesam:album"),
             status=str(status or "Stopped"),

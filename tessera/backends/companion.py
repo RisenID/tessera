@@ -869,9 +869,12 @@ class CompanionClient(QObject):
     # -- socket events -------------------------------------------------------
 
     def _on_disconnected(self) -> None:
-        if self._authenticated:
-            self.connectedChanged.emit(False)
+        # Mark the link down before announcing it, so listeners see it as down.
+        was_connected = self._authenticated
         self._authenticated = False
+        self._heartbeat.stop()
+        if was_connected:
+            self.connectedChanged.emit(False)
         self.statusChanged.emit("Disconnected")
         self._schedule_retry()
 

@@ -153,11 +153,47 @@ def saving(app: QApplication) -> None:
     check("and a phone with neither changes nothing", not seen, str(seen))
 
 
+def link_state(app: QApplication) -> None:
+    print("\n-- the header follows the link")
+    hub, panel = make_panel(app)
+    client = hub.companion
+
+    class Socket:
+        def blockSignals(self, _on): pass
+        def abort(self): pass
+        def deleteLater(self): pass
+
+    client._want_connection = False
+    client._socket, client._authenticated = Socket(), True
+    client.connectedChanged.emit(True)
+    app.processEvents()
+    check("connected shows as connected", panel.link_pill.text() == "Connected",
+          panel.link_pill.text())
+
+    # The phone closing the socket, e.g. the app being reinstalled.
+    client._on_disconnected()
+    app.processEvents()
+    check("the phone hanging up takes the header offline",
+          panel.link_pill.text() != "Connected", panel.link_pill.text())
+
+    print("\n-- an empty Bluetooth player")
+    from tessera.backends import mpris
+
+    player = mpris.MprisPlayer()
+    props = {"Metadata": {"xesam:title": "Not Provided", "xesam:artist": [""]},
+             "PlaybackStatus": "Stopped"}
+    player._property = lambda _service, name: props[name]
+    track = player.track("org.mpris.MediaPlayer2.phone")
+    check("a placeholder title reads as nothing playing",
+          track.summary == "Nothing playing", track.summary)
+
+
 def main() -> int:
     app = QApplication(sys.argv)
     naming(app)
     wallpaper(app)
     saving(app)
+    link_state(app)
 
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) failed:")
