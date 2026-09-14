@@ -6,8 +6,8 @@
 %{!?__python3: %global __python3 /usr/bin/python3}
 
 Name:           tessera
-Version:        1.10.0
-Release:        31%{?dist}
+Version:        2.0.0
+Release:        1%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -153,20 +153,23 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
-* Mon Sep 14 2026 RisenID -1.10.0-31
+* Mon Sep 14 2026 RisenID - 2.0.0-1
+- Version 2.
+
+* Mon Sep 14 2026 RisenID - 1.10.0-31
 - Phone learns computer names on connect and refresh; overview photos open fullscreen.
 
-* Mon Sep 14 2026 RisenID -1.10.0-30
+* Mon Sep 14 2026 RisenID - 1.10.0-30
 - Remove paired computers from the phone; count connected computers correctly.
 - Force-copy the newest clipboard across phone and computers; fullscreen photo viewer.
 
-* Mon Sep 14 2026 RisenID -1.10.0-29
+* Mon Sep 14 2026 RisenID - 1.10.0-29
 - Windows Bluetooth audio, calls, storage and webcam; phone DND overrides other apps.
 
-* Mon Sep 14 2026 RisenID -1.10.0-28
+* Mon Sep 14 2026 RisenID - 1.10.0-28
 - Sidebar goes offline when the phone drops the connection; hide empty Bluetooth track titles.
 
-* Mon Sep 14 2026 RisenID -1.10.0-27
+* Mon Sep 14 2026 RisenID - 1.10.0-27
 - Keep phone audio on the phone when Bluetooth connects, and resume paused music.
 - Shorter comments and docs.
 
