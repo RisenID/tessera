@@ -24,7 +24,16 @@ classifiers = [
 # On Linux PySide6 comes from the distribution package (python3-pyside6)
 # rather than from PyPI: the RPM build must not pull a second copy of Qt into
 # site-packages. On Windows there is no such package, so pip installs it.
-dependencies = ["PySide6>=6.5"]
+dependencies = [
+    "PySide6>=6.5",
+    # Bluetooth audio from the phone on Windows, through AudioPlaybackConnection.
+    "winrt-runtime>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Foundation>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Foundation.Collections>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Devices.Enumeration>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Media.Audio>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.ApplicationModel.Calls>=3.0; sys_platform == 'win32'",
+]
 
 [project.optional-dependencies]
 # What building the Windows executable needs, on top of the app itself.

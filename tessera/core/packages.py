@@ -163,6 +163,10 @@ PACKAGES: dict[str, dict[str, str]] = {
         "pacman": "bluez-libs", "zypper": "bluez-devel", "apk": "bluez-dev",
         "xbps": "bluez-devel",
     },
+    # The phone's storage as a drive on Windows: the filesystem driver, and
+    # the sshfs built against it.
+    "winfsp": {"winget": "WinFsp.WinFsp", "choco": "winfsp"},
+    "sshfs-win": {"winget": "SSHFS-Win.SSHFS-Win", "choco": "sshfs"},
 }
 
 
@@ -179,6 +183,8 @@ LABELS: dict[str, str] = {
     "bluez-headers": "the BlueZ development headers",
     "gcc": "a C compiler",
     "pyside6": "PySide6, the Qt bindings for Python",
+    "winfsp": "WinFsp",
+    "sshfs-win": "SSHFS-Win",
 }
 
 

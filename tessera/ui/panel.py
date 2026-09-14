@@ -36,6 +36,7 @@ from .widgets import Avatar, Pill, divider, themed_icon, tinted_icon
 #: How many notifications the panel shows. The rest are on the full page,
 #: which the feed's own button opens.
 FEED_LIMIT = 8
+FEED_GATHER_MS = 60
 
 #: How far the rail can be dragged. The minimum is what the complication strip
 #: and four switches need before they start wrapping into nonsense.
@@ -71,11 +72,8 @@ TILES: dict[str, tuple[tuple[str, ...], str, str, bool, str]] = {
     "ringer": (("audio-volume-high",), "\N{BELL}", "Ringer", False, ""),
     "clipboard": (("edit-paste",), "\N{CLIPBOARD}", "Clipboard sharing",
                   True, "clipboard"),
-    # A bell, not a handset: the ringer switch next to it is a speaker,
-    # and Breeze's phone-ringing is a full-colour device icon that
-    # vanishes on a dark panel.
-    "ring": (("notifications", "audio-volume-high"), "\N{BELL}", "Ring phone",
-             False, ""),
+    # Our own ringing phone: the ringer tile beside it is already a speaker.
+    "ring": (("tessera-ring-phone",), "\N{BELL}", "Ring phone", False, ""),
     "hotspot": (("network-wireless-hotspot",), "\N{ANTENNA WITH BARS}",
                 "Start the phone's hotspot and join it", True, "hotspot"),
     # A camera, not camera-web -- which at this size reads as a briefcase.
@@ -348,6 +346,7 @@ class DevicePanel(QWidget):
         hub.batteryChanged.connect(self._on_battery)
         hub.phoneStatusChanged.connect(lambda _s: self.refresh_readings())
         hub.bluetoothStreamingChanged.connect(lambda _s: self.refresh_readings())
+        hub.bluetoothStreamingChanged.connect(lambda _s: self.sync_toggles())
         hub.phoneAudioChanged.connect(lambda _p: self.refresh_readings())
         hub.phoneAudioChanged.connect(lambda _p: self.sync_toggles())
         hub.dndChanged.connect(self.sync_toggles)
@@ -357,7 +356,12 @@ class DevicePanel(QWidget):
         hub.cameraFailed.connect(lambda _m: self.sync_toggles())
         hub.mirrors.changed.connect(self.sync_toggles)
         hub.mediaChanged.connect(lambda _m: self.refresh_media())
-        hub.notificationsChanged.connect(self.refresh_feed)
+        # One rebuild per burst: connecting sends every notification at once.
+        self._feed_timer = QTimer(self)
+        self._feed_timer.setSingleShot(True)
+        self._feed_timer.setInterval(FEED_GATHER_MS)
+        self._feed_timer.timeout.connect(self.refresh_feed)
+        hub.notificationsChanged.connect(self._feed_timer.start)
         hub.otpArrived.connect(lambda _m, _n: self.refresh_otp())
         hub.icons.iconReady.connect(self._on_icon)
 
@@ -1155,8 +1159,19 @@ class DevicePanel(QWidget):
             tone=tone,
         )
 
+    def _paint_play(self, playing: bool) -> None:
+        button = self._transport[1]
+        button.setProperty(
+            "icons", ("media-playback-pause" if playing else "media-playback-start",)
+        )
+        button.setProperty("glyph", "\N{DOUBLE VERTICAL BAR}" if playing
+                           else "\N{BLACK RIGHT-POINTING TRIANGLE}")
+        button.setToolTip("Pause" if playing else "Play")
+        self._paint_tile(button)
+
     def refresh_media(self) -> None:
         media = self.hub.media
+        self._paint_play(bool(media.get("playing")))
         if media.get("title"):
             artist = media.get("artist", "")
             self.track_label.setText(
@@ -1181,7 +1196,9 @@ class DevicePanel(QWidget):
             if widget is not None:
                 # Unparent as well as delete: deleteLater leaves the row on
                 # screen until the event loop gets round to it, and rebuilding
-                # on a resize drew the old rows behind the new ones.
+                # on a resize drew the old rows behind the new ones. Hide first:
+                # a row not yet shown has a queued show that would make it a window.
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
 

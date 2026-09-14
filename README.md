@@ -19,7 +19,7 @@ Windows support and its gaps are in [docs/WINDOWS.md](docs/WINDOWS.md).
 | Do Not Disturb sync | Interruption filter ⇄ desktop inhibit | Companion app |
 | Messages, calls, photos | Telephony, Telecom, MediaStore | Companion app |
 | Files both ways, share sheet | Dedicated TLS connection | Companion app |
-| Phone storage in the file manager | SFTP server on the phone, mounted with sshfs | All files access |
+| Phone storage in the file manager | SFTP server on the phone, mounted with sshfs (SSHFS-Win on Windows) | All files access |
 | Clipboard | Shizuku, the accessibility service, or adb | One of those |
 | Phone audio | Playback capture over the link, or Bluetooth A2DP | Companion app / pairing |
 | Calls on the computer | Bluetooth HFP | Pairing |
@@ -95,7 +95,8 @@ docs/              protocol, design, Windows
 ```
 
 The version lives in `packaging/tessera.spec` and is shared by the APK.
-Run `python3 scripts/check-*.py` to test the desktop side without a phone.
+Run `python3 scripts/check-*.py` to test the desktop side without a phone, on
+Linux or Windows; each system also runs checks only it can.
 
 ## Credits
 

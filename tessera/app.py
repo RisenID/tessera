@@ -13,6 +13,7 @@ from .core import platform
 from .core.config import Config, state_dir
 from .core.hub import Hub
 from .core.proc import wait_for_idle
+from .ui import appicon, glyphs
 from .ui.main_window import MainWindow
 from .ui.theme import detect_palette, stylesheet
 
@@ -35,15 +36,20 @@ def configure_logging(verbose: bool = False) -> None:
 
 
 def _register_with_windows() -> None:
-    """Give the taskbar an application identity of our own."""
+    """Our own taskbar identity, named "Tessera" in notifications."""
     try:
         import ctypes
+        import winreg
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            platform.APP_ID
-        )
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(platform.APP_ID)
+        picture = state_dir() / "tessera.png"
+        appicon.tile(256).save(str(picture), "PNG")
+        key_path = rf"Software\Classes\AppUserModelId\{platform.APP_ID}"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, platform.APP_NAME)
+            winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, str(picture))
     except Exception as exc:      # not Windows, or an old shell32
-        log.debug("could not set the app id: %s", exc)
+        log.debug("could not register the app id: %s", exc)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("Tessera")
     app.setApplicationDisplayName("Tessera")
     app.setDesktopFileName("dev.tessera.Tessera")
+    app.setWindowIcon(appicon.icon())
     if platform.IS_WINDOWS:
         # Qt's own Windows style; Breeze is not there, and Fusion looks
         # like neither platform.
@@ -72,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     palette = detect_palette(app)
+    glyphs.set_ink(palette.text)
     app.setStyleSheet(stylesheet(palette))
 
     config = Config.load()

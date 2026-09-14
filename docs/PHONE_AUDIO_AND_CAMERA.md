@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | Over the link | `AudioPlaybackCapture` on the phone, `QAudioSink` on the desktop | All |
 | A2DP sink (Linux) | PipeWire + BlueZ, LDAC via `libldacdec` | Linux |
-| A2DP sink (Windows) | `Windows.Media.Audio.AudioPlaybackConnection` | Windows 10 2004+, not written |
+| A2DP sink (Windows) | `Windows.Media.Audio.AudioPlaybackConnection` | Windows 10 2004+, `backends/bluetooth_win.py` |
 | Calls | Bluetooth HFP | All |
 
 Windows A2DP: find devices with `AudioPlaybackConnection.GetDeviceSelector()`,
@@ -40,7 +40,8 @@ still captured full signal), so the phone can be muted while the desktop plays.
 
 ## Windows order
 
-1. A2DP sink (small, pure Python).
+1. A2DP sink: done (`backends/bluetooth_win.py`), checked against a stand-in
+   for WinRT.
 2. Virtual camera: companion frames → shared memory → small MIT media source in
    `native/`, registered by an optional elevated step.
 

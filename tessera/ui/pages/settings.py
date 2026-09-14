@@ -394,7 +394,7 @@ class SettingsPage(QWidget):
         self._refresh_ldac()
 
         outer.addWidget(screen)
-        self.audio_card.setVisible(platform.supported("bluetooth_audio"))
+        self.audio_card.setVisible(platform.supported("bluetooth_codecs"))
         outer.addWidget(self.audio_card)
         outer.addStretch(1)
 
@@ -515,6 +515,8 @@ class SettingsPage(QWidget):
 
     def _refresh_ldac(self) -> None:
         """Show where LDAC stands, and offer the one useful next step."""
+        if not platform.supported("bluetooth_codecs"):
+            return
         busy = self._ldac_proc.running
         installed = ldacdec.installed()
         missing = [] if installed else ldacdec.missing_packages()
@@ -755,7 +757,9 @@ class SettingsPage(QWidget):
     def _refresh(self) -> None:
         self._refresh_grant()
         if self.hub.companion.connected:
+            name = self.hub.companion.phone.name or "the phone"
             self.link_pill.set_state(self.hub.companion.phone.name or "Connected", "success")
+            self.pair_status.setText(f"Paired with {name}.")
             self.code.clear()
         elif self.hub.companion.phone.configured:
             self.link_pill.set_state("Paired, offline", "warning")

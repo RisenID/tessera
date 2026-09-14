@@ -203,7 +203,8 @@ class CallsPage(QWidget):
             "Load calls",
         )
         self.empty.actionClicked.connect(self.load)
-        outer.addWidget(self.empty)
+        # Takes the list's space when the list is hidden, not the cards.
+        outer.addWidget(self.empty, 1)
 
         self.toast = Toast(self)
         hub.callChanged.connect(self._on_call)

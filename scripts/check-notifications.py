@@ -23,6 +23,7 @@ from tessera.backends import notify                                # noqa: E402
 from tessera.core.config import Config                             # noqa: E402
 from tessera.core.hub import Hub                                   # noqa: E402
 from tessera.core.models import Notification                       # noqa: E402
+from tessera.ui import popups as popups_module                     # noqa: E402
 from tessera.ui.popups import Popups                               # noqa: E402
 
 FAILURES: list[str] = []
@@ -178,6 +179,35 @@ def popups() -> None:
     settle(300)
 
 
+def bursts() -> None:
+    """Connecting brings everything the phone holds; only news pops up."""
+    import time
+
+    hub = Hub(Config())
+    arrived: list[str] = []
+    hub.notificationArrived.connect(lambda n: arrived.append(n.id))
+    hub._add(Notification(id="old", app="Mail", title="Yesterday", when=time.time() - 3600))
+    check("an old notification sent on connect is listed", "old" in {n.id for n in hub.notifications})
+    check("but does not pop up", "old" not in arrived, str(arrived))
+    hub._add(Notification(id="new", app="Mail", title="Now"))
+    check("a new one does", "new" in arrived, str(arrived))
+
+    tray = QSystemTrayIcon()
+    popup = Popups(hub, tray)
+    shown: list[tuple[str, str]] = []
+    tray.showMessage = lambda title, body, *_a: shown.append((title, body))
+    tray.isVisible = lambda: True
+    for index in range(3):
+        popup._show_tray(Notification(id=f"b{index}", app="WhatsApp", title=f"Chat {index}"))
+    settle(popups_module.TRAY_GATHER_MS + 300)
+    check("a burst through the tray is one message, not a flicker", len(shown) == 1, str(shown))
+    check("which says how many", bool(shown) and shown[0][0] == "3 new notifications", str(shown))
+    shown.clear()
+    popup._show_tray(Notification(id="one", app="WhatsApp", title="Aai", text="Dinner?"))
+    settle(popups_module.TRAY_GATHER_MS + 300)
+    check("a single one is shown as itself", shown == [("WhatsApp: Aai", "Dinner?")], str(shown))
+
+
 def main() -> int:
     app = QApplication(sys.argv)
 
@@ -187,6 +217,8 @@ def main() -> int:
     server()
     print("\n-- the app's popups")
     popups()
+    print("\n-- bursts")
+    bursts()
 
     print()
     if FAILURES:

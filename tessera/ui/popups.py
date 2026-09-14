@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from ..backends import notify, silence
@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 #: How long a popup stays up. Long enough to read a message, short enough not
 #: to stack up when a group chat is busy.
 DURATION_MS = 6000
+
+#: How long tray messages are gathered, so a burst becomes one.
+TRAY_GATHER_MS = 400
 
 #: Notifications from these are noise on a desktop: they are about the phone
 #: talking to this computer, which the app already shows.
@@ -49,6 +52,12 @@ class Popups(QObject):
         #: And back, so a second message in one chat replaces its own popup
         #: instead of stacking another identical one.
         self._by_phone: dict[str, int] = {}
+        #: Tray messages waiting to be shown together.
+        self._tray_queue: list[Notification] = []
+        self._tray_timer = QTimer(self)
+        self._tray_timer.setSingleShot(True)
+        self._tray_timer.setInterval(TRAY_GATHER_MS)
+        self._tray_timer.timeout.connect(self._flush_tray)
 
         if self.notifier.available:
             self.notifier.replied.connect(self._on_replied)
@@ -113,17 +122,25 @@ class Popups(QObject):
         self._trim()
 
     def _show_tray(self, note: Notification) -> None:
-        if not self.tray.isVisible():
+        # Each tray message replaces the last, so a burst would flicker:
+        # gather them for a moment and show one.
+        self._tray_queue.append(note)
+        self._tray_timer.start()
+
+    def _flush_tray(self) -> None:
+        notes, self._tray_queue = self._tray_queue, []
+        if not notes or not self.tray.isVisible():
             return
-        title = note.app or "Phone"
-        if note.title:
-            title = f"{title}: {note.title}"
+        if len(notes) == 1:
+            note = notes[0]
+            title = f"{note.app or 'Phone'}: {note.title}" if note.title else (note.app or "Phone")
+            body = note.text or ""
+        else:
+            title = f"{len(notes)} new notifications"
+            body = ", ".join(dict.fromkeys(n.app or n.title or "Phone" for n in notes))
         try:
             self.tray.showMessage(
-                title[:120],
-                (note.text or "")[:400],
-                QSystemTrayIcon.MessageIcon.Information,
-                DURATION_MS,
+                title[:120], body[:400], QSystemTrayIcon.MessageIcon.Information, DURATION_MS
             )
         except Exception as exc:      # a tray that went away mid-call
             log.debug("could not show a popup: %s", exc)

@@ -230,6 +230,16 @@ class Avatar(QLabel):
         painter.end()
 
 
+#: The pages' emoji, as the glyphs drawn in their place.
+_EMPTY_GLYPHS = {
+    "📞": "call-start",
+    "💬": "mail-message",
+    "🖼": "folder-pictures",
+    "▦": "view-list-icons",
+    "🔔": "notifications",
+}
+
+
 class EmptyState(QWidget):
     """Shown instead of a blank list, explaining what to do next."""
 
@@ -249,9 +259,16 @@ class EmptyState(QWidget):
         layout.setSpacing(SPACE["sm"])
 
         if icon:
-            glyph = QLabel(icon)
+            glyph = QLabel()
             glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            glyph.setStyleSheet("font-size: 44px;")
+            drawn = _EMPTY_GLYPHS.get(icon, "")
+            if drawn and glyphs.available(drawn):
+                # Drawn rather than an emoji: the emoji font costs a slow
+                # fallback search on first use.
+                glyph.setPixmap(glyphs.icon(drawn, 48).pixmap(48, 48))
+            else:
+                glyph.setText(icon)
+                glyph.setStyleSheet("font-size: 44px;")
             layout.addWidget(glyph)
 
         heading = QLabel(title)

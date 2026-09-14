@@ -323,7 +323,7 @@ class MainWindow(QMainWindow):
             if not self._enabled(name):
                 continue
             action = QAction(name, self.more_menu)
-            icon = themed_icon(icon_name)
+            icon = tinted_icon(themed_icon(icon_name), self.palette_tokens.text, 16)
             if not icon.isNull():
                 action.setIcon(icon)
             action.triggered.connect(lambda _c=False, n=name: self.show_page(n))
@@ -467,10 +467,9 @@ class MainWindow(QMainWindow):
     # -- tray ----------------------------------------------------------------
 
     def _build_tray(self) -> None:
-        # A plain coloured square keeps the app themeable without shipping icons.
-        pixmap = QPixmap(64, 64)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        icon = QIcon.fromTheme("smartphone", QIcon(pixmap))
+        from . import appicon
+
+        icon = QIcon.fromTheme(platform.APP_ID, appicon.icon())
 
         self.tray = QSystemTrayIcon(icon, self)
         self.tray.setToolTip("Tessera")

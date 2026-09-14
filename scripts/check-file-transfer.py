@@ -345,6 +345,15 @@ def two_connections(app: QApplication) -> None:
         check("the other connection dropping leaves it alone",
               all(t.active for t in on_main), str([t.state for t in on_main]))
 
+        # Cancelled before the folder goes: a file still arriving is held
+        # open, and Windows will not delete an open file.
+        for transfer in on_main:
+            desktop.cancel(transfer.id)
+        app.processEvents()
+        check("cancelling closes and removes the file that was arriving",
+              not (inbox / "long.bin.part").exists(),
+              str(sorted(path.name for path in inbox.iterdir())))
+
 
 def refusals(app: QApplication) -> None:
     print("\n-- things that should be refused")
@@ -419,6 +428,9 @@ def main() -> int:
     two_connections(app)
     refusals(app)
     interface(app)
+
+    from sandbox import escaped
+    check("no exception escaped into Qt", not escaped(), "; ".join(escaped()))
 
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) failed:")

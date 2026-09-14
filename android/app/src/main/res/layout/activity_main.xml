@@ -234,6 +234,7 @@
                     <include android:id="@+id/rowNotifications" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowDnd" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowMessages" layout="@layout/view_setup_row" />
+                    <include android:id="@+id/rowCalls" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowPhotos" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowCamera" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowAudio" layout="@layout/view_setup_row" />

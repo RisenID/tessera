@@ -56,6 +56,8 @@
     <string name="perm_dnd_why">Silence both screens together.</string>
     <string name="perm_messages">Messages</string>
     <string name="perm_messages_why">Read and send texts from your computer.</string>
+    <string name="perm_calls">Calls</string>
+    <string name="perm_calls_why">See recent calls, and answer and place calls from your computer.</string>
     <string name="perm_photos">Photos</string>
     <string name="perm_photos_why">Browse your gallery and save photos across.</string>
     <string name="perm_camera">Camera</string>

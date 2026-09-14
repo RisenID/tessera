@@ -24,6 +24,8 @@ DEFAULT_PATH = "/storage/emulated/0"
 PLACE_ID = "tessera-phone-storage"
 
 SSHFS, GIO = "sshfs", "gio"
+#: SSHFS-Win's sshfs.exe over WinFsp, on Windows. See backends.storage_win.
+SSHFS_WIN = "sshfs-win"
 
 
 @dataclass
@@ -67,30 +69,51 @@ class ServerInfo:
 
 @dataclass
 class Mount:
-    backend: str                # SSHFS | GIO
-    location: str               # a directory for sshfs, an sftp:// URI for gio
+    backend: str                # SSHFS | GIO | SSHFS_WIN
+    location: str               # a directory for sshfs, an sftp:// URI for gio,
+                                # a drive root for SSHFS-Win
     name: str
 
     @property
     def local_path(self) -> Path | None:
-        return Path(self.location) if self.backend == SSHFS else None
+        return Path(self.location) if self.backend in (SSHFS, SSHFS_WIN) else None
 
     @property
     def uri(self) -> str:
+        if self.backend == SSHFS_WIN:
+            return "file:///" + quote(self.location.replace("\\", "/"), safe="/:")
         if self.backend == SSHFS:
             return "file://" + quote(self.location)
         return self.location
 
 
 def backend() -> str:
-    """Which way this computer can mount it: sshfs, gio, or neither."""
+    """Which way this computer can mount it: sshfs, gio, SSHFS-Win, or none."""
     if not platform.supported("storage"):
         return ""
+    if platform.IS_WINDOWS:
+        from . import storage_win
+
+        return SSHFS_WIN if storage_win.ready() else ""
     if have("sshfs"):
         return SSHFS
     if have("gio"):
         return GIO
     return ""
+
+
+def missing_advice() -> str:
+    """What to install so that backend() finds something."""
+    if platform.IS_WINDOWS:
+        from ..core import packages
+        from . import storage_win
+
+        gaps = storage_win.missing() or ["winfsp", "sshfs-win"]
+        return "Mounting needs WinFsp and SSHFS-Win. " + packages.advice(*gaps)
+    return (
+        "Mounting needs sshfs (the fuse-sshfs package) or GVfs, and this "
+        "computer has neither."
+    )
 
 
 def mount_root() -> Path:
@@ -185,16 +208,19 @@ def mount(info: ServerInfo, name: str, sidebar: bool = True) -> Mount:
             "no way to know the server is the phone. Update the companion app."
         )
     chosen = backend()
-    if chosen == SSHFS:
+    if chosen == SSHFS_WIN:
+        from . import storage_win
+
+        mounted = storage_win.mount(info, name)
+    elif chosen == SSHFS:
         mounted = _mount_sshfs(info, name)
     elif chosen == GIO:
         mounted = _mount_gio(info, name)
     else:
-        raise RuntimeError(
-            "Mounting needs sshfs (the fuse-sshfs package) or GVfs, and this "
-            "computer has neither."
-        )
-    if sidebar:
+        raise RuntimeError(missing_advice())
+    # A drive letter is in Explorer's This PC already; the sidebar files are
+    # the Linux file managers'.
+    if sidebar and mounted.backend != SSHFS_WIN:
         try:
             add_place(mounted)
         except OSError as exc:
@@ -244,6 +270,12 @@ def _mount_gio(info: ServerInfo, name: str) -> Mount:
 
 def unmount(mounted: Mount) -> None:
     """Unmount, and take the sidebar entry away with it. Never raises."""
+    if mounted.backend == SSHFS_WIN:
+        from . import storage_win
+
+        storage_win.unmount(mounted)
+        return
+
     try:
         remove_place(mounted)
     except OSError as exc:
@@ -296,6 +328,10 @@ def _explain(output: str) -> str:
 
 
 def open_location(mounted: Mount) -> None:
+    if mounted.backend == SSHFS_WIN:
+        if platform.REAL == "windows":
+            os.startfile(mounted.location)                  # type: ignore[attr-defined]
+        return
     subprocess.Popen(
         ["xdg-open", mounted.uri],
         stdout=subprocess.DEVNULL,

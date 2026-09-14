@@ -41,14 +41,9 @@ REAL = "windows" if sys.platform.startswith("win") else (
 #: Features that cannot work on a platform, and why.
 UNSUPPORTED: dict[str, dict[str, str]] = {
     "windows": {
-        "bluetooth_audio":
-            "Not written for Windows yet. Windows can receive Bluetooth audio "
-            "(Windows 10 2004 and later), so this is work outstanding rather "
-            "than a limit of the platform.",
-        "webcam":
-            "Not written for Windows yet. It needs a virtual camera, which "
-            "Windows 11 22H2 and later can host without a signed driver but "
-            "which has to be registered once as an administrator.",
+        "bluetooth_codecs":
+            "Windows chooses the Bluetooth codec itself, and offers no way for "
+            "another program to change it or to add an LDAC decoder.",
         "kdeconnect":
             "KDE Connect is reached over D-Bus, which is a Linux interface. "
             "The companion app covers the same ground.",
@@ -59,13 +54,11 @@ UNSUPPORTED: dict[str, dict[str, str]] = {
         "mpris":
             "Media details come from the companion app; MPRIS is a Linux "
             "desktop interface.",
-        "storage":
-            "Not written for Windows yet. The phone's half is the same SFTP "
-            "server; Windows needs a filesystem driver such as WinFsp, or the "
-            "Cloud Files API, to show it as a drive.",
     },
     "macos": {
         "bluetooth_audio": "Not implemented on macOS.",
+        "bluetooth_codecs": "Not implemented on macOS.",
+        "bluetooth_calls": "Not implemented on macOS.",
         "webcam": "Not implemented on macOS.",
         "kdeconnect": "KDE Connect is reached over D-Bus, a Linux interface.",
         "dnd_desktop": "Not implemented on macOS.",
@@ -139,6 +132,7 @@ _EXTRA_PATHS: dict[str, tuple[str, ...]] = {
         r"%ProgramFiles%\scrcpy",
         r"%ProgramFiles(x86)%\scrcpy",
         r"%ProgramFiles%\Android\platform-tools",
+        r"%ProgramFiles%\SSHFS-Win\bin",
     ),
     "linux": (),
     "macos": ("/opt/homebrew/bin", "/usr/local/bin"),
@@ -152,8 +146,25 @@ def tool(name: str) -> str:
     return name
 
 
+#: name -> (path, when looked up). Searching PATH costs tens of ms on Windows.
+_found: dict[str, tuple[str, float]] = {}
+#: Long enough to cover startup, short enough to notice a tool installed later.
+TOOL_CACHE_SECONDS = 30.0
+
+
 def find_tool(name: str) -> str:
     """Full path to *name*, looking where its installers put it."""
+    import time
+
+    cached = _found.get(name)
+    if cached and time.monotonic() - cached[1] < TOOL_CACHE_SECONDS:
+        return cached[0]
+    path = _find_tool(name)
+    _found[name] = (path, time.monotonic())
+    return path
+
+
+def _find_tool(name: str) -> str:
     found = shutil.which(tool(name)) or shutil.which(name)
     if found:
         return found
@@ -184,7 +195,11 @@ def no_window_flags() -> int:
 def describe() -> str:
     """One line for the log and the Settings page."""
     if IS_WINDOWS:
-        return f"Windows {_stdlib.release()}".strip()
+        if REAL == "windows":
+            # platform.release() runs a subprocess on Windows.
+            build = sys.getwindowsversion().build           # type: ignore[attr-defined]
+            return f"Windows {'11' if build >= 22000 else '10'} (build {build})"
+        return "Windows"
     if IS_MACOS:
         return f"macOS {_stdlib.mac_ver()[0]}".strip()
     return f"Linux {_stdlib.release()}".strip()

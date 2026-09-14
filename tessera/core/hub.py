@@ -97,6 +97,8 @@ class Hub(QObject):
     RESUME_DELAY_MS = 2_000
     #: How long a fetched wallpaper is trusted before it is asked for again.
     WALLPAPER_RECHECK_SECONDS = 12 * 3600.0
+    #: Older notifications are listed but not popped up.
+    POPUP_MAX_AGE_SECONDS = 120.0
 
     def __init__(self, config: Config, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -111,7 +113,11 @@ class Hub(QObject):
         # Two ways to get video: the companion app encodes on the phone and
         # sends frames over the existing link, or scrcpy pulls them over adb.
         self.webcam = Webcam(config.webcam, self)
-        self.companion_camera = CompanionCamera(config.webcam, self)
+        if platform.IS_WINDOWS:
+            from ..backends.webcam_win import WindowsCamera
+            self.companion_camera = WindowsCamera(config.webcam, self)
+        else:
+            self.companion_camera = CompanionCamera(config.webcam, self)
         self.phone_audio = PhoneAudio(config.phone_audio, self)
         #: Files both ways.
         self.files = FileTransfers(self.files_link, config, self, fallback=self.companion)
@@ -503,6 +509,8 @@ class Hub(QObject):
             self.cameraStarted.emit(device)
             return
 
+        if platform.IS_WINDOWS:
+            raise WebcamError("On Windows the webcam needs the companion app's camera.")
         # Screen mirroring, or no companion app: fall back to scrcpy over adb.
         self.webcam.start(self._serial)
 
@@ -733,11 +741,7 @@ class Hub(QObject):
         if self.storage_mount is not None or self.storage_state == "starting":
             return
         if not storage.backend():
-            self._storage(
-                "error",
-                "Mounting needs sshfs (the fuse-sshfs package) or GVfs, and this "
-                "computer has neither.",
-            )
+            self._storage("error", storage.missing_advice())
             return
         address = self.companion.address
         if address is None:
@@ -885,7 +889,8 @@ class Hub(QObject):
 
     def _apply_codec_preference(self) -> None:
         """Offer the phone the codecs the settings ask for."""
-        if not platform.supported("bluetooth_audio"):
+        # WirePlumber's configuration: Windows picks its codec itself.
+        if not platform.supported("bluetooth_codecs"):
             return
         if not self.config.features.bluetooth_audio:
             return
@@ -1180,6 +1185,11 @@ class Hub(QObject):
             return
         self.companion.send({"t": "ringer_set", "mode": mode})
 
+    def set_phone_volume(self, percent: int) -> None:
+        """The phone's media volume, which its Bluetooth audio here follows."""
+        if self.companion.connected and self.companion.supports("media_volume"):
+            self.companion.send({"t": "volume_set", "percent": max(0, min(100, int(percent)))})
+
     @property
     def ringer(self) -> str:
         value = self._phone_status.get("ringer")
@@ -1250,6 +1260,8 @@ class Hub(QObject):
         # A call is no use if its audio stays on the phone, so move the
         # Bluetooth link to the call profile for the duration.
         if not self.config.features.bluetooth_audio:
+            return
+        if not platform.supported("bluetooth_calls"):
             return
         if not self.config.bluetooth.route_calls:
             # Left off by default: silently moving a call onto the computer
@@ -1333,14 +1345,16 @@ class Hub(QObject):
     def _add(self, note: Notification) -> None:
         if not self.config.features.notifications:
             return
+        from time import time as now
+
         previous = self._notifications.get(note.id)
         fresh = previous is None or note.when > previous.when
         self._notifications[note.id] = note
         self._check_otp(note)
         self.notificationsChanged.emit()
-        # Only a new one, or one that has been re-posted with a later time,
-        # is worth a popup; the phone re-sends the whole list on reconnect.
-        if fresh and not note.ongoing:
+        # Only a new one, or one re-posted with a later time, is worth a popup.
+        # The phone sends everything it holds on connect; old ones are not news.
+        if fresh and not note.ongoing and now() - note.when < self.POPUP_MAX_AGE_SECONDS:
             self.notificationArrived.emit(note)
         # A messaging app keeps one notification per conversation and re-posts
         # it with a later time for each message, so the id alone cannot tell a

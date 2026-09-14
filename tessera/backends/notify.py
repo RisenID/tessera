@@ -49,8 +49,10 @@ class Notifier(QObject):
         self._bus = session()
         #: Sending needs gdbus; see _gdbus for why. Without it the caller falls
         #: back to the tray rather than sending nothing.
-        self._can_send = have(GDBUS)
-        if HAVE_QTDBUS and self._bus.isConnected():
+        connected = HAVE_QTDBUS and self._bus.isConnected()
+        # No bus, nothing to send to: skip the PATH search (slow on Windows).
+        self._can_send = connected and have(GDBUS)
+        if connected:
             self._connect_signals()
             self._read_capabilities()
         if self._capabilities and not self._can_send:

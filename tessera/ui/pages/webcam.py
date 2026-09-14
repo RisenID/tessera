@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -13,8 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from ...backends import webcam
+from ...core import packages, platform
 from ...core.hub import Hub
-from ...core import packages
 from ..theme import SPACE, Palette
 from ..widgets import Card, Pill, Toast, heading
 
@@ -74,9 +73,7 @@ class WebcamPage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
         outer.setSpacing(SPACE["lg"])
-        outer.addWidget(
-            heading("Webcam", "Your phone's camera, as an ordinary webcam for any Linux app")
-        )
+        outer.addWidget(heading("Webcam", "Your phone's camera, as an ordinary webcam"))
 
         card = Card(self)
         row = QHBoxLayout()
@@ -121,6 +118,9 @@ class WebcamPage(QWidget):
 
         info = Card(self)
         note = QLabel(
+            "Appears as “Tessera Camera” in Teams, Zoom, the Camera app and browsers. "
+            "Needs the companion app; the first start asks for administrator approval."
+            if platform.IS_WINDOWS else
             "Appears as an ordinary camera in Firefox, Chrome, OBS and Zoom. "
             "Without the companion app only the fallback resolutions work."
         )
@@ -176,11 +176,14 @@ class WebcamPage(QWidget):
                 name += f"  ·  up to {best[0]['label']}"
             self.source.addItem(name, camera)
 
-        self.source.addItem("Phone screen", {"screen": True})
+        # The screen goes through scrcpy's v4l2 sink, which Windows lacks.
+        if not platform.IS_WINDOWS:
+            self.source.addItem("Phone screen", {"screen": True})
+        elif not cameras:
+            self.source.addItem("Phone camera", {"facing": cfg.facing})
 
-        # Restore selection: exact camera id first, then facing.
         index = -1
-        if cfg.source == "screen":
+        if cfg.source == "screen" and not platform.IS_WINDOWS:
             index = self.source.count() - 1
         elif cfg.camera_id:
             index = next(
@@ -212,16 +215,12 @@ class WebcamPage(QWidget):
         camera = self._current_camera()
 
         self.size.clear()
-        if camera is None:
-            # Screen mirroring, or no phone: offer the safe fixed list.
+        entries = _standard_sizes(camera.get("sizes", [])) if camera else []
+        for entry in entries:
+            self.size.addItem(entry["text"], entry)
+        if self.size.count() == 0:
             for value in FALLBACK_SIZES:
                 self.size.addItem(value, {"label": value})
-        else:
-            for entry in _standard_sizes(camera.get("sizes", [])):
-                self.size.addItem(entry["text"], entry)
-            if self.size.count() == 0:
-                for value in FALLBACK_SIZES:
-                    self.size.addItem(value, {"label": value})
 
         index = next(
             (i for i in range(self.size.count())
@@ -244,11 +243,8 @@ class WebcamPage(QWidget):
         if camera is not None:
             reported = {int(v) for v in camera.get("fps", []) if int(v) > 0}
             allowed = {r for r in reported if not ceiling or r <= ceiling}
-            # Standard rates the phone actually reports.
             rates = [r for r in COMMON_FPS if r in allowed]
             if not rates:
-                # Nothing standard on offer; fall back to whatever it reported,
-                # rather than showing an empty menu.
                 rates = sorted(allowed, reverse=True)
             if not rates and ceiling:
                 rates = [r for r in COMMON_FPS if r <= ceiling]
@@ -264,7 +260,6 @@ class WebcamPage(QWidget):
             -1,
         )
         if index < 0:
-            # Prefer 30 when the saved rate is unavailable at this resolution.
             index = next(
                 (i for i in range(self.fps.count()) if self.fps.itemData(i) == 30), 0
             )
@@ -308,7 +303,10 @@ class WebcamPage(QWidget):
     def _on_started(self, device: str) -> None:
         self.state_pill.set_state("Live", "success")
         self.start_button.setText("Stop camera")
-        self.status.setText(f"Streaming to {device}. Pick “{webcam.CARD_LABEL}” in your app.")
+        if platform.IS_WINDOWS:
+            self.status.setText(f"Live. Pick “{device}” in your app.")
+        else:
+            self.status.setText(f"Streaming to {device}. Pick “{webcam.CARD_LABEL}” in your app.")
 
     def _on_stopped(self) -> None:
         self.state_pill.set_state("Stopped", "muted")
@@ -320,8 +318,10 @@ class WebcamPage(QWidget):
         self.toast.show_message("Camera error", self.palette_tokens, "danger")
 
     def _check_environment(self) -> None:
+        if platform.IS_WINDOWS:
+            self._check_windows()
+            return
         problems: list[str] = []
-        #: What to install, named for packages.advice rather than for the user.
         missing: list[str] = []
         if not webcam.module_installed():
             problems.append("the v4l2loopback kernel module is missing")
@@ -341,6 +341,21 @@ class WebcamPage(QWidget):
         else:
             route = "the companion app" if self.hub.camera_uses_companion else "scrcpy over adb"
             self.status.setText(f"Ready. Video will come through {route}.")
+
+    def _check_windows(self) -> None:
+        from ...backends import webcam_win
+
+        try:
+            self.hub.companion_camera.check()
+        except webcam.WebcamError as exc:
+            self.status.setText(str(exc))
+            return
+        if not self.hub.camera_uses_companion:
+            self.status.setText("Connect the companion app to use the phone's camera.")
+        elif not webcam_win.registered(webcam_win.native_dir() / webcam_win.SOURCE_DLL):
+            self.status.setText("Ready. Starting it the first time asks for administrator approval.")
+        else:
+            self.status.setText("Ready.")
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

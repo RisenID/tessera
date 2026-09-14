@@ -78,6 +78,17 @@ object PhoneStatus {
         }.onFailure { Log.w(TAG, "could not set the ringer", it) }.getOrDefault(false)
     }
 
+    /** Media volume, 0 to 100. Bluetooth audio on the desktop follows it. */
+    fun setMediaVolume(context: Context, percent: Int): Boolean {
+        if (percent !in 0..100) return false
+        val audio = context.getSystemService(AudioManager::class.java) ?: return false
+        return runCatching {
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, (percent * max + 50) / 100, 0)
+            true
+        }.onFailure { Log.w(TAG, "could not set the media volume", it) }.getOrDefault(false)
+    }
+
     // -- registration --------------------------------------------------------
 
     private fun register(context: Context) {

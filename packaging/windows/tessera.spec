@@ -45,11 +45,22 @@ EXCLUDED_QT = [
 analysis = Analysis(
     [str(spec_dir / "launch.py")],
     pathex=[str(root)],
-    binaries=[],
+    # The virtual camera, built by native/win-camera/build.ps1.
+    binaries=[
+        (str(root / "build" / "native" / "TesseraCamera.dll"), "."),
+        (str(root / "build" / "native" / "tessera-camera.exe"), "."),
+    ],
     datas=[],
-    # QtSvg is imported inside a function, where the static analysis cannot
-    # see it; the icons the app draws itself need it.
-    hiddenimports=["PySide6.QtSvg"],
+    # Imported inside functions, where the analysis cannot see them.
+    hiddenimports=[
+        "PySide6.QtSvg",
+        "winrt.runtime",
+        "winrt.windows.foundation",
+        "winrt.windows.foundation.collections",
+        "winrt.windows.devices.enumeration",
+        "winrt.windows.media.audio",
+        "winrt.windows.applicationmodel.calls",
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[*EXCLUDED_QT, "tkinter", "test", "unittest", "pydoc_data"],

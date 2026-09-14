@@ -170,6 +170,14 @@ class MainActivity : AppCompatActivity() {
                 grant = { requestRuntimePermissions() },
             ),
             Row(
+                binding.rowCalls,
+                R.string.perm_calls,
+                R.string.perm_calls_why,
+                R.drawable.ic_phone_link,
+                granted = { CallsRepository.canReadLog(this) && CallsRepository.canControl(this) },
+                grant = { requestRuntimePermissions() },
+            ),
+            Row(
                 binding.rowPhotos,
                 R.string.perm_photos,
                 R.string.perm_photos_why,
@@ -247,6 +255,13 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.READ_SMS)
             add(Manifest.permission.SEND_SMS)
             add(Manifest.permission.READ_CONTACTS)
+            add(Manifest.permission.READ_CALL_LOG)
+            add(Manifest.permission.READ_PHONE_STATE)
+            add(Manifest.permission.ANSWER_PHONE_CALLS)
+            add(Manifest.permission.CALL_PHONE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
             add(Manifest.permission.CAMERA)
             // Playback capture needs it; the microphone is never opened.
             add(Manifest.permission.RECORD_AUDIO)

@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # Before any tessera import: a check must never write the real configuration,
 # nor -- here -- the real file manager bookmarks.
-from sandbox import isolate                                          # noqa: E402
+from sandbox import escaped, isolate, only_on                        # noqa: E402
 
 ROOT = Path(isolate())
 
@@ -63,6 +63,27 @@ def trust() -> None:
     check("known_hosts names the exact address and port",
           line.startswith("[192.168.100.48]:8766 ecdsa-sha2-nistp256 "), line)
 
+    try:
+        storage.mount(ServerInfo.from_reply("192.168.100.48", {**REPLY, "hostKey": ""}), "Phone")
+        refused = False
+    except RuntimeError as exc:
+        refused = "key" in str(exc)
+    check("a phone that sends no key is not mounted at all", refused)
+
+    check("a phone's name cannot climb out of the mount folder",
+          "/" not in storage.folder_name("../../etc/Ruchit's S25"),
+          storage.folder_name("../../etc/Ruchit's S25"))
+    check("host key trouble is said plainly",
+          "key" in storage._explain("Host key verification failed."))
+
+
+# -- Linux: sshfs and the file manager's sidebar ------------------------------
+
+
+@only_on("linux")
+def sshfs_on_linux() -> None:
+    print("\n-- Linux: sshfs")
+    info = ServerInfo.from_reply("192.168.100.48", REPLY)
     command = storage.sshfs_command(info, Path("/tmp/mnt"), Path("/tmp/kh"))
     joined = " ".join(command)
     check("an unknown or different key is refused, not accepted",
@@ -78,19 +99,6 @@ def trust() -> None:
           "PubkeyAuthentication=no" in joined)
     check("it mounts the phone's shared storage",
           "tessera@192.168.100.48:/storage/emulated/0" in command, command[1])
-
-    try:
-        storage.mount(ServerInfo.from_reply("192.168.100.48", {**REPLY, "hostKey": ""}), "Phone")
-        refused = False
-    except RuntimeError as exc:
-        refused = "key" in str(exc)
-    check("a phone that sends no key is not mounted at all", refused)
-
-    check("a phone's name cannot climb out of the mount folder",
-          "/" not in storage.folder_name("../../etc/Ruchit's S25"),
-          storage.folder_name("../../etc/Ruchit's S25"))
-    check("host key trouble is said plainly",
-          "key" in storage._explain("Host key verification failed."))
 
 
 KDE_PLACES = """<?xml version="1.0" encoding="UTF-8"?>
@@ -109,6 +117,7 @@ KDE_PLACES = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+@only_on("linux")
 def sidebar() -> None:
     print("\n-- the file manager's sidebar comes back exactly as it was")
     places = ROOT / "data" / "user-places.xbel"
@@ -155,6 +164,7 @@ def sidebar() -> None:
     os.environ["XDG_DATA_HOME"] = str(ROOT / "data")
 
 
+@only_on("linux")
 def unmounting() -> None:
     print("\n-- unmounting can never delete the phone's files")
     folder = ROOT / "state" / "mounts" / "Looks mounted"
@@ -169,6 +179,162 @@ def unmounting() -> None:
     storage.unmount(Mount(storage.SSHFS, str(empty), "Empty"))
     check("an empty mount point is tidied away", not empty.exists())
     check("nothing here counts as mounted", not storage.is_mounted(ROOT))
+
+
+# -- Windows: a drive, through WinFsp and SSHFS-Win ---------------------------
+
+
+class Stdin:
+    def __init__(self):
+        self.written = ""
+        self.closed = False
+
+    def write(self, text: str) -> None:
+        self.written += text
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class Sshfs:
+    """sshfs.exe, as far as the mount code can tell."""
+
+    def __init__(self, command, env, log_path, exit_code=None):
+        self.command, self.env, self.log_path = command, env, log_path
+        self.exit_code = exit_code
+        self.stdin = Stdin()
+        self.stopped = False
+
+    def poll(self):
+        return self.exit_code
+
+    def terminate(self):
+        self.stopped = True
+
+    def kill(self):
+        self.stopped = True
+
+    def wait(self, timeout=None):
+        return self.exit_code or 0
+
+
+@only_on("windows")
+def drive_on_windows() -> None:
+    print("\n-- Windows: a drive letter, through WinFsp and SSHFS-Win")
+    from tessera.backends import storage_win as win
+    from tessera.core import platform
+
+    check("phone storage is offered", platform.supported("storage"))
+    info = ServerInfo.from_reply("192.168.100.48", REPLY)
+
+    known = Path(r"C:\Users\me\AppData\Local\Tessera\known_hosts")
+    check("paths reach Cygwin's sshfs in its own spelling",
+          win.cygwin_path(known) == "/cygdrive/c/Users/me/AppData/Local/Tessera/known_hosts",
+          win.cygwin_path(known))
+
+    sshfs = r"C:\Program Files\SSHFS-Win\bin\sshfs.exe"
+    command = win.sshfs_command(info, "Y", known, "Ruchit's S25, work", sshfs)
+    joined = " ".join(command)
+    check("only the key file written from the paired link is consulted",
+          "UserKnownHostsFile=/cygdrive/c/Users/me/AppData/Local/Tessera/known_hosts" in command
+          and "GlobalKnownHostsFile=/dev/null" in command)
+    check("an unknown or different key is refused, not accepted",
+          "StrictHostKeyChecking=yes" in command and "StrictHostKeyChecking=no" not in joined)
+    check("and only for the algorithm that key uses",
+          "HostKeyAlgorithms=ecdsa-sha2-nistp256" in command)
+    check("the password is never on the command line", REPLY["password"] not in joined)
+    check("it is read from stdin instead", "password_stdin" in command)
+    check("the user's own SSH keys are not offered", "PubkeyAuthentication=no" in command)
+    check("it mounts the phone's shared storage",
+          "tessera@192.168.100.48:/storage/emulated/0" in command)
+    check("on a drive letter", command[3] == "Y:", command[3])
+    check("in the foreground, so stopping sshfs unmounts it", "-f" in command)
+    check("the files belong to whoever is signed in",
+          "uid=-1" in command and "gid=-1" in command)
+    check("the drive is labelled with the phone, less what would break the options",
+          "volname=Ruchit's S25 work" in command,
+          str([option for option in command if option.startswith("volname")]))
+
+    check("letters come from the end of the alphabet", win.free_letter({"C", "D"}) == "Z")
+    check("passing over ones in use", win.free_letter({"C", "Z", "Y"}) == "X")
+    check("and there may be none", win.free_letter(set(win.LETTERS)) == "")
+
+    real = (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters)
+    try:
+        win.sshfs_path = lambda: ""
+        win.winfsp_installed = lambda: False
+        check("without WinFsp and SSHFS-Win there is nothing to mount with",
+              storage.backend() == "")
+        advice = storage.missing_advice()
+        check("and the advice names both", "WinFsp" in advice and "SSHFS-Win" in advice, advice)
+        said = ""
+        try:
+            win.mount(info, "Ruchit's S25")
+        except RuntimeError as exc:
+            said = str(exc)
+        check("mounting anyway says what is missing", "WinFsp" in said, said)
+
+        win.sshfs_path = lambda: sshfs
+        win.winfsp_installed = lambda: True
+        win.used_letters = lambda: {"C", "Z"}
+        check("with both, SSHFS-Win mounts it", storage.backend() == storage.SSHFS_WIN,
+              storage.backend())
+
+        spawned: list[Sshfs] = []
+
+        def spawn(command, env, log_path):
+            spawned.append(Sshfs(command, env, log_path))
+            return spawned[-1]
+
+        win._spawn = spawn
+        win._exists = lambda root: root == "Y:\\"
+        bookmarks = ROOT / "config" / "gtk-3.0" / "bookmarks"
+        before = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
+
+        mounted = storage.mount(info, "Ruchit's S25")
+        process = spawned[-1]
+        check("the phone lands on the first free letter", mounted.location == "Y:\\",
+              mounted.location)
+        check("as a drive that can be opened",
+              mounted.local_path == Path("Y:\\") and mounted.uri == "file:///Y:/", mounted.uri)
+        check("the password goes in on stdin",
+              process.stdin.written == REPLY["password"] + "\n", repr(process.stdin.written))
+        check("which is closed after it", process.stdin.closed)
+        pinned = platform.state_dir() / "known_hosts"
+        check("the pinned key is written for sshfs to read",
+              pinned.read_text(encoding="utf-8").strip() == storage.known_hosts_line(info))
+        check("ssh.exe is found beside sshfs.exe",
+              process.env["PATH"].startswith(str(Path(sshfs).parent)))
+        after = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
+        check("no Linux file manager bookmark is written", after == before)
+
+        storage.unmount(mounted)
+        check("unmounting stops sshfs, which takes the drive away", process.stopped)
+        storage.unmount(mounted)
+        check("and doing it twice is harmless", len(spawned) == 1)
+
+        def refuses(command, env, log_path):
+            Path(log_path).write_text(
+                "read: Connection reset by peer\nHost key verification failed.\n",
+                encoding="utf-8",
+            )
+            spawned.append(Sshfs(command, env, log_path, exit_code=1))
+            return spawned[-1]
+
+        win._spawn = refuses
+        win._exists = lambda root: False
+        said = ""
+        try:
+            storage.mount(info, "Ruchit's S25")
+        except RuntimeError as exc:
+            said = str(exc)
+        check("a server with the wrong key is not trusted", "key" in said, said)
+        check("and nothing is left running", spawned[-1].stopped)
+    finally:
+        win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters = real
+
+
+# -- the hub and the page, on either system -----------------------------------
 
 
 def make_hub():
@@ -271,6 +437,14 @@ def orchestration(app: QApplication) -> None:
         hub.grant_storage()
         check("allowing it from the desktop goes on to mount",
               hub.storage_state == "mounted", hub.storage_state)
+
+        storage.backend = lambda: ""
+        hub, sent, asked, replies = make_hub()
+        connect(hub, ["storage", "storage_allowed"])
+        hub.mount_storage()
+        check("a computer with nothing to mount with says what to install",
+              hub.storage_state == "error" and "Mounting needs" in hub.storage_message,
+              hub.storage_message)
     finally:
         storage.mount, storage.unmount, storage.backend = real_mount, real_unmount, real_backend
 
@@ -339,11 +513,14 @@ def main() -> int:
     app = QApplication(sys.argv)
     server_info()
     trust()
+    sshfs_on_linux()
     sidebar()
     unmounting()
+    drive_on_windows()
     orchestration(app)
     links_and_wallpaper(app)
     page(app)
+    check("no exception escaped into Qt", not escaped(), "; ".join(escaped()))
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) failed:")
         for label in FAILURES:

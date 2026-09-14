@@ -6,7 +6,13 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import ClassInfo, Property, QObject, Signal, Slot
-from PySide6.QtDBus import QDBusAbstractAdaptor, QDBusObjectPath
+
+try:  # pragma: no cover - depends on the Qt build
+    from PySide6.QtDBus import QDBusAbstractAdaptor, QDBusObjectPath
+except ImportError:
+    # The Windows build leaves QtDBus out. available() then says no and no
+    # adaptor is ever made, but the classes below still have to be defined.
+    QDBusAbstractAdaptor, QDBusObjectPath = QObject, str
 
 from ..core import platform
 from .dbus import HAVE_QTDBUS, QDBusConnection, QDBusMessage, QDBusVariant, session

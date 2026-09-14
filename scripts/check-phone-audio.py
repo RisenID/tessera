@@ -377,8 +377,8 @@ def windows_too() -> None:
         ),
     )
     check(
-        "Bluetooth audio is still impossible on Windows",
-        "bluetooth_audio" in platform.UNSUPPORTED["windows"],
+        "Bluetooth audio is possible on Windows too",
+        "bluetooth_audio" not in platform.UNSUPPORTED["windows"],
     )
 
 
@@ -407,6 +407,9 @@ def main() -> int:
     settle()
     print("\n-- platforms")
     windows_too()
+
+    from sandbox import escaped
+    check("no exception escaped into Qt", not escaped(), "; ".join(escaped()))
 
     print()
     if FAILURES:

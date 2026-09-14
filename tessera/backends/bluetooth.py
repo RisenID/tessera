@@ -391,3 +391,17 @@ def audio_connected(device: "BtDevice | str") -> bool:
     """Whether the phone's media profile is up, whoever brought it up."""
     address = device if isinstance(device, str) else device.address
     return bool(audio_transport(address))
+
+
+# -- Windows -----------------------------------------------------------------
+#
+# No BlueZ there. AudioPlaybackConnection answers the same questions under the
+# same names, so nothing that calls this module needs a second path.
+from ..core import platform as _platform                              # noqa: E402
+
+if _platform.IS_WINDOWS:
+    from .bluetooth_win import (                                      # noqa: E402,F401,F811
+        adapter_ready, audio_connected, audio_transport, available, claim_audio,
+        connect, connect_quietly, device_info, disconnect, find_phone, forget,
+        media_state, paired_devices, release_audio, remote_codecs,
+    )

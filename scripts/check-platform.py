@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Exercise the Windows and Linux paths from wherever this is run."""
+"""Exercise the Windows and Linux paths from wherever this is run.
+
+Most of this pretends, through TESSERA_PLATFORM, so both systems' paths are
+checked on either. What cannot be pretended -- the kernel, the shell's own
+folders, WinRT -- is checked only on the system that has it.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 # Before any tessera import: a check must never write the real configuration.
-from sandbox import isolate                                          # noqa: E402
+from sandbox import HOST, isolate, only_on                           # noqa: E402
 
 isolate()
 
@@ -53,6 +58,57 @@ def as_platform(name: str, **environment: str):
     return loaded
 
 
+def as_this_computer():
+    """Reload the platform module with nothing pretended."""
+    os.environ.pop("TESSERA_PLATFORM", None)
+    return importlib.reload(importlib.import_module("tessera.core.platform"))
+
+
+# -- the real system ----------------------------------------------------------
+
+
+@only_on("windows")
+def this_windows() -> None:
+    print("\n== This Windows ==")
+    import subprocess
+
+    platform = as_this_computer()
+    check("Windows is detected without being told", platform.NAME, "windows")
+    check("helpers start without a console window",
+          platform.no_window_flags(), subprocess.CREATE_NO_WINDOW)
+
+    transfer = importlib.reload(importlib.import_module("tessera.backends.filetransfer"))
+    known = transfer._windows_downloads()
+    check("the shell says where Downloads is", known is not None and known.is_dir(), True)
+    check("and received files go there", transfer.default_directory(), known)
+
+    bluetooth = importlib.reload(importlib.import_module("tessera.backends.bluetooth"))
+    check("Bluetooth is answered by WinRT",
+          bluetooth.connect_quietly.__module__, "tessera.backends.bluetooth_win")
+    check("and this Python has the WinRT wheels",
+          importlib.import_module("tessera.backends.bluetooth_win").available(), True)
+
+    contains("SSHFS-Win's folder is searched for sshfs",
+             platform._EXTRA_PATHS["windows"], r"%ProgramFiles%\SSHFS-Win\bin")
+    storage_win = importlib.import_module("tessera.backends.storage_win")
+    print(f"     (on this machine: WinFsp {'found' if storage_win.winfsp_installed() else 'missing'}, "
+          f"sshfs {storage_win.sshfs_path() or 'missing'})")
+
+
+@only_on("linux")
+def this_linux() -> None:
+    print("\n== This Linux ==")
+    platform = as_this_computer()
+    check("Linux is detected without being told", platform.NAME, "linux")
+    check("there is no console flag to pass", platform.no_window_flags(), 0)
+    bluetooth = importlib.reload(importlib.import_module("tessera.backends.bluetooth"))
+    check("Bluetooth is answered by BlueZ",
+          bluetooth.connect_quietly.__module__, "tessera.backends.bluetooth")
+
+
+# -- pretending ---------------------------------------------------------------
+
+
 def windows_checks() -> None:
     home = Path(tempfile.mkdtemp())
     loaded = as_platform(
@@ -63,28 +119,32 @@ def windows_checks() -> None:
     platform = loaded["platform"]
     print("\n== Windows ==")
     check("platform name", platform.NAME, "windows")
-    check("the kernel is not faked", platform.REAL, "linux"
-          if sys.platform.startswith("linux") else platform.REAL)
+    check("the kernel is not faked", platform.REAL, HOST)
     check("config lands in APPDATA",
           platform.config_dir(), home / "Roaming" / "Tessera")
     check("state lands in LOCALAPPDATA",
           platform.state_dir(), home / "Local" / "Tessera")
     check("tools get .exe", platform.tool("adb"), "adb.exe")
     check("an .exe is not doubled", platform.tool("scrcpy.exe"), "scrcpy.exe")
-    check("no console flag on this kernel", platform.no_window_flags(), 0)
+    # The flag follows the kernel underneath, not the pretence.
+    check("a console flag only where there are consoles",
+          platform.no_window_flags(), 0x08000000 if HOST == "windows" else 0)
 
     print("-- what Windows cannot do --")
-    for feature in ("bluetooth_audio", "webcam", "kdeconnect", "mpris"):
+    for feature in ("kdeconnect", "mpris", "bluetooth_codecs"):
         check(f"{feature} refused", platform.supported(feature), False)
         contains(f"{feature} explained", platform.reason(feature), " ")
     for feature in ("notifications", "messages", "photos", "calls", "clipboard",
-                    "screen", "apps", "hotspot", "dnd_sync", "otp"):
+                    "screen", "apps", "hotspot", "dnd_sync", "otp",
+                    "bluetooth_audio", "bluetooth_calls", "storage", "webcam"):
         check(f"{feature} offered", platform.supported(feature), True)
 
     print("-- the config file --")
     config = loaded["config"]
     fresh = config.Config()
     check("a panel width to start from", fresh.panel.width > 0, True)
+    check("the link audio route waits for its switch, as Bluetooth works",
+          fresh.features.phone_audio, False)
     fresh.save()
     written = Path(config.Config.path())
     check("written where Windows keeps settings",
@@ -99,6 +159,10 @@ def windows_checks() -> None:
     contains("scrcpy has a package", packages.install_command("scrcpy"), "scrcpy")
     check("no sudo in the advice", "sudo" in packages.install_command("scrcpy"), False)
     check("no pkexec in the argv", "pkexec" in packages.install_argv("scrcpy"), False)
+    if manager is not None and manager.key == "winget":
+        contains("WinFsp has a package", packages.install_command("winfsp"), "WinFsp.WinFsp")
+        contains("so does SSHFS-Win", packages.install_command("sshfs-win"),
+                 "SSHFS-Win.SSHFS-Win")
 
     print("-- autostart --")
     autostart = loaded["autostart"]
@@ -170,7 +234,7 @@ def windows_checks() -> None:
                                    "text": text, "code": 0})()
 
     wifi.run = fake_run
-    wifi.have = lambda _program: True          # netsh, which is not here
+    wifi.have = lambda _program: True          # netsh, which may not be here
     check("reads the joined network", wifi.active_ssid(), "Phone AP")
     check("lists profiles", wifi.profiles(), ["Phone AP"])
     check("sees the network in a scan", wifi.scan_for("Phone AP", timeout=1), True)
@@ -228,8 +292,12 @@ def windows_parity_checks() -> None:
         transfer.reveal(Path.home() / "Downloads" / "photo.jpg")
     finally:
         proc.run = original_run
+    expected = [Path.home() / "Downloads", Path.home()]
+    if HOST == "windows":
+        # A real shell answers first, and Downloads may have been moved.
+        expected.insert(0, transfer._windows_downloads())
     check("received files go to Downloads or home, not an XDG answer",
-          folder in (Path.home() / "Downloads", Path.home()), True)
+          folder in expected, True)
     check("and nothing Linux-only is run to find it or show it",
           [argv[0] for argv in ran if argv[0] in ("xdg-user-dir", "dbus-send", "xdg-open")], [])
 
@@ -237,6 +305,8 @@ def windows_parity_checks() -> None:
     excluded = spec.split("EXCLUDED_QT = [", 1)[1].split("]", 1)[0]
     check("the build keeps QtMultimedia, which the phone's audio plays through",
           '"PySide6.QtMultimedia"' in excluded, False)
+    contains("and bundles WinRT's audio namespace, which is imported late",
+             spec, '"winrt.windows.media.audio"')
 
     clipboard_adb = importlib.reload(importlib.import_module("tessera.backends.clipboard_adb"))
     # This machine's own adb would be found by its bare name; on Windows
@@ -251,9 +321,25 @@ def windows_parity_checks() -> None:
     contains("with a command for the phone's shell, not Windows'", argv[-1], "app_process")
     check("clipboard sharing is offered", platform.supported("clipboard"), True)
 
+    bluetooth = importlib.reload(importlib.import_module("tessera.backends.bluetooth"))
+    check("Bluetooth is answered by AudioPlaybackConnection",
+          bluetooth.find_phone.__module__, "tessera.backends.bluetooth_win")
+    audio = importlib.reload(importlib.import_module("tessera.backends.audio"))
+    check("with no PipeWire tools to ask for", audio.tools_missing(), [])
+
     storage = importlib.reload(importlib.import_module("tessera.backends.storage"))
-    check("storage has no backend here", storage.backend(), "")
-    contains("and says why", platform.reason("storage"), "WinFsp")
+    storage_win = importlib.reload(importlib.import_module("tessera.backends.storage_win"))
+    found_sshfs, found_winfsp = storage_win.sshfs_path, storage_win.winfsp_installed
+    try:
+        storage_win.sshfs_path = lambda: ""
+        storage_win.winfsp_installed = lambda: False
+        check("without WinFsp and SSHFS-Win there is no backend", storage.backend(), "")
+        contains("and the advice says what to install", storage.missing_advice(), "WinFsp")
+        storage_win.sshfs_path = lambda: r"C:\Program Files\SSHFS-Win\bin\sshfs.exe"
+        storage_win.winfsp_installed = lambda: True
+        check("with both, SSHFS-Win mounts it", storage.backend(), storage.SSHFS_WIN)
+    finally:
+        storage_win.sshfs_path, storage_win.winfsp_installed = found_sshfs, found_winfsp
     check("file transfer is offered", platform.supported("file_transfer"), True)
     check("the phone's audio over the link is offered", platform.supported("phone_audio"), True)
 
@@ -319,10 +405,7 @@ def interface_checks() -> None:
     for _ in range(4):
         app.processEvents()
 
-    # Audio stays: the page leads with the route over the companion link,
-    # which needs no Bluetooth and works here. Only its Bluetooth half goes.
-    check("Webcam is not offered", sorted(IMPOSSIBLE), ["Webcam"])
-    check("but Audio is, for the link route", "Audio" not in IMPOSSIBLE, True)
+    check("every page is offered", sorted(IMPOSSIBLE), [])
     check("no dead tabs",
           [window.tabs.tabText(i) for i in range(window.tabs.count())
            if window.tabs.isTabVisible(i) and window.tabs.tabData(i) in IMPOSSIBLE],
@@ -334,25 +417,55 @@ def interface_checks() -> None:
         index = [n for n, *_ in PAGES].index(name)
         check(f"{name} is a placeholder, not the real page",
               isinstance(window.stack.widget(index), UnavailablePage), True)
-    check("the audio settings card is hidden",
+    check("the codec card is hidden, as Windows picks the codec",
           window.settings_page.audio_card.isHidden(), True)
-    check("the Bluetooth audio switch cannot be turned on",
-          window.settings_page.feature_boxes["bluetooth_audio"].isEnabled(), False)
-    check("the Bluetooth cards are hidden on the Audio page",
+    check("the Bluetooth audio switch can be turned on",
+          window.settings_page.feature_boxes["bluetooth_audio"].isEnabled(), True)
+    check("so can the phone storage one",
+          window.settings_page.feature_boxes["storage"].isEnabled(), True)
+    check("the Bluetooth cards are shown on the Audio page",
           [c.isVisibleTo(window.audio_page) for c in window.audio_page._bluetooth_cards],
-          [False, False, False])
-    check("but the link card is shown",
-          window.audio_page.link_card.isVisibleTo(window.audio_page), True)
+          [True, True, True])
+    check("with the button for calls",
+          window.audio_page.call_button.isVisibleTo(window.audio_page), True)
+    check("and the link card waits for its switch, as on Linux",
+          window.audio_page.link_card.isVisibleTo(window.audio_page), False)
     # The audio tile is not on by default, so choosing it is what proves the
-    # platform no longer vetoes it: on Windows it used to be struck out.
+    # platform no longer vetoes it.
     hub.config.panel.tiles.append("audio")
+    hub.config.features.phone_audio = True
     window.panel.apply_tiles()
     check("the sidebar will take an audio switch on Windows",
           window.panel.tiles["audio"].property("feature_off"), False)
-    check("nor a webcam one",
-          window.panel.tiles["camera"].property("feature_off"), True)
+    check("and a webcam one",
+          window.panel.tiles["camera"].property("feature_off"), False)
     check("but the clipboard one is there",
           window.panel.tiles["clipboard"].property("feature_off"), False)
+
+    print("-- a burst of notifications --")
+    import time
+    from PySide6.QtCore import QEvent, QObject
+    from tessera.core.models import Notification
+
+    class Strays(QObject):
+        count = 0
+
+        def eventFilter(self, obj, event):  # noqa: N802
+            if (event.type() == QEvent.Type.Show and obj.isWidgetType() and obj.isWindow()
+                    and type(obj).__name__ == "FeedRow"):
+                Strays.count += 1
+            return False
+
+    strays = Strays()
+    app.installEventFilter(strays)
+    # Rebuilds queued before the loop runs, as on connect. Old, so none reaches the tray.
+    for index in range(6):
+        hub._add(Notification(id=f"burst{index}", app="Mail", title=f"Note {index}",
+                              when=time.time() - 3600))
+        window.panel.refresh_feed()
+    app.processEvents()
+    app.removeEventFilter(strays)
+    check("a burst never pops a rail row out as its own window", Strays.count, 0)
 
     print("-- icons, where there is no icon theme --")
     from PySide6.QtGui import QIcon
@@ -400,10 +513,20 @@ def interface_checks() -> None:
         window.popups._by_phone.clear()
         shown.clear()
 
+    import time
+
+    def settle() -> None:
+        # Tray messages are gathered briefly before one is shown.
+        from tessera.ui.popups import TRAY_GATHER_MS
+
+        deadline = time.monotonic() + (TRAY_GATHER_MS + 300) / 1000
+        while time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.02)
+
     note = Notification(id="1", app="WhatsApp", title="Aai", text="Dinner?")
     hub._add(note)
-    for _ in range(3):
-        app.processEvents()
+    settle()
     check("a notification pops up", told(), True)
     if not rich:
         check("with the app and the sender in the title", shown,
@@ -412,8 +535,7 @@ def interface_checks() -> None:
 
     hub.config.notification_popups = False
     hub._add(Notification(id="2", app="WhatsApp", title="Aai", text="Again?"))
-    for _ in range(3):
-        app.processEvents()
+    settle()
     check("switched off, nothing pops up", told(), False)
     forget()
 
@@ -421,14 +543,57 @@ def interface_checks() -> None:
     hub._phone_dnd = "priority"
     hub.config.dnd.mode = "phone_to_desktop"
     hub._add(Notification(id="3", app="WhatsApp", title="Aai", text="Quiet?"))
-    for _ in range(3):
-        app.processEvents()
+    settle()
     check("a silenced phone silences the desktop too", told(), False)
     forget()
     window.close()
 
 
+def without_excluded_qt() -> None:
+    """Every module imports with the Qt modules the Windows build leaves out.
+
+    The build excludes them to save space, so a module that imports one
+    without a fallback starts here and crashes there. A fresh interpreter,
+    because this one has imported them already.
+    """
+    import re
+    import subprocess
+
+    print("\n== Without the Qt modules the Windows build leaves out ==")
+    spec = (ROOT / "packaging" / "windows" / "tessera.spec").read_text("utf-8")
+    excluded = re.findall(r'"(PySide6\.\w+)"', spec.split("EXCLUDED_QT = [", 1)[1].split("]", 1)[0])
+    probe = (
+        "import importlib, pkgutil, sys\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        f"blocked = set({excluded!r})\n"
+        "class Block:\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name in blocked:\n"
+        "            raise ImportError(name + ' is not in the Windows build')\n"
+        "sys.meta_path.insert(0, Block())\n"
+        "import tessera\n"
+        "for module in pkgutil.walk_packages(tessera.__path__, 'tessera.'):\n"
+        "    if module.name == 'tessera.__main__':\n"
+        "        continue\n"
+        "    try:\n"
+        "        importlib.import_module(module.name)\n"
+        "    except Exception as exc:\n"
+        "        print(f'{module.name}: {exc}')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=180,
+        env={**os.environ, "TESSERA_PLATFORM": "windows", "QT_QPA_PLATFORM": "offscreen"},
+    )
+    check("QtDBus is among them, so this means something", "PySide6.QtDBus" in excluded, True)
+    check("every module still imports", result.stdout.strip().splitlines(), [])
+    check("and the probe itself ran", result.returncode, 0)
+
+
 def main() -> int:
+    # The real system first, before anything is reloaded under a pretence.
+    this_windows()
+    this_linux()
+    without_excluded_qt()
     windows_checks()
     windows_parity_checks()
     linux_checks()

@@ -304,3 +304,83 @@ def nodes_for(card_name: str) -> tuple[str, str]:
         except ValueError:
             pass
     return sink, source
+
+
+# -- Windows -----------------------------------------------------------------
+#
+# No PipeWire, no cards and no nodes to link: an open AudioPlaybackConnection
+# plays through Windows' default output by itself. What is left is one profile,
+# the stream while it is open, and nothing to route.
+from ..core import platform as _platform                              # noqa: E402
+
+#: The phone's music, played here.
+WINDOWS_PROFILE = "a2dp-sink"
+#: The phone's calls, through PhoneLineTransportDevice.
+WINDOWS_CALLS = "handsfree-head-unit"
+
+if _platform.IS_WINDOWS:
+    def available() -> bool:                                          # noqa: F811
+        return True
+
+    def bluetooth_card(address: str = "") -> BtCard | None:          # noqa: F811
+        from . import bluetooth, calls_win
+
+        device = bluetooth.find_phone(preferred_address=address)
+        if device is None or not device.connected:
+            return None
+        profiles = {WINDOWS_PROFILE: "A2DP"}
+        if calls_win.can_take_calls(device.address):
+            profiles[WINDOWS_CALLS] = "HFP"
+        return BtCard(
+            name=device.address,
+            index=0,
+            active_profile=(WINDOWS_PROFILE if bluetooth.audio_transport(device.address)
+                            else OFF_PROFILE),
+            profiles=list(profiles),
+            profile_descriptions=profiles,
+            description=device.label,
+        )
+
+    def ready_to_receive(address: str) -> str:                       # noqa: F811
+        # A started connection is already ready; there is no card to switch.
+        return WINDOWS_PROFILE
+
+    def set_profile(card: str, profile: str) -> None:                # noqa: F811
+        from . import calls_win
+
+        if profile == WINDOWS_CALLS:
+            calls_win.take_calls(card)
+        elif profile != WINDOWS_PROFILE:
+            raise RuntimeError(f"Windows has no {profile} profile.")
+
+    def set_default_sink(name: str) -> None:                         # noqa: F811
+        pass
+
+    def set_default_source(name: str) -> None:                       # noqa: F811
+        pass
+
+    def phone_streams() -> list[Stream]:                              # noqa: F811
+        from . import bluetooth_win
+
+        return [
+            Stream(node=f"bluetooth:{address}", profile="a2dp_sink")
+            for address in bluetooth_win.open_addresses()
+        ]
+
+    def tools_missing() -> list[str]:                                 # noqa: F811
+        return []
+
+    def link_to_sink(node: str, sink: str = "") -> None:              # noqa: F811
+        pass
+
+    def stream_linked(node: str) -> bool:                             # noqa: F811
+        return bool(node)
+
+    def unlink_from_sink(node: str, sink: str = "") -> None:          # noqa: F811
+        pass
+
+    def default_sink() -> str:                                        # noqa: F811
+        return ""
+
+    def nodes_for(card_name: str) -> tuple[str, str]:                 # noqa: F811
+        return "", ""

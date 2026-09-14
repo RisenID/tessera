@@ -54,7 +54,16 @@ $vpython = Resolve-Path "$venv\Scripts\python.exe"
 
 Write-Host "Installing build dependencies" -ForegroundColor DarkGray
 & $vpython -m pip install --upgrade pip --quiet
-& $vpython -m pip install --upgrade "PySide6>=6.5" "pyinstaller>=6.6" --quiet
+# The WinRT projections are for Bluetooth audio from the phone, which the app
+# imports only when it is used.
+& $vpython -m pip install --upgrade "PySide6>=6.5" "pyinstaller>=6.6" `
+    "winrt-runtime>=3.0" "winrt-Windows.Foundation>=3.0" `
+    "winrt-Windows.Foundation.Collections>=3.0" `
+    "winrt-Windows.Devices.Enumeration>=3.0" "winrt-Windows.Media.Audio>=3.0" `
+    "winrt-Windows.ApplicationModel.Calls>=3.0" --quiet
+
+# -- the virtual camera ------------------------------------------------------
+& "$root\native\win-camera\build.ps1" -Out build\native
 
 # -- the icon, drawn by the app's own code -----------------------------------
 & $vpython scripts\make-icon.py packaging\windows\tessera.ico
@@ -68,6 +77,23 @@ if (-not (Test-Path $exe)) { throw "PyInstaller did not produce $exe" }
 $size = [math]::Round((Get-ChildItem -Recurse dist\Tessera | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host "Built $exe ($size MB on disk)" -ForegroundColor Green
 
+# -- does it start? ----------------------------------------------------------
+# A windowed build that fails on import shows a dialog and keeps running, so a
+# live process proves nothing. The self test imports everything and says so in
+# its exit code, without connecting to any phone.
+$report = Join-Path $env:TEMP "tessera-self-test.txt"
+Remove-Item $report -ErrorAction SilentlyContinue
+$test = Start-Process $exe -ArgumentList "--self-test", "`"$report`"" -PassThru
+if (-not $test.WaitForExit(120000)) {
+    Stop-Process -Id $test.Id -Force
+    throw "$exe did not finish its self test; it probably showed an error dialog."
+}
+if ($test.ExitCode -ne 0) {
+    if (Test-Path $report) { Get-Content $report | Write-Host -ForegroundColor Red }
+    throw "$exe does not start: something it imports is missing from the build."
+}
+Write-Host "The build imports everything it needs ($(Get-Content $report))" -ForegroundColor Green
+
 # -- the portable zip --------------------------------------------------------
 if (-not $SkipZip) {
     $zip = "dist\Tessera-$version-win64.zip"
@@ -79,8 +105,12 @@ if (-not $SkipZip) {
 # -- the installer -----------------------------------------------------------
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $iscc) {
-    $guess = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-    if (Test-Path $guess) { $iscc = $guess }
+    # winget installs it per user unless asked otherwise.
+    foreach ($guess in "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+                       "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+                       "$env:ProgramFiles\Inno Setup 6\ISCC.exe") {
+        if (Test-Path $guess) { $iscc = $guess; break }
+    }
 }
 if ($iscc) {
     & $iscc "packaging\windows\tessera.iss" "/DVersion=$version" | Out-Null

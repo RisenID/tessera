@@ -158,10 +158,15 @@ def link_state(app: QApplication) -> None:
     hub, panel = make_panel(app)
     client = hub.companion
 
+    from PySide6.QtNetwork import QAbstractSocket
+
     class Socket:
         def blockSignals(self, _on): pass
         def abort(self): pass
         def deleteLater(self): pass
+        # Whatever the hub sends as the header changes is dropped, as it would
+        # be with nothing on the other end.
+        def state(self): return QAbstractSocket.SocketState.UnconnectedState
 
     client._want_connection = False
     client._socket, client._authenticated = Socket(), True
@@ -194,6 +199,9 @@ def main() -> int:
     wallpaper(app)
     saving(app)
     link_state(app)
+
+    from sandbox import escaped
+    check("no exception escaped into Qt", not escaped(), "; ".join(escaped()))
 
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) failed:")

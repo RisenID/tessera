@@ -43,12 +43,14 @@ object NowPlaying {
             manager = service
             Log.i(TAG, "watching media sessions")
         }.onFailure { Log.w(TAG, "could not watch media sessions", it) }
+        A2dpCodec.start(context) { mainHandler.post { publish() } }
     }
 
     @Synchronized
     fun removeUser() {
         users = (users - 1).coerceAtLeast(0)
         if (users > 0) return
+        activeContext?.let { A2dpCodec.stop(it) }
         runCatching { manager?.removeOnActiveSessionsChangedListener(sessionsListener) }
         detach()
         manager = null
@@ -139,6 +141,7 @@ object NowPlaying {
         val message = JSONObject()
             .put("t", "media")
             .put("audioMode", audioMode(context))
+        A2dpCodec.describe()?.let { message.put("bluetooth", it) }
         if (active == null) {
             return message.put("playing", false).put("title", "")
         }

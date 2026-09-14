@@ -11,6 +11,9 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 STROKE = 2.0
 BOX = 24.0
 
+#: What the glyphs are drawn in. Set to the theme's text colour at startup.
+INK = "#000000"
+
 _HEAD = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
     'fill="none" stroke="#000000" stroke-width="2" '
@@ -35,18 +38,23 @@ SVG: dict[str, str] = {
         '<rect x="14" y="3" width="7" height="7" rx="1.5"/>'
         '<rect x="3" y="14" width="7" height="7" rx="1.5"/>'
         '<rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    # Lucide's gear (ISC licence).
     "settings-configure":
-        '<circle cx="12" cy="12" r="3"/>'
-        '<path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1'
-        'M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+        '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0'
+        'l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72'
+        'v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73'
+        'l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2'
+        'v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39'
+        'a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09'
+        'a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25'
+        'a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>'
+        '<circle cx="12" cy="12" r="3"/>',
     "notifications":
         '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2.5H4.5z"/>'
         '<path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
     "notifications-disabled":
         '<path d="M6 16V11a6 6 0 0 1 9.5-4.9"/><path d="M18 12v4l1.5 2.5H7"/>'
         '<path d="M10 21a2.2 2.2 0 0 0 4 0"/><path d="M3 3l18 18"/>',
-    # A page with an arrow leaving it: sending a file, in the same line-art
-    # vocabulary as the rest.
     "document-send":
         '<path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11'
         'a1.5 1.5 0 0 0 1.5-1.5V9z"/>'
@@ -61,6 +69,11 @@ SVG: dict[str, str] = {
     "smartphone":
         '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/>'
         '<path d="M10.8 5.2h2.4"/>',
+    # A phone with waves either side: ringing the phone, not its ringer mode.
+    "tessera-ring-phone":
+        '<rect x="8.5" y="3" width="7" height="18" rx="2"/>'
+        '<path d="M5 9a5 5 0 0 0 0 6M19 9a5 5 0 0 1 0 6"/>'
+        '<path d="M2.5 6.5a9 9 0 0 0 0 11M21.5 6.5a9 9 0 0 1 0 11"/>',
     "camera-photo":
         '<path d="M3 8.5h3.5L8 6h8l1.5 2.5H21v10.5H3z"/>'
         '<circle cx="12" cy="13.5" r="3.2"/>',
@@ -89,10 +102,12 @@ SVG: dict[str, str] = {
     "media-skip-backward":
         '<path d="M18 5l-9 7 9 7z" fill="#000000"/><path d="M6 5v14"/>',
     "network-bluetooth-activated":
-        '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>',
+        '<path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/>',
+    # A dot broadcasting both ways, so it is not mistaken for Wi-Fi.
     "network-wireless-hotspot":
-        '<circle cx="12" cy="16" r="2"/>'
-        '<path d="M8.5 12.5a5 5 0 0 1 7 0M5.5 9.5a9 9 0 0 1 13 0"/>',
+        '<circle cx="12" cy="12" r="1.8"/>'
+        '<path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"/>'
+        '<path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/>',
     "network-mobile-available":
         '<path d="M4 20h16"/><path d="M8 20v-4M12 20v-8M16 20v-12"/>',
     "dialog-information":
@@ -104,11 +119,14 @@ ALIASES: dict[str, str] = {
     "smartphone-symbolic": "smartphone",
     "camera-photo-symbolic": "camera-photo",
     "camera-video": "camera-photo",
-    "phone-ringing": "notifications",
+    "phone-ringing": "tessera-ring-phone",
     "audio-volume-medium": "audio-volume-low",
     "network-wireless": "network-wireless-100",
     "network-wireless-connected": "network-wireless-100",
     "network-bluetooth": "network-bluetooth-activated",
+    "bluetooth": "network-bluetooth-activated",
+    "bluetooth-active": "network-bluetooth-activated",
+    "preferences-system-bluetooth": "network-bluetooth-activated",
     "battery": "battery-100",
     "applications-all": "view-list-icons",
     "network-mobile": "network-mobile-available",
@@ -120,11 +138,17 @@ _MOBILE = re.compile(r"^network-mobile-(\d+)(?:-(\w+))?$")
 _BATTERY = re.compile(r"^battery-(\d+)(-charging)?$")
 
 
+def set_ink(colour: str) -> None:
+    """Draw every glyph from now on in *colour*."""
+    global INK
+    INK = QColor(colour).name() if QColor(colour).isValid() else "#000000"
+
+
 def _render(body: str, size: int) -> QPixmap:
     """Rasterise one of the SVG bodies above at *size* pixels."""
     from PySide6.QtSvg import QSvgRenderer      # imported late: rarely needed
 
-    document = f"{_HEAD}{body}</svg>".encode("utf-8")
+    document = f"{_HEAD}{body}</svg>".replace("#000000", INK).encode("utf-8")
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -135,7 +159,7 @@ def _render(body: str, size: int) -> QPixmap:
 
 
 def _pen(painter: QPainter, width: float, size: int) -> None:
-    pen = QPen(QColor("#000000"))
+    pen = QPen(QColor(INK))
     pen.setWidthF(width * size / BOX)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -150,7 +174,7 @@ def _bars(level: int, size: int, label: str = "") -> QPixmap:
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     scale = size / BOX
     _pen(painter, 1.6, size)
-    filled = QColor("#000000")
+    filled = QColor(INK)
     for index in range(4):
         height = (4.0 + index * 3.6) * scale
         x = (4.0 + index * 4.6) * scale
@@ -185,7 +209,6 @@ def _wifi(level: int, size: int) -> QPixmap:
     scale = size / BOX
     _pen(painter, 1.9, size)
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    # Three arcs and the dot: four steps, like the bars.
     for index, radius in enumerate((9.5, 6.5, 3.5)):
         if index >= max(0, level - 1):
             painter.setOpacity(0.28)
@@ -195,7 +218,7 @@ def _wifi(level: int, size: int) -> QPixmap:
         )
         painter.drawArc(rect, 35 * 16, 110 * 16)
     painter.setOpacity(1.0 if level > 0 else 0.28)
-    painter.setBrush(QColor("#000000"))
+    painter.setBrush(QColor(INK))
     painter.drawEllipse(QRectF(10.6 * scale, 13.6 * scale, 2.8 * scale, 2.8 * scale))
     painter.end()
     return pixmap
@@ -212,7 +235,7 @@ def _battery(percent: int, charging: bool, size: int) -> QPixmap:
     body = QRectF(2.5 * scale, 7.5 * scale, 17 * scale, 9 * scale)
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.drawRoundedRect(body, 1.6 * scale, 1.6 * scale)
-    painter.setBrush(QColor("#000000"))
+    painter.setBrush(QColor(INK))
     painter.drawRoundedRect(
         QRectF(20 * scale, 10 * scale, 1.8 * scale, 4 * scale),
         0.6 * scale, 0.6 * scale,
@@ -226,8 +249,9 @@ def _battery(percent: int, charging: bool, size: int) -> QPixmap:
             0.8 * scale, 0.8 * scale,
         )
     if charging:
-        # A bolt punched out of the fill, so it reads at either end of the bar.
+        # Punched out of the fill, so it reads at either end of the bar.
         painter.setPen(Qt.PenStyle.NoPen)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
         painter.setBrush(QColor("#FFFFFF"))
         points = [
             (12.6, 8.2), (9.2, 12.6), (11.4, 12.6), (10.6, 16.0),
@@ -257,23 +281,9 @@ def available(name: str) -> bool:
 def icon(name: str, size: int = 32) -> QIcon:
     """Our own drawing of *name*, or a null icon when there is none."""
     resolved = ALIASES.get(name, name)
-
-    if resolved in SVG:
-        pixmap = _render(SVG[resolved], size)
-    elif match := _WIRELESS.match(resolved):
-        pixmap = _wifi(round(int(match.group(1)) / 25), size)
-    elif match := _MOBILE.match(resolved):
-        suffix = (match.group(2) or "").upper().replace("UMTS", "3G")
-        pixmap = _bars(
-            round(int(match.group(1)) / 25), size,
-            {"5G": "5G", "LTE": "LTE", "3G": "3G", "EDGE": "E"}.get(suffix, ""),
-        )
-    elif match := _BATTERY.match(resolved):
-        pixmap = _battery(int(match.group(1)), bool(match.group(2)), size)
-    else:
+    if not available(resolved):
         return QIcon()
-
-    result = QIcon(pixmap)
+    result = QIcon(_sized(resolved, size))
     # A couple of sizes, so Qt scales down rather than up for tab strips.
     for extra in (16, 24, 48):
         if extra != size:

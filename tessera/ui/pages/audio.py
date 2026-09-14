@@ -157,6 +157,31 @@ class AudioPage(QWidget):
         mode_buttons.addStretch(1)
         mode.body().addLayout(mode_buttons)
 
+        # The phone's media volume, which Bluetooth audio here plays at.
+        self.volume_row = QWidget()
+        volume_layout = QHBoxLayout(self.volume_row)
+        volume_layout.setContentsMargins(0, 0, 0, 0)
+        volume_label = QLabel("Volume")
+        volume_label.setObjectName("Muted")
+        volume_layout.addWidget(volume_label)
+        self.phone_volume = QSlider(Qt.Orientation.Horizontal)
+        self.phone_volume.setRange(0, 100)
+        self.phone_volume.setFixedWidth(200)
+        self.phone_volume.setToolTip("The phone's media volume")
+        volume_layout.addWidget(self.phone_volume)
+        volume_layout.addStretch(1)
+        self._volume_timer = QTimer(self)
+        self._volume_timer.setSingleShot(True)
+        self._volume_timer.setInterval(120)
+        self._volume_timer.timeout.connect(self._send_volume)
+        self.phone_volume.valueChanged.connect(lambda _v: self._volume_timer.start())
+        mode.add(self.volume_row)
+        self.hub.phoneStatusChanged.connect(self._on_phone_status)
+        self.hub.companion.capabilitiesChanged.connect(
+            lambda _c: self._on_phone_status(self.hub.phone_status)
+        )
+        self._on_phone_status(self.hub.phone_status)
+
         self.mode_status = QLabel()
         self.mode_status.setObjectName("Muted")
         self.mode_status.setWordWrap(True)
@@ -192,8 +217,8 @@ class AudioPage(QWidget):
 
         outer.addWidget(link_card)
 
-        #: The Bluetooth half of the page, shown only where Bluetooth audio can
-        #: work: it is absent on Windows, and can be switched off anywhere.
+        #: The Bluetooth half of the page, shown only while Bluetooth audio is
+        #: switched on.
         self._bluetooth_cards = [link, mode, media]
         self._apply_availability()
 
@@ -202,6 +227,7 @@ class AudioPage(QWidget):
         self.toast = Toast(self)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
+        self.hub.mediaChanged.connect(lambda _m: self._refresh_media(self._device))
         self.refresh()
 
     # -- the link route ------------------------------------------------------
@@ -368,6 +394,8 @@ class AudioPage(QWidget):
         )
         for card in self._bluetooth_cards:
             card.setVisible(bluetooth_possible)
+        # Windows plays the phone's music here but keeps its calls to itself.
+        self.call_button.setVisible(platform.supported("bluetooth_calls"))
         self.link_card.setVisible(self.hub.config.features.phone_audio)
 
     # -- only while anyone is looking ----------------------------------------
@@ -524,7 +552,7 @@ class AudioPage(QWidget):
         self._stop_routing()
         submit(
             self._release,
-            on_done=lambda _r: self.refresh(),
+            on_done=lambda _r: (self.hub._watch_bluetooth(), self.refresh()),
             on_error=lambda m: self.toast.show_message(m[:120], self.palette_tokens, "danger"),
         )
 
@@ -566,8 +594,16 @@ class AudioPage(QWidget):
                 "being moved, so anything already playing is untouched."
             )
 
-    def _refresh_media(self, device: bluetooth.BtDevice) -> None:
-        if not device.connected or not device.has_media_controls:
+    def _refresh_media(self, device: bluetooth.BtDevice | None = None) -> None:
+        media = self.hub.media
+        if self.hub.connected and media.get("title"):
+            # The companion app knows the track, on either platform.
+            artist = media.get("artist", "")
+            self.track_label.setText(f"{media['title']} — {artist}" if artist else media["title"])
+            detail = media.get("album", "") or media.get("app", "")
+            self.album_label.setText(detail if media.get("playing") else f"{detail}  (paused)".strip())
+            return
+        if device is None or not device.connected or not device.has_media_controls:
             self.track_label.setText("Nothing playing")
             self.album_label.setText("")
             return
@@ -675,22 +711,41 @@ class AudioPage(QWidget):
 
             return self._explain_silence()
 
+        resume = mode == "music" and bool(self.hub.media.get("playing"))
+
+        def done(note: object) -> None:
+            # Otherwise the sidebar learns of it only at the next 15 s check.
+            self.hub._watch_bluetooth()
+            self.refresh()
+            self.toast.show_message(str(note)[:130], self.palette_tokens, "success")
+            if resume:
+                # Moving the output pauses most players; carry on playing.
+                QTimer.singleShot(1500, self._resume_if_paused)
+
         submit(
             work,
-            on_done=lambda note: (self.refresh(), self.toast.show_message(
-                str(note)[:130], self.palette_tokens, "success")),
+            on_done=done,
             on_error=lambda m: self.toast.show_message(m[:130], self.palette_tokens, "danger"),
         )
 
     # -- waiting for the phone to play ---------------------------------------
 
-    @staticmethod
-    def _playing_note(stream: audio.Stream) -> str:
+    def _playing_note(self, stream: audio.Stream) -> str:
         """What is playing, and the ceiling the codec puts on it."""
         codec = btcodecs.CODEC_NAMES.get(stream.codec, stream.codec)
+        quality = stream.quality
+        # Windows does not say which codec it chose; the phone does.
+        reported = self.hub.media.get("bluetooth") or {}
+        if not codec and reported.get("codec"):
+            codec = str(reported["codec"])
+            rate, bits = int(reported.get("rate") or 0), int(reported.get("bits") or 0)
+            quality = " · ".join(
+                part for part in (f"{rate / 1000:g} kHz" if rate else "",
+                                  f"{bits}-bit" if bits else "") if part
+            )
         kbps = btcodecs.BITRATES.get(codec)
         detail = " · ".join(
-            part for part in (codec, stream.quality, f"{kbps} kbit/s" if kbps else "")
+            part for part in (codec, quality, f"{kbps} kbit/s" if kbps else "")
             if part
         )
         suffix = f" — {detail}" if detail else ""
@@ -798,11 +853,30 @@ class AudioPage(QWidget):
         submit(look, on_done=arrived, on_error=lambda _m: None)
 
     def _control(self, action: str) -> None:
+        if self.hub.connected:
+            commands = {"Previous": "previous", "PlayPause": "playpause", "Next": "next"}
+            self.hub.media_command(commands[action])
+            return
         try:
             self._player.control(self._service, action)
         except RuntimeError as exc:
             self.toast.show_message(str(exc)[:120], self.palette_tokens, "warning")
         QTimer.singleShot(400, self.refresh)
+
+    def _resume_if_paused(self) -> None:
+        if self.hub.connected and not self.hub.media.get("playing"):
+            self.hub.media_command("play")
+
+    def _send_volume(self) -> None:
+        self.hub.set_phone_volume(self.phone_volume.value())
+
+    def _on_phone_status(self, status: dict) -> None:
+        self.volume_row.setVisible(self.hub.companion.supports("media_volume"))
+        volume = status.get("volume")
+        if isinstance(volume, int) and not self.phone_volume.isSliderDown():
+            self.phone_volume.blockSignals(True)
+            self.phone_volume.setValue(volume)
+            self.phone_volume.blockSignals(False)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

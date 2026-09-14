@@ -238,6 +238,7 @@ class Session(
         // Only claim "hotspot" if the phone will actually take the command.
         if (Hotspot.mode() == Hotspot.Mode.PRIVILEGED) add("hotspot") else add("hotspot_panel")
         add("net_addresses")
+        add("media_volume")
         // Battery, signal and ringer state for the desktop's device panel.
         add("status")
         add("ringer")
@@ -569,6 +570,12 @@ class Session(
                         "The ringer could not be changed. Silencing needs " +
                             "notification access, which is granted on the phone."
                     )
+                }
+            }
+
+            "volume_set" -> {
+                if (!PhoneStatus.setMediaVolume(context, message.optInt("percent", -1))) {
+                    fail(id, "The phone's volume could not be changed.")
                 }
             }
 

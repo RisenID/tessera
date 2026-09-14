@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -190,7 +190,12 @@ class NotificationsPage(QWidget):
         self.toast = Toast(self)
 
         self._cards: dict[str, NotificationCard] = {}
-        hub.notificationsChanged.connect(self.refresh)
+        # One rebuild per burst: connecting sends every notification at once.
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(60)
+        self._refresh_timer.timeout.connect(self.refresh)
+        hub.notificationsChanged.connect(self._refresh_timer.start)
         hub.icons.iconReady.connect(self._on_icon)
         hub.otpArrived.connect(self._on_otp)
         self.refresh()
@@ -261,6 +266,7 @@ class NotificationsPage(QWidget):
             item = layout.takeAt(index)
             widget = item.widget() if item else None
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt naming

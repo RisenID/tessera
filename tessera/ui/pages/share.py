@@ -332,16 +332,18 @@ class SharePage(QWidget):
 
         if mounted:
             where = hub.storage_mount.local_path or hub.storage_mount.location
+            shown = ("under This PC in File Explorer" if platform.IS_WINDOWS
+                     else "in the file manager's sidebar")
             note = (
-                f"The phone's storage is at {where}, and in the file manager's "
-                "sidebar. It is unmounted when the phone disconnects."
+                f"The phone's storage is at {where}, and {shown}. It is "
+                "unmounted when the phone disconnects."
             )
         elif state in ("starting", "error") and hub.storage_message:
             note = hub.storage_message
         elif not connected:
             note = "The companion app is not connected."
         elif not backend:
-            note = "Mounting needs sshfs: install the fuse-sshfs package."
+            note = storage.missing_advice()
         elif caps and "storage" not in caps:
             note = (
                 "This phone needs Android 11 or later, and a companion app new "
