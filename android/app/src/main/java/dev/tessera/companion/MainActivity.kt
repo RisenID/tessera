@@ -17,6 +17,7 @@ import androidx.core.view.updatePadding
 import com.google.android.material.color.DynamicColors
 import dev.tessera.companion.databinding.ActivityMainBinding
 import dev.tessera.companion.databinding.ViewSetupRowBinding
+import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.MediaRepository
