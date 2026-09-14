@@ -209,8 +209,7 @@ class MainWindow(QMainWindow):
             # tray's own popup, which is a real toast on Windows.
             tray = getattr(self, "tray", None)
             if tray is not None and tray.isVisible():
-                tray.showMessage(transfer.name, body,
-                                 QSystemTrayIcon.MessageIcon.Information, 6000)
+                tray.showMessage(transfer.name, body, tray.icon(), 6000)
             return
         notifier.send_async(
             f"{transfer.name}",
@@ -538,6 +537,6 @@ class MainWindow(QMainWindow):
         self.tray.showMessage(
             "Tessera",
             "Still running in the tray. Choose Quit to stop it.",
-            QSystemTrayIcon.MessageIcon.Information,
+            self.tray.icon(),
             3000,
         )

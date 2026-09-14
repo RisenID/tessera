@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from ..backends import notify, silence
@@ -19,6 +20,9 @@ DURATION_MS = 6000
 
 #: How long tray messages are gathered, so a burst becomes one.
 TRAY_GATHER_MS = 400
+
+#: How long a tray message waits for the phone to send the app's icon.
+ICON_WAIT_MS = 1500
 
 #: Notifications from these are noise on a desktop: they are about the phone
 #: talking to this computer, which the app already shows.
@@ -58,6 +62,8 @@ class Popups(QObject):
         self._tray_timer.setSingleShot(True)
         self._tray_timer.setInterval(TRAY_GATHER_MS)
         self._tray_timer.timeout.connect(self._flush_tray)
+        self._icon_waited = False
+        hub.icons.iconReady.connect(self._on_icon)
 
         if self.notifier.available:
             self.notifier.replied.connect(self._on_replied)
@@ -131,8 +137,18 @@ class Popups(QObject):
         self._tray_timer.start()
 
     def _flush_tray(self) -> None:
-        notes, self._tray_queue = self._tray_queue, []
-        if not notes or not self.tray.isVisible():
+        notes = self._tray_queue
+        if not notes:
+            return
+        icon = self._tray_icon(notes)
+        if icon is None and not self._icon_waited:
+            self._icon_waited = True
+            self._tray_timer.start(ICON_WAIT_MS)
+            return
+        self._icon_waited = False
+        self._tray_timer.setInterval(TRAY_GATHER_MS)
+        self._tray_queue = []
+        if not self.tray.isVisible():
             return
         if len(notes) == 1:
             note = notes[0]
@@ -143,10 +159,23 @@ class Popups(QObject):
             body = ", ".join(dict.fromkeys(n.app or n.title or "Phone" for n in notes))
         try:
             self.tray.showMessage(
-                title[:120], body[:400], QSystemTrayIcon.MessageIcon.Information, DURATION_MS
+                title[:120], body[:400], icon or self.tray.icon(), DURATION_MS
             )
         except Exception as exc:      # a tray that went away mid-call
             log.debug("could not show a popup: %s", exc)
+
+    def _tray_icon(self, notes: list[Notification]) -> QIcon | None:
+        """The sending app's icon; the app's own for a mix or no package. None: not here yet."""
+        packages = {note.package for note in notes}
+        if len(packages) != 1 or not next(iter(packages)):
+            return self.tray.icon()
+        pixmap = self.hub.icons.get(next(iter(packages)))
+        return QIcon(pixmap) if pixmap is not None else None
+
+    def _on_icon(self, package: str, _pixmap) -> None:
+        if self._icon_waited and any(note.package == package for note in self._tray_queue):
+            self._tray_timer.stop()
+            self._flush_tray()
 
     def _icon_for(self, note: Notification) -> str:
         """The sending app's own icon, where the phone has sent us one."""
