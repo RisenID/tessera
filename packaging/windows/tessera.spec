@@ -61,6 +61,12 @@ analysis = Analysis(
         "winrt.windows.devices.enumeration",
         "winrt.windows.media.audio",
         "winrt.windows.applicationmodel.calls",
+        # The phone's storage in File Explorer.
+        "winrt.windows.storage",
+        "winrt.windows.storage.provider",
+        "winrt.windows.storage.streams",
+        "winrt.windows.security.cryptography",
+        "paramiko",
     ],
     hookspath=[],
     runtime_hooks=[],

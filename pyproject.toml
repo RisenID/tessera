@@ -33,6 +33,12 @@ dependencies = [
     "winrt-Windows.Devices.Enumeration>=3.0; sys_platform == 'win32'",
     "winrt-Windows.Media.Audio>=3.0; sys_platform == 'win32'",
     "winrt-Windows.ApplicationModel.Calls>=3.0; sys_platform == 'win32'",
+    # The phone's storage in File Explorer, through the Cloud Files API and SFTP.
+    "winrt-Windows.Storage>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Provider>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Streams>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Security.Cryptography>=3.0; sys_platform == 'win32'",
+    "paramiko>=3.2; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

@@ -132,7 +132,6 @@ _EXTRA_PATHS: dict[str, tuple[str, ...]] = {
         r"%ProgramFiles%\scrcpy",
         r"%ProgramFiles(x86)%\scrcpy",
         r"%ProgramFiles%\Android\platform-tools",
-        r"%ProgramFiles%\SSHFS-Win\bin",
     ),
     "linux": (),
     "macos": ("/opt/homebrew/bin", "/usr/local/bin"),

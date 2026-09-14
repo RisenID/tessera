@@ -88,11 +88,8 @@ def this_windows() -> None:
     check("and this Python has the WinRT wheels",
           importlib.import_module("tessera.backends.bluetooth_win").available(), True)
 
-    contains("SSHFS-Win's folder is searched for sshfs",
-             platform._EXTRA_PATHS["windows"], r"%ProgramFiles%\SSHFS-Win\bin")
-    storage_win = importlib.import_module("tessera.backends.storage_win")
-    print(f"     (on this machine: WinFsp {'found' if storage_win.winfsp_installed() else 'missing'}, "
-          f"sshfs {storage_win.sshfs_path() or 'missing'})")
+    cloud = importlib.import_module("tessera.backends.storage_cloud")
+    check("the Cloud Files API is here for the phone's storage", cloud.supported(), True)
 
 
 @only_on("linux")
@@ -159,10 +156,6 @@ def windows_checks() -> None:
     contains("scrcpy has a package", packages.install_command("scrcpy"), "scrcpy")
     check("no sudo in the advice", "sudo" in packages.install_command("scrcpy"), False)
     check("no pkexec in the argv", "pkexec" in packages.install_argv("scrcpy"), False)
-    if manager is not None and manager.key == "winget":
-        contains("WinFsp has a package", packages.install_command("winfsp"), "WinFsp.WinFsp")
-        contains("so does SSHFS-Win", packages.install_command("sshfs-win"),
-                 "SSHFS-Win.SSHFS-Win")
 
     print("-- autostart --")
     autostart = loaded["autostart"]
@@ -328,18 +321,17 @@ def windows_parity_checks() -> None:
     check("with no PipeWire tools to ask for", audio.tools_missing(), [])
 
     storage = importlib.reload(importlib.import_module("tessera.backends.storage"))
-    storage_win = importlib.reload(importlib.import_module("tessera.backends.storage_win"))
-    found_sshfs, found_winfsp = storage_win.sshfs_path, storage_win.winfsp_installed
+    cloud = importlib.import_module("tessera.backends.storage_cloud")
+    found = cloud.supported
     try:
-        storage_win.sshfs_path = lambda: ""
-        storage_win.winfsp_installed = lambda: False
-        check("without WinFsp and SSHFS-Win there is no backend", storage.backend(), "")
-        contains("and the advice says what to install", storage.missing_advice(), "WinFsp")
-        storage_win.sshfs_path = lambda: r"C:\Program Files\SSHFS-Win\bin\sshfs.exe"
-        storage_win.winfsp_installed = lambda: True
-        check("with both, SSHFS-Win mounts it", storage.backend(), storage.SSHFS_WIN)
+        cloud.supported = lambda: False
+        check("without the Cloud Files API there is no backend", storage.backend(), "")
+        contains("and the advice says why", storage.missing_advice(), "Windows")
+        cloud.supported = lambda: True
+        check("with it, the phone goes in File Explorer's navigation pane",
+              storage.backend(), storage.CLOUD)
     finally:
-        storage_win.sshfs_path, storage_win.winfsp_installed = found_sshfs, found_winfsp
+        cloud.supported = found
     check("file transfer is offered", platform.supported("file_transfer"), True)
     check("the phone's audio over the link is offered", platform.supported("phone_audio"), True)
 

@@ -330,13 +330,17 @@ class SharePage(QWidget):
         else:
             self.storage_pill.set_state("Not mounted", "muted")
 
-        if mounted:
-            where = hub.storage_mount.local_path or hub.storage_mount.location
-            shown = ("under This PC in File Explorer" if platform.IS_WINDOWS
-                     else "in the file manager's sidebar")
+        if mounted and platform.IS_WINDOWS:
             note = (
-                f"The phone's storage is at {where}, and {shown}. It is "
-                "unmounted when the phone disconnects."
+                f"The phone is in File Explorer's navigation pane, as "
+                f"{hub.storage_mount.name}. Files download when opened, and "
+                "changes go back to the phone."
+            )
+        elif mounted:
+            where = hub.storage_mount.local_path or hub.storage_mount.location
+            note = (
+                f"The phone's storage is at {where}, and in the file manager's "
+                "sidebar. It is unmounted when the phone disconnects."
             )
         elif state in ("starting", "error") and hub.storage_message:
             note = hub.storage_message

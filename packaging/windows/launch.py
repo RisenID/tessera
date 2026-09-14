@@ -15,7 +15,13 @@ LATE_IMPORTS = (
     "winrt.windows.applicationmodel.calls",
     "tessera.backends.bluetooth_win",
     "tessera.backends.calls_win",
-    "tessera.backends.storage_win",
+    "winrt.windows.storage",
+    "winrt.windows.storage.provider",
+    "winrt.windows.security.cryptography",
+    "paramiko",
+    "tessera.backends.cloudfiles",
+    "tessera.backends.sftp_remote",
+    "tessera.backends.storage_cloud",
     "tessera.backends.webcam_win",
 )
 

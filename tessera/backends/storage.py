@@ -24,8 +24,8 @@ DEFAULT_PATH = "/storage/emulated/0"
 PLACE_ID = "tessera-phone-storage"
 
 SSHFS, GIO = "sshfs", "gio"
-#: SSHFS-Win's sshfs.exe over WinFsp, on Windows. See backends.storage_win.
-SSHFS_WIN = "sshfs-win"
+#: File Explorer's navigation pane, on Windows. See backends.storage_cloud.
+CLOUD = "cloud-files"
 
 
 @dataclass
@@ -69,18 +69,18 @@ class ServerInfo:
 
 @dataclass
 class Mount:
-    backend: str                # SSHFS | GIO | SSHFS_WIN
+    backend: str                # SSHFS | GIO | CLOUD
     location: str               # a directory for sshfs, an sftp:// URI for gio,
-                                # a drive root for SSHFS-Win
+                                # the sync root folder for Cloud Files
     name: str
 
     @property
     def local_path(self) -> Path | None:
-        return Path(self.location) if self.backend in (SSHFS, SSHFS_WIN) else None
+        return Path(self.location) if self.backend in (SSHFS, CLOUD) else None
 
     @property
     def uri(self) -> str:
-        if self.backend == SSHFS_WIN:
+        if self.backend == CLOUD:
             return "file:///" + quote(self.location.replace("\\", "/"), safe="/:")
         if self.backend == SSHFS:
             return "file://" + quote(self.location)
@@ -88,13 +88,13 @@ class Mount:
 
 
 def backend() -> str:
-    """Which way this computer can mount it: sshfs, gio, SSHFS-Win, or none."""
+    """Which way this computer can mount it: sshfs, gio, Cloud Files, or none."""
     if not platform.supported("storage"):
         return ""
     if platform.IS_WINDOWS:
-        from . import storage_win
+        from . import storage_cloud
 
-        return SSHFS_WIN if storage_win.ready() else ""
+        return CLOUD if storage_cloud.supported() else ""
     if have("sshfs"):
         return SSHFS
     if have("gio"):
@@ -105,11 +105,7 @@ def backend() -> str:
 def missing_advice() -> str:
     """What to install so that backend() finds something."""
     if platform.IS_WINDOWS:
-        from ..core import packages
-        from . import storage_win
-
-        gaps = storage_win.missing() or ["winfsp", "sshfs-win"]
-        return "Mounting needs WinFsp and SSHFS-Win. " + packages.advice(*gaps)
+        return "The phone's storage needs the Cloud Files API, from Windows 10 version 1709."
     return (
         "Mounting needs sshfs (the fuse-sshfs package) or GVfs, and this "
         "computer has neither."
@@ -208,19 +204,22 @@ def mount(info: ServerInfo, name: str, sidebar: bool = True) -> Mount:
             "no way to know the server is the phone. Update the companion app."
         )
     chosen = backend()
-    if chosen == SSHFS_WIN:
-        from . import storage_win
+    if chosen == CLOUD:
+        from . import storage_cloud
+        from .sftp_remote import Remote
 
-        mounted = storage_win.mount(info, name)
+        folder = storage_cloud.base_folder() / folder_name(name)
+        storage_cloud.mount(Remote(info), folder, name, storage_cloud.root_id(folder_name(name)))
+        mounted = Mount(CLOUD, str(folder), name)
     elif chosen == SSHFS:
         mounted = _mount_sshfs(info, name)
     elif chosen == GIO:
         mounted = _mount_gio(info, name)
     else:
         raise RuntimeError(missing_advice())
-    # A drive letter is in Explorer's This PC already; the sidebar files are
-    # the Linux file managers'.
-    if sidebar and mounted.backend != SSHFS_WIN:
+    # A sync root is in Explorer's navigation pane already; the sidebar files
+    # are the Linux file managers'.
+    if sidebar and mounted.backend != CLOUD:
         try:
             add_place(mounted)
         except OSError as exc:
@@ -270,10 +269,11 @@ def _mount_gio(info: ServerInfo, name: str) -> Mount:
 
 def unmount(mounted: Mount) -> None:
     """Unmount, and take the sidebar entry away with it. Never raises."""
-    if mounted.backend == SSHFS_WIN:
-        from . import storage_win
+    if mounted.backend == CLOUD:
+        from . import storage_cloud
 
-        storage_win.unmount(mounted)
+        # The folder stays in the navigation pane, its files unavailable until next time.
+        storage_cloud.unmount(Path(mounted.location))
         return
 
     try:
@@ -328,7 +328,7 @@ def _explain(output: str) -> str:
 
 
 def open_location(mounted: Mount) -> None:
-    if mounted.backend == SSHFS_WIN:
+    if mounted.backend == CLOUD:
         if platform.REAL == "windows":
             os.startfile(mounted.location)                  # type: ignore[attr-defined]
         return

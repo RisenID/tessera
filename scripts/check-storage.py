@@ -181,169 +181,24 @@ def unmounting() -> None:
     check("nothing here counts as mounted", not storage.is_mounted(ROOT))
 
 
-# -- Windows: a drive, through WinFsp and SSHFS-Win ---------------------------
-
-
-class Stdin:
-    def __init__(self):
-        self.written = ""
-        self.closed = False
-
-    def write(self, text: str) -> None:
-        self.written += text
-
-    def close(self) -> None:
-        self.closed = True
-
-
-class Sshfs:
-    """sshfs.exe, as far as the mount code can tell."""
-
-    def __init__(self, command, env, log_path, exit_code=None):
-        self.command, self.env, self.log_path = command, env, log_path
-        self.exit_code = exit_code
-        self.stdin = Stdin()
-        self.stopped = False
-
-    def poll(self):
-        return self.exit_code
-
-    def terminate(self):
-        self.stopped = True
-
-    def kill(self):
-        self.stopped = True
-
-    def wait(self, timeout=None):
-        return self.exit_code or 0
+# -- Windows: File Explorer's navigation pane, through Cloud Files ------------
 
 
 @only_on("windows")
-def drive_on_windows() -> None:
-    print("\n-- Windows: a drive letter, through WinFsp and SSHFS-Win")
-    from tessera.backends import storage_win as win
-    from tessera.core import platform
+def cloud_on_windows() -> None:
+    print("\n-- Windows: File Explorer's navigation pane (scripts/check-cloud-storage.py syncs for real)")
+    from tessera.backends import storage_cloud
 
-    check("phone storage is offered", platform.supported("storage"))
-    info = ServerInfo.from_reply("192.168.100.48", REPLY)
-
-    known = Path(r"C:\Users\me\AppData\Local\Tessera\known_hosts")
-    check("paths reach Cygwin's sshfs in its own spelling",
-          win.cygwin_path(known) == "/cygdrive/c/Users/me/AppData/Local/Tessera/known_hosts",
-          win.cygwin_path(known))
-
-    sshfs = r"C:\Program Files\SSHFS-Win\bin\sshfs.exe"
-    command = win.sshfs_command(info, "Y", known, "Ruchit's S25, work", sshfs)
-    joined = " ".join(command)
-    check("only the key file written from the paired link is consulted",
-          "UserKnownHostsFile=/cygdrive/c/Users/me/AppData/Local/Tessera/known_hosts" in command
-          and "GlobalKnownHostsFile=/dev/null" in command)
-    check("an unknown or different key is refused, not accepted",
-          "StrictHostKeyChecking=yes" in command and "StrictHostKeyChecking=no" not in joined)
-    check("and only for the algorithm that key uses",
-          "HostKeyAlgorithms=ecdsa-sha2-nistp256" in command)
-    check("the password is never on the command line", REPLY["password"] not in joined)
-    check("it is read from stdin instead", "password_stdin" in command)
-    check("the user's own SSH keys are not offered", "PubkeyAuthentication=no" in command)
-    check("it mounts the phone's shared storage",
-          "tessera@192.168.100.48:/storage/emulated/0" in command)
-    check("on a drive letter", command[3] == "Y:", command[3])
-    check("in the foreground, so stopping sshfs unmounts it", "-f" in command)
-    check("the files belong to whoever is signed in",
-          "uid=-1" in command and "gid=-1" in command)
-    check("the drive is labelled with the phone, less what would break the options",
-          "volname=Ruchit's S25 work" in command,
-          str([option for option in command if option.startswith("volname")]))
-
-    check("letters come from the end of the alphabet", win.free_letter({"C", "D"}) == "Z")
-    check("passing over ones in use", win.free_letter({"C", "Z", "Y"}) == "X")
-    check("and there may be none", win.free_letter(set(win.LETTERS)) == "")
-
-    real = (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters,
-            win.dress_drive, win.undress_drive)
-    dressed: list[tuple[str, ...]] = []
-    try:
-        win.sshfs_path = lambda: ""
-        win.winfsp_installed = lambda: False
-        check("without WinFsp and SSHFS-Win there is nothing to mount with",
-              storage.backend() == "")
-        advice = storage.missing_advice()
-        check("and the advice names both", "WinFsp" in advice and "SSHFS-Win" in advice, advice)
-        said = ""
-        try:
-            win.mount(info, "Ruchit's S25")
-        except RuntimeError as exc:
-            said = str(exc)
-        check("mounting anyway says what is missing", "WinFsp" in said, said)
-
-        win.sshfs_path = lambda: sshfs
-        win.winfsp_installed = lambda: True
-        win.used_letters = lambda: {"C", "Z"}
-        check("with both, SSHFS-Win mounts it", storage.backend() == storage.SSHFS_WIN,
-              storage.backend())
-
-        spawned: list[Sshfs] = []
-
-        def spawn(command, env, log_path):
-            spawned.append(Sshfs(command, env, log_path))
-            return spawned[-1]
-
-        win._spawn = spawn
-        win._exists = lambda root: root == "Y:\\"
-        # Recorded, not written: a check must not touch the real registry.
-        win.dress_drive = lambda letter, name: dressed.append(("dress", letter, name))
-        win.undress_drive = lambda letter: dressed.append(("undress", letter))
-        bookmarks = ROOT / "config" / "gtk-3.0" / "bookmarks"
-        before = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
-
-        mounted = storage.mount(info, "Ruchit's S25")
-        process = spawned[-1]
-        check("the phone lands on the first free letter", mounted.location == "Y:\\",
-              mounted.location)
-        check("as a drive that can be opened",
-              mounted.local_path == Path("Y:\\") and mounted.uri == "file:///Y:/", mounted.uri)
-        check("the password goes in on stdin",
-              process.stdin.written == REPLY["password"] + "\n", repr(process.stdin.written))
-        check("which is closed after it", process.stdin.closed)
-        pinned = platform.state_dir() / "known_hosts"
-        check("the pinned key is written for sshfs to read",
-              pinned.read_text(encoding="utf-8").strip() == storage.known_hosts_line(info))
-        check("ssh.exe is found beside sshfs.exe",
-              process.env["PATH"].startswith(str(Path(sshfs).parent)))
-        after = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
-        check("no Linux file manager bookmark is written", after == before)
-        check("the drive shows as the phone, with its icon and name",
-              dressed == [("dress", "Y", "Ruchit's S25")], str(dressed))
-        check("with a phone from Windows' own icons", "imageres.dll" in win.PHONE_ICON)
-
-        storage.unmount(mounted)
-        check("unmounting stops sshfs, which takes the drive away", process.stopped)
-        check("and takes the icon and name back", dressed[-1] == ("undress", "Y"), str(dressed))
-        storage.unmount(mounted)
-        check("and doing it twice is harmless", len(spawned) == 1)
-
-        def refuses(command, env, log_path):
-            Path(log_path).write_text(
-                "read: Connection reset by peer\nHost key verification failed.\n",
-                encoding="utf-8",
-            )
-            spawned.append(Sshfs(command, env, log_path, exit_code=1))
-            return spawned[-1]
-
-        win._spawn = refuses
-        win._exists = lambda root: False
-        said = ""
-        try:
-            storage.mount(info, "Ruchit's S25")
-        except RuntimeError as exc:
-            said = str(exc)
-        check("a server with the wrong key is not trusted", "key" in said, said)
-        check("and nothing is left running", spawned[-1].stopped)
-        check("nor a phone icon on a drive that never came up",
-              dressed[-1][0] == "undress", str(dressed[-1:]))
-    finally:
-        (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters,
-         win.dress_drive, win.undress_drive) = real
+    check("the Cloud Files API is here", storage_cloud.supported())
+    check("so the phone is mounted that way", storage.backend() == storage.CLOUD, storage.backend())
+    folder = r"C:\Users\me\Tessera\Ruchit's S25"
+    mounted = Mount(storage.CLOUD, folder, "Ruchit's S25")
+    check("as a folder that can be opened", mounted.local_path == Path(folder), str(mounted.local_path))
+    check("with a file URI", mounted.uri.startswith("file:///C:/Users/me/Tessera/"), mounted.uri)
+    check("in the user's own folder", storage_cloud.base_folder() == Path.home() / "Tessera")
+    identity = storage_cloud.root_id("Ruchit's S25")
+    check("with a sync root id per user and per phone",
+          identity.startswith("Tessera!S-1-5-") and identity.endswith("!Ruchit's S25"), identity)
 
 
 # -- the hub and the page, on either system -----------------------------------
@@ -454,8 +309,8 @@ def orchestration(app: QApplication) -> None:
         hub, sent, asked, replies = make_hub()
         connect(hub, ["storage", "storage_allowed"])
         hub.mount_storage()
-        check("a computer with nothing to mount with says what to install",
-              hub.storage_state == "error" and "Mounting needs" in hub.storage_message,
+        check("a computer with nothing to mount with says what it needs",
+              hub.storage_state == "error" and "needs" in hub.storage_message,
               hub.storage_message)
     finally:
         storage.mount, storage.unmount, storage.backend = real_mount, real_unmount, real_backend
@@ -528,7 +383,7 @@ def main() -> int:
     sshfs_on_linux()
     sidebar()
     unmounting()
-    drive_on_windows()
+    cloud_on_windows()
     orchestration(app)
     links_and_wallpaper(app)
     page(app)

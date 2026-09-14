@@ -3,8 +3,7 @@
 ;   iscc packaging\windows\tessera.iss /DVersion=1.10.0
 ;
 ; Per user, no elevation. The app is self-contained; the tools it drives are
-; installed afterwards with winget (adb's licence rules out bundling). WinFsp
-; is a driver, so Windows asks for administrator approval for it.
+; installed afterwards with winget (adb's licence rules out bundling).
 
 #ifndef Version
   #define Version "1.10.0"
@@ -44,7 +43,6 @@ Name: "startup"; Description: "Start Tessera when I log in"; GroupDescription: "
 Name: "tools"; Description: "Install the tools Tessera uses, with winget"; GroupDescription: "Tools:"
 Name: "tools\screen"; Description: "scrcpy and adb: screen mirroring, app windows, the adb clipboard"
 Name: "tools\camera"; Description: "FFmpeg: the phone's camera as a webcam"
-Name: "tools\storage"; Description: "WinFsp and SSHFS-Win: the phone's storage as a drive (asks for administrator approval)"
 
 [Files]
 Source: "..\..\dist\Tessera\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -115,11 +113,6 @@ begin
   end;
   if WizardIsTaskSelected('tools\camera') then
     Need('Gyan.FFmpeg', 'FFmpeg');
-  if WizardIsTaskSelected('tools\storage') then
-  begin
-    Need('WinFsp.WinFsp', 'WinFsp');
-    Need('SSHFS-Win.SSHFS-Win', 'SSHFS-Win');
-  end;
   if Missed <> '' then
     SuppressibleMsgBox(
       'Tessera is installed, but winget could not install everything:' + #13#10 +

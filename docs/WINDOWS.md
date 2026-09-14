@@ -11,7 +11,7 @@ reason (`core/platform.py`).
 - File transfer and share sheet (Downloads known folder)
 - Phone audio over the link, or over Bluetooth (`AudioPlaybackConnection`)
 - Call audio over Bluetooth (`PhoneLineTransportDevice`)
-- Phone storage as a drive (WinFsp + SSHFS-Win)
+- Phone storage in File Explorer's navigation pane (Cloud Files API)
 - Webcam, Windows 11 (`native/win-camera`)
 - Battery, signal, ringer, phone DND, wallpaper
 - Hotspot (`netsh`), screen mirroring and app windows (scrcpy, adb)
@@ -48,23 +48,22 @@ first start asks for administrator approval to copy the DLL to
 
 ## Phone storage
 
-`backends/storage_win.py` runs `sshfs.exe` on the first free letter from Z:,
-trusting only the key the phone sent over the paired link. The drive gets a
-phone icon and the phone's name (per-user Explorer keys, removed on unmount).
-Its size comes from the companion's `statvfs@openssh.com`, which MINA SSHD
-lacks. Log: `%LOCALAPPDATA%\Tessera\sshfs.log`.
+`backends/storage_cloud.py` registers `%USERPROFILE%\Tessera\<phone>` as a
+sync root, as OneDrive does: the phone is in the navigation pane, files
+download when opened (`cloudfiles.py`), and changes go both ways over SFTP
+(`sftp_remote.py`, trusting only the key sent over the paired link). No
+driver, no administrator approval. Adapted from
+[Sefirah](https://github.com/shrimqy/Sefirah).
 
 ## Install
 
-`Tessera-<version>-setup.exe`, per user. It installs scrcpy, adb, FFmpeg,
-WinFsp and SSHFS-Win with winget, skipping any already there. With the zip:
+`Tessera-<version>-setup.exe`, per user. It installs scrcpy, adb and FFmpeg
+with winget, skipping any already there. With the zip:
 
 ```
 winget install --exact --id Genymobile.scrcpy
 winget install --exact --id Google.PlatformTools
 winget install --exact --id Gyan.FFmpeg
-winget install --exact --id WinFsp.WinFsp
-winget install --exact --id SSHFS-Win.SSHFS-Win
 ```
 
 ## Build
