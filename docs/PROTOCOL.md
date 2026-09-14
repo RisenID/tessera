@@ -38,6 +38,7 @@ phone   -> desktop {"t":"pair_ok","token":"<64 hex>"}
 ```
 
 `name` labels the computer in the phone's paired list, where it can be removed.
+The phone refreshes it with `{"t":"computer_info","req"}`, answered with `name`.
 A reconnecting computer replaces its older connection with the same token.
 
 Codes last 60 seconds. `caps` lists only what the user granted.

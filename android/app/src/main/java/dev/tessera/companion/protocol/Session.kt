@@ -197,6 +197,8 @@ class Session(
                             .put("caps", org.json.JSONArray(capabilities()))
                     )
                     TesseraService.running_instance?.onAuthenticated(this)
+                    // Older desktops don't send a name with auth; ask for it.
+                    if (computerName.isBlank() && role.isEmpty()) refreshName()
                 } else {
                     send(
                         JSONObject().put("t", "auth_fail")
@@ -825,15 +827,28 @@ class Session(
         startNextOutgoing()
     }
 
-    /** Asks the desktop for its clipboard and when it last changed. Null if unanswerable. */
-    fun queryClipboard(callback: (JSONObject?) -> Unit) {
+    /** Sends a request to the desktop; the callback gets its answer, or null. */
+    private fun query(kind: String, callback: (JSONObject?) -> Unit) {
         if (!open.get() || !authenticated || role.isNotEmpty()) {
             callback(null)
             return
         }
         val id = nextQuery.getAndIncrement()
         queries[id] = callback
-        send(JSONObject().put("t", "clipboard_query").put("req", id))
+        send(JSONObject().put("t", kind).put("req", id))
+    }
+
+    /** Asks the desktop for its clipboard and when it last changed. */
+    fun queryClipboard(callback: (JSONObject?) -> Unit) = query("clipboard_query", callback)
+
+    /** Asks the desktop for its name and stores it. */
+    fun refreshName() = query("computer_info") { answer ->
+        val name = answer?.optString("name").orEmpty()
+        if (name.isNotBlank() && name != computerName) {
+            computerName = name
+            store.noteComputer(token, name)
+            TesseraService.onSessionsChanged?.invoke()
+        }
     }
 
     /** Text shared from the phone, put on the desktop's clipboard. */

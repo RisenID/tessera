@@ -743,6 +743,9 @@ class CompanionClient(QObject):
     def _recv_clipboard_query(self, message: dict[str, Any]) -> None:
         self.clipboardQueried.emit(int(message.get("req", 0)))
 
+    def _recv_computer_info(self, message: dict[str, Any]) -> None:
+        self.send({"t": "computer_info", "rid": message.get("req"), "name": computer_name()})
+
     def _recv_media(self, message: dict[str, Any]) -> None:
         self.mediaChanged.emit(message)
 
@@ -913,8 +916,39 @@ def computer_name() -> str:
                         return pretty
     except OSError:
         pass
+    import getpass
     import socket
-    return socket.gethostname().split(".")[0] or "Computer"
+
+    os_id, os_name = "", ""
+    try:
+        with open("/etc/os-release", encoding="utf-8") as release:
+            for line in release:
+                key, _, value = line.strip().partition("=")
+                if key == "ID":
+                    os_id = value.strip('"')
+                elif key == "NAME":
+                    os_name = value.strip('"')
+    except OSError:
+        pass
+    try:
+        user = getpass.getuser()
+    except (OSError, KeyError):
+        user = ""
+    return readable_name(socket.gethostname(), os_id, os_name, user)
+
+
+#: Hostnames that say nothing about which computer this is.
+GENERIC_HOSTNAMES = {"", "localhost", "localhost.localdomain", "fedora", "ubuntu",
+                     "debian", "archlinux", "linux", "computer"}
+
+
+def readable_name(hostname: str, os_id: str, os_name: str, user: str) -> str:
+    """The hostname, or "<User>'s <OS>" when the hostname is a distro default."""
+    short = hostname.split(".")[0]
+    if short.lower() not in GENERIC_HOSTNAMES and short.lower() != os_id.lower():
+        return short
+    owner = f"{user[:1].upper()}{user[1:]}'s " if user else ""
+    return f"{owner}{os_name or 'computer'}"
 
 
 def generate_token() -> str:

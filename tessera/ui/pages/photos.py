@@ -23,6 +23,43 @@ from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, EmptyState, Toast, header_row, heading
 
 
+def fetch_full(hub, cache: dict, item: dict, on_data) -> None:
+    """The full-size picture, cached in *cache* for the session."""
+    media_id = item.get("id", "")
+    if media_id in cache:
+        on_data(cache[media_id])
+        return
+    if not hub.companion.connected:
+        return
+
+    def arrived(reply: dict) -> None:
+        data = reply.get("data")
+        if isinstance(data, (bytes, bytearray)):
+            cache[media_id] = bytes(data)
+            on_data(cache[media_id])
+
+    hub.companion.request({"t": "media_get", "id": media_id, "thumb": False}, arrived)
+
+
+def save_media(widget, hub, cache: dict, item: dict, toast, palette) -> None:
+    """Ask where to save *item*, then download it there."""
+    name = item.get("name") or "photo.jpg"
+    target, _ = QFileDialog.getSaveFileName(widget, "Save photo", name)
+    if not target:
+        return
+
+    def write(data: bytes) -> None:
+        try:
+            with open(target, "wb") as handle:
+                handle.write(data)
+        except OSError as exc:
+            toast.show_message(f"Could not save: {exc}", palette, "danger")
+            return
+        toast.show_message("Saved", palette, "success")
+
+    fetch_full(hub, cache, item, write)
+
+
 def _date(item: dict) -> str:
     when = item.get("time", 0)
     return datetime.fromtimestamp(when / 1000).strftime("%d %b %Y") if when else "Unknown date"
@@ -297,52 +334,10 @@ class PhotosPage(QWidget):
         return tile.thumbnail if tile is not None else QPixmap()
 
     def fetch_full(self, item: dict, on_data) -> None:
-        """The full-size picture, cached for the session."""
-        media_id = item.get("id", "")
-        if media_id in self._full:
-            on_data(self._full[media_id])
-            return
-        if not self.hub.companion.connected:
-            return
-
-        def arrived(reply: dict) -> None:
-            data = reply.get("data")
-            if isinstance(data, (bytes, bytearray)):
-                self._full[media_id] = bytes(data)
-                on_data(self._full[media_id])
-
-        self.hub.companion.request(
-            {"t": "media_get", "id": media_id, "thumb": False}, arrived
-        )
-
-    # -- saving ----------------------------------------------------------------
+        fetch_full(self.hub, self._full, item, on_data)
 
     def save(self, item: dict) -> None:
-        name = item.get("name") or "photo.jpg"
-        target, _ = QFileDialog.getSaveFileName(self, "Save photo", name)
-        if not target:
-            return
-        media_id = item.get("id", "")
-        if media_id in self._full:
-            self._write(target, {"data": self._full[media_id]})
-            return
-        self.hub.companion.request(
-            {"t": "media_get", "id": media_id, "thumb": False},
-            lambda reply: self._write(target, reply),
-        )
-
-    def _write(self, target: str, reply: dict) -> None:
-        data = reply.get("data")
-        if not isinstance(data, (bytes, bytearray)):
-            self.toast.show_message("Could not download that item", self.palette_tokens, "danger")
-            return
-        try:
-            with open(target, "wb") as handle:
-                handle.write(data)
-        except OSError as exc:
-            self.toast.show_message(f"Could not save: {exc}", self.palette_tokens, "danger")
-            return
-        self.toast.show_message("Saved", self.palette_tokens, "success")
+        save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

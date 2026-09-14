@@ -94,6 +94,25 @@ def main() -> int:
     app.processEvents()
     check("Esc closes it", page.viewer is None and not viewer.isVisible())
 
+    print("\n-- recent photos on the overview")
+    from tessera.ui.pages.home import HomePage
+
+    home = HomePage(hub, detect_palette(app))
+    home._render_photos(items[:2])
+    replies["1:True"]({"data": jpeg(40, 30)})
+    holder = home._thumb_labels["1"]
+    holder.mouseReleaseEvent(click)
+    check("clicking a recent photo opens the viewer",
+          home.viewer is not None and home.viewer.isFullScreen())
+    check("with its thumbnail", home.viewer is not None and not home.viewer._pixmap.isNull())
+    replies["1:False"]({"data": jpeg(640, 480)})
+    check("then the full picture", home.viewer._pixmap.width() == 640, str(home.viewer._pixmap.width()))
+    home.viewer.step(1)
+    check("and moves through the recent photos", home.viewer.index == 1)
+    home.viewer.close()
+    app.processEvents()
+    check("and closes", home.viewer is None)
+
     if FAILURES:
         print(f"\n{len(FAILURES)} check(s) failed")
         return 1

@@ -369,6 +369,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         TesseraService.onSessionsChanged = { runOnUiThread { refresh() } }
+        TesseraService.running_instance?.refreshComputerNames()
     }
 
     override fun onStop() {

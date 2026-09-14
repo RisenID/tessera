@@ -245,6 +245,20 @@ def forcing(app: QApplication) -> None:
     auth = CompanionClient()._auth_message()
     check("the computer names itself when it connects", bool(auth.get("name")), str(auth))
 
+    from tessera.backends import companion as companion_module
+    named = companion_module.readable_name("fedora", "fedora", "Fedora Linux", "risen")
+    check("a distro-default hostname becomes a readable name",
+          named == "Risen's Fedora Linux", named)
+    check("a real hostname is kept",
+          companion_module.readable_name("workstation.lan", "fedora", "Fedora Linux", "risen")
+          == "workstation")
+    client = CompanionClient()
+    replies: list[dict] = []
+    client.send = replies.append
+    client._recv_computer_info({"t": "computer_info", "req": 4})
+    check("the phone's name request is answered",
+          replies and replies[-1].get("rid") == 4 and replies[-1].get("name"), str(replies))
+
 
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)

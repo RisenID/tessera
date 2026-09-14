@@ -32,6 +32,17 @@ def _ago(millis: int) -> str:
     return moment.strftime("%d %b")
 
 
+class _PhotoThumb(QLabel):
+    """A recent photo that opens fullscreen when clicked."""
+
+    clicked = Signal()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class HomePage(QWidget):
     """Overview of the phone, with the common actions in reach."""
 
@@ -45,6 +56,9 @@ class HomePage(QWidget):
         self.hub = hub
         self.palette_tokens = palette
         self._thumbs: dict[str, QPixmap] = {}
+        self._photo_items: list[dict] = []
+        self._full: dict[str, bytes] = {}
+        self.viewer = None
 
         page = QVBoxLayout(self)
         page.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], 0)
@@ -193,9 +207,12 @@ class HomePage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACE["sm"])
         self._thumb_labels = {}
+        self._photo_items = list(items)
 
         for item in items:
-            holder = QLabel()
+            holder = _PhotoThumb()
+            holder.setCursor(Qt.CursorShape.PointingHandCursor)
+            holder.clicked.connect(lambda it=item: self.view(it))
             holder.setFixedSize(96, 96)
             holder.setAlignment(Qt.AlignmentFlag.AlignCenter)
             holder.setStyleSheet(
@@ -230,6 +247,37 @@ class HomePage(QWidget):
             return
         self._thumbs[media_id] = pixmap
         self._apply_thumb(media_id, pixmap)
+        if self.viewer is not None and self.viewer.item.get("id") == media_id:
+            self.viewer.set_pixmap(pixmap)
+
+    # -- fullscreen, shared with the Photos page -------------------------------
+
+    def view(self, item: dict) -> None:
+        from .photos import PhotoViewer
+
+        if item not in self._photo_items:
+            return
+        if self.viewer is not None:
+            self.viewer.close()
+        self.viewer = PhotoViewer(self, self._photo_items, self._photo_items.index(item))
+        self.viewer.finished.connect(self._viewer_closed)
+        self.viewer.showFullScreen()
+
+    def _viewer_closed(self) -> None:
+        self.viewer = None
+
+    def thumbnail(self, item: dict) -> QPixmap:
+        return self._thumbs.get(item.get("id", ""), QPixmap())
+
+    def fetch_full(self, item: dict, on_data) -> None:
+        from .photos import fetch_full
+
+        fetch_full(self.hub, self._full, item, on_data)
+
+    def save(self, item: dict) -> None:
+        from .photos import save_media
+
+        save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)
 
     def _apply_thumb(self, media_id: str, pixmap: QPixmap) -> None:
         holder = getattr(self, "_thumb_labels", {}).get(media_id)

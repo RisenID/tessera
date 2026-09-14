@@ -297,6 +297,13 @@ class TesseraService : Service() {
         onSessionsChanged?.invoke()
     }
 
+    /** Asks every connected computer for its current name. */
+    fun refreshComputerNames() {
+        sessions.filter { it.isAuthenticated && it.role.isEmpty() }
+            .distinctBy { it.token }
+            .forEach(Session::refreshName)
+    }
+
     /** Tokens of the computers connected right now. */
     fun connectedTokens(): Set<String> =
         sessions.filter { it.isAuthenticated }.map { it.token }.toSet()
