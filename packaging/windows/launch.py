@@ -48,6 +48,13 @@ def self_test(report: str) -> int:
             importlib.import_module(name)
         except Exception:                               # noqa: BLE001
             failed.append(f"{name}:\n{traceback.format_exc()}")
+    try:
+        from tessera.ui import appicon
+
+        if appicon.source() is None:
+            failed.append(f"the app icon {appicon.FILE} is not bundled")
+    except Exception:                                   # noqa: BLE001
+        failed.append(traceback.format_exc())
     if report:
         with open(report, "w", encoding="utf-8") as out:
             out.write("\n".join(failed) or f"imported {len(set(names))} modules\n")

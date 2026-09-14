@@ -1,36 +1,41 @@
-"""The application icon: the phone glyph on an accent square."""
+"""The application icon: the mosaic tile Linux installs."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+import sys
+from pathlib import Path
 
-from . import glyphs
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+
+from ..core import platform
 
 #: Every size a shortcut, taskbar or Alt-Tab can ask for.
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 
-BACKGROUND = "#3DAEE9"
-FOREGROUND = "#FFFFFF"
+FILE = f"{platform.APP_ID}.svg"
+
+
+def source() -> Path | None:
+    """The SVG: bundled in a frozen build, or in the checkout."""
+    bundle = getattr(sys, "_MEIPASS", None)
+    base = Path(bundle) / "icons" if bundle else Path(__file__).resolve().parents[2] / "packaging" / "icons"
+    path = base / FILE
+    return path if path.is_file() else None
 
 
 def tile(size: int) -> QPixmap:
+    from PySide6.QtSvg import QSvgRenderer
+
+    path = source()
+    if path is None:
+        # Installed on Linux: the icon theme has it.
+        return QIcon.fromTheme(platform.APP_ID).pixmap(size, size)
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor(BACKGROUND))
-    radius = size * 0.22
-    painter.drawRoundedRect(QRectF(0, 0, size, size), radius, radius)
-
-    inner = round(size * 0.62)
-    mark = glyphs.icon("smartphone", max(32, inner)).pixmap(inner, inner)
-    tint = QPainter(mark)
-    tint.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    tint.fillRect(mark.rect(), QColor(FOREGROUND))
-    tint.end()
-    painter.drawPixmap(round((size - inner) / 2), round((size - inner) / 2), mark)
+    QSvgRenderer(str(path)).render(painter, QRectF(0, 0, size, size))
     painter.end()
     return pixmap
 

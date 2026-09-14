@@ -50,7 +50,8 @@ analysis = Analysis(
         (str(root / "build" / "native" / "TesseraCamera.dll"), "."),
         (str(root / "build" / "native" / "tessera-camera.exe"), "."),
     ],
-    datas=[],
+    # The app icon, the same SVG Linux installs.
+    datas=[(str(root / "packaging" / "icons" / "dev.tessera.Tessera.svg"), "icons")],
     # Imported inside functions, where the analysis cannot see them.
     hiddenimports=[
         "PySide6.QtSvg",
