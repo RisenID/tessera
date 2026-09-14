@@ -7,7 +7,7 @@
 
 Name:           tessera
 Version:        1.10.0
-Release:        29%{?dist}
+Release:        30%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
 License:        GPL-3.0-only
@@ -152,6 +152,10 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Mon Sep 14 2026 Ruchit M - 1.10.0-30
+- Remove paired computers from the phone; count connected computers correctly.
+- Force-copy the newest clipboard across phone and computers; fullscreen photo viewer.
+
 * Mon Sep 14 2026 Ruchit M - 1.10.0-29
 - Windows Bluetooth audio, calls, storage and webcam; phone DND overrides other apps.
 

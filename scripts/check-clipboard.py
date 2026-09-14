@@ -200,6 +200,52 @@ def hub_wiring(app: QApplication) -> None:
     check("clipboard sharing switched off never starts it", started == [])
 
 
+def forcing(app: QApplication) -> None:
+    print("\n-- copying the phone's clipboard on demand")
+    clipboard = QApplication.clipboard()
+    client = FakeClient()
+    sync = ClipboardSync(client, ClipboardConfig(mode="desktop_to_phone"), helper=FakeHelper())
+    pulled: list[tuple[str, str]] = []
+    sync.pulled.connect(lambda text, source: pulled.append((text, source)))
+    clipboard.setText("before", QClipboard.Mode.Clipboard)
+
+    sync.pull(force=True)
+    check("a forced pull asks for the newest clipboard",
+          client.sent and client.sent[-1].get("latest") is True, str(client.sent))
+    check("and applies it even when syncing only sends",
+          clipboard.text(QClipboard.Mode.Clipboard) == "from the phone")
+    check("and says so", pulled and pulled[-1][0] == "from the phone", str(pulled))
+
+    text, copied_at = sync.state()
+    check("this computer reports its clipboard", text == "from the phone", text)
+    check("and when it changed", copied_at > 0, str(copied_at))
+
+    print("\n-- answering the phone")
+    hub_module.Hub._apply_codec_preference = lambda self: None
+    hub_module.Hub._watch_bluetooth = lambda self: None
+    config = Config()
+    config.features.clipboard = True
+    hub = hub_module.Hub(config)
+    sent: list[dict] = []
+    hub.companion.send = sent.append
+    clipboard.setText("latest on this computer", QClipboard.Mode.Clipboard)
+    app.processEvents()
+    hub.companion.clipboardQueried.emit(7)
+    answer = sent[-1] if sent else {}
+    check("the query is answered with the same id", answer.get("rid") == 7, str(answer))
+    check("carrying the text and time",
+          answer.get("text") == "latest on this computer" and answer.get("copiedAt", 0) > 0,
+          str(answer))
+    config.features.clipboard = False
+    hub.companion.clipboardQueried.emit(8)
+    check("nothing is shared when clipboard sharing is off",
+          sent[-1].get("text") == "", str(sent[-1]))
+
+    from tessera.backends.companion import CompanionClient
+    auth = CompanionClient()._auth_message()
+    check("the computer names itself when it connects", bool(auth.get("name")), str(auth))
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     routes(app)
@@ -207,6 +253,7 @@ def main() -> int:
     receiving(app)
     helper_lines(app)
     hub_wiring(app)
+    forcing(app)
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failed")

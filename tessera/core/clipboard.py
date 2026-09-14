@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QClipboard, QGuiApplication
@@ -32,6 +33,9 @@ class ClipboardSync(QObject):
     sent = Signal(str)        # text pushed to the phone
     received = Signal(str)    # text taken from the phone
     errorOccurred = Signal(str)
+    #: A forced pull finished: the text and where it came from.
+    pulled = Signal(str, str)
+    pullFailed = Signal(str)
 
     #: Qt can emit several change signals for one copy; coalesce them.
     DEBOUNCE_MS = 250
@@ -47,6 +51,10 @@ class ClipboardSync(QObject):
             helper.changed.connect(self.apply_remote)
         self._applied: str | None = None      # last value we set locally
         self._last_sent: str | None = None
+        #: When this computer's clipboard last changed, in ms since the epoch.
+        self._changed_at = 0
+        #: The adb helper's next answer is a forced pull.
+        self._force_next = False
 
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
@@ -96,7 +104,16 @@ class ClipboardSync(QObject):
 
     # -- desktop -> phone ----------------------------------------------------
 
+    def state(self) -> tuple[str, int]:
+        """This computer's clipboard text and when it last changed."""
+        clipboard = QGuiApplication.clipboard()
+        text = clipboard.text(QClipboard.Mode.Clipboard) if clipboard is not None else ""
+        if len(text) > MAX_LENGTH:
+            text = ""
+        return text, self._changed_at
+
     def _on_local_change(self) -> None:
+        self._changed_at = int(time.time() * 1000)
         if not self._sends:
             return
         self._debounce.start(self.DEBOUNCE_MS)
@@ -125,9 +142,13 @@ class ClipboardSync(QObject):
 
     # -- phone -> desktop ----------------------------------------------------
 
-    def apply_remote(self, text: str) -> None:
+    def apply_remote(self, text: str, force: bool = False) -> None:
         """Put text from the phone on the local clipboard."""
-        if not self._receives or not text:
+        if self._force_next:
+            self._force_next, force = False, True
+            if text:
+                self.pulled.emit(text, "phone")
+        if (not self._receives and not force) or not text:
             return
         if len(text) > MAX_LENGTH:
             return
@@ -142,21 +163,37 @@ class ClipboardSync(QObject):
         clipboard.setText(text, QClipboard.Mode.Clipboard)
         self.received.emit(text)
 
-    def pull(self) -> None:
-        """Ask the phone for its clipboard, for an explicit 'paste from phone'."""
+    def pull(self, force: bool = False) -> None:
+        """Copy the phone's clipboard here now; *force* ignores the sync direction."""
         route = self.route
+        failed = self.pullFailed.emit if force else self.errorOccurred.emit
         if route == "adb":
             # The answer arrives as an ordinary change, through apply_remote.
+            self._force_next = force
             self._helper.pull()
             return
         if not route:
-            self.errorOccurred.emit(
+            failed(
                 "The phone's clipboard is out of reach: connect adb, start "
                 "Shizuku, or switch on Tessera under the phone's Accessibility "
                 "settings."
             )
             return
         self._client.request(
-            {"t": "clipboard_get"},
-            lambda reply: self.apply_remote(str(reply.get("text", ""))),
+            {"t": "clipboard_get", "latest": True},
+            lambda reply: self._on_pulled(reply, force),
         )
+
+    def _on_pulled(self, reply: dict, force: bool) -> None:
+        text = str(reply.get("text", ""))
+        if reply.get("t") == "error":
+            (self.pullFailed if force else self.errorOccurred).emit(
+                str(reply.get("message") or "The phone refused.")
+            )
+            return
+        if force and not text:
+            self.pullFailed.emit("Nothing to copy: the phone's clipboard is empty.")
+            return
+        self.apply_remote(text, force=force)
+        if force:
+            self.pulled.emit(text, str(reply.get("from") or "phone"))

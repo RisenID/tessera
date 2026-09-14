@@ -26,16 +26,19 @@ A binary frame belongs to the JSON frame right before it, which has
 ```
 desktop -> phone   {"t":"hello","v":1,"client":"tessera-linux"}
 phone   -> desktop {"t":"hello","v":1,"id":"...","name":"Galaxy S25","model":"SM-S931B"}
-desktop -> phone   {"t":"auth","token":"<token>"}
+desktop -> phone   {"t":"auth","token":"<token>","name":"My laptop"}
 phone   -> desktop {"t":"auth_ok","caps":["notifications","dnd",...]}
 ```
 
 Pairing, when there is no token:
 
 ```
-desktop -> phone   {"t":"pair","code":"839201"}
+desktop -> phone   {"t":"pair","code":"839201","name":"My laptop"}
 phone   -> desktop {"t":"pair_ok","token":"<64 hex>"}
 ```
+
+`name` labels the computer in the phone's paired list, where it can be removed.
+A reconnecting computer replaces its older connection with the same token.
 
 Codes last 60 seconds. `caps` lists only what the user granted.
 
@@ -158,7 +161,11 @@ piped into ffmpeg → v4l2loopback.
 | --- | --- | --- |
 | `{"t":"clipboard","text"}` | phone → desktop | Clipboard changed |
 | `{"t":"clipboard_set","text"}` | desktop → phone | Set clipboard |
-| `{"t":"clipboard_get"}` | desktop → phone | Read once |
+| `{"t":"clipboard_get","latest"}` | desktop → phone | Read once; with `latest`, the newest of the phone and other computers, answered with `text` and `from` |
+| `{"t":"clipboard_query","req"}` | phone → desktop | Ask for this computer's clipboard |
+| `{"t":"clipboard_state","rid","text","copiedAt"}` | desktop → phone | Answer; `copiedAt` is ms since the epoch |
+
+A computer's `clipboard_set` is relayed to the other connected computers, not back to the sender.
 
 Background apps can't read the clipboard, so the first available route is used:
 

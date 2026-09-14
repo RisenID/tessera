@@ -25,6 +25,11 @@ object ClipboardWatcher {
     @Volatile
     private var lastSeen: String? = null
 
+    /** When the clipboard last changed, as far as Tessera saw. 0 if unknown. */
+    @Volatile
+    var changedAt: Long = 0L
+        private set
+
     /** Whether a desktop wants clipboard changes at all. */
     val watching: Boolean
         get() = users > 0
@@ -99,6 +104,7 @@ object ClipboardWatcher {
     /** Records a value the desktop just sent, so it is not echoed straight back. */
     fun note(text: String) {
         lastSeen = text
+        changedAt = System.currentTimeMillis()
     }
 
     /** Reads once, now, and announces a change. Blocks; not on the main thread. */
@@ -107,6 +113,7 @@ object ClipboardWatcher {
         val current = runCatching { ClipboardBridge.read() }.getOrNull() ?: return
         if (current == lastSeen || current.isEmpty()) return
         lastSeen = current
+        changedAt = System.currentTimeMillis()
         Bus.publish(JSONObject().put("t", "clipboard").put("text", current))
     }
 
@@ -116,6 +123,7 @@ object ClipboardWatcher {
         val current = runCatching { ClipboardBridge.read() }.getOrNull() ?: return
         if (current == lastSeen || current.isEmpty()) return
         lastSeen = current
+        changedAt = System.currentTimeMillis()
         Bus.publish(JSONObject().put("t", "clipboard").put("text", current))
     }
 }

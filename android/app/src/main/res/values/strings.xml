@@ -44,6 +44,18 @@
     <string name="pairing_show">Show pairing code</string>
     <string name="pairing_hint">Not found automatically? Enter %1$s on your computer.</string>
     <string name="pairing_expires">This code expires in 60 seconds.</string>
+    <string name="computers_title">Paired computers</string>
+    <string name="computers_none">No computers paired yet</string>
+    <string name="computer_connected">Connected</string>
+    <string name="computer_last_seen">Last connected %1$s</string>
+    <string name="computer_never">Not connected yet</string>
+    <string name="computer_remove">Remove</string>
+    <string name="computer_remove_title">Remove %1$s?</string>
+    <string name="computer_remove_body">It will be disconnected and must be paired again to reconnect.</string>
+    <string name="clipboard_pull">Get computer\'s clipboard</string>
+    <string name="clipboard_pulled">Copied from %1$s</string>
+    <string name="clipboard_pull_none">No connected computer had anything to copy</string>
+    <string name="clipboard_pull_offline">Tessera isn\'t running</string>
     <string name="fingerprint_label">Certificate fingerprint</string>
 
     <!-- Setup checklist -->

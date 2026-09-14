@@ -16,9 +16,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.google.android.material.color.DynamicColors
 import dev.tessera.companion.databinding.ActivityMainBinding
+import android.text.format.DateUtils
+import android.widget.Toast
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import dev.tessera.companion.databinding.ViewComputerRowBinding
 import dev.tessera.companion.databinding.ViewSetupRowBinding
 import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.ClipboardBridge
+import dev.tessera.companion.features.ClipboardWatcher
 import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NotificationBridge
@@ -65,6 +70,7 @@ class MainActivity : AppCompatActivity() {
         buildRows()
 
         binding.pairButton.setOnClickListener { showPairingCode() }
+        binding.clipboardPull.setOnClickListener { pullClipboard() }
         binding.startService.setOnClickListener {
             TesseraService.start(this)
             refresh()
@@ -316,6 +322,7 @@ class MainActivity : AppCompatActivity() {
         binding.pairedCount.text = resources.getQuantityString(
             R.plurals.paired_computers, store.pairedCount, store.pairedCount
         )
+        renderComputers()
         binding.addressText.text = address()
 
         // Grouped in fours, the way a fingerprint is normally read aloud.
@@ -357,6 +364,85 @@ class MainActivity : AppCompatActivity() {
         )
         binding.shizukuButton.visibility =
             if (PrivilegedShell.hasPermission()) View.GONE else View.VISIBLE
+    }
+
+    override fun onStart() {
+        super.onStart()
+        TesseraService.onSessionsChanged = { runOnUiThread { refresh() } }
+    }
+
+    override fun onStop() {
+        TesseraService.onSessionsChanged = null
+        super.onStop()
+    }
+
+    private fun renderComputers() {
+        val list = binding.computersList
+        list.removeAllViews()
+        val connected = TesseraService.running_instance?.connectedTokens().orEmpty()
+        val computers = store.computers()
+        binding.clipboardPull.isEnabled = connected.isNotEmpty()
+        if (computers.isEmpty()) {
+            val empty = ViewComputerRowBinding.inflate(layoutInflater, list, false)
+            empty.computerName.setText(R.string.computers_none)
+            empty.computerDetail.visibility = View.GONE
+            empty.computerRemove.visibility = View.GONE
+            list.addView(empty.root)
+            return
+        }
+        for (computer in computers) {
+            val row = ViewComputerRowBinding.inflate(layoutInflater, list, false)
+            row.computerName.text = computer.name
+            row.computerDetail.text = when {
+                computer.token in connected -> getString(R.string.computer_connected)
+                computer.lastSeen > 0 -> getString(
+                    R.string.computer_last_seen,
+                    DateUtils.getRelativeTimeSpanString(computer.lastSeen),
+                )
+                else -> getString(R.string.computer_never)
+            }
+            row.computerRemove.setOnClickListener { confirmRemove(computer) }
+            list.addView(row.root)
+        }
+    }
+
+    private fun confirmRemove(computer: Store.Computer) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.computer_remove_title, computer.name))
+            .setMessage(R.string.computer_remove_body)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.computer_remove) { _, _ ->
+                store.revoke(computer.token)
+                TesseraService.running_instance?.disconnect(computer.token)
+                refresh()
+            }
+            .show()
+    }
+
+    /** Copies the most recently copied clipboard from the connected computers. */
+    private fun pullClipboard() {
+        val service = TesseraService.running_instance
+        if (service == null) {
+            Toast.makeText(this, R.string.clipboard_pull_offline, Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.clipboardPull.isEnabled = false
+        service.latestClipboard { text, from ->
+            runOnUiThread {
+                binding.clipboardPull.isEnabled = true
+                if (text.isNullOrEmpty()) {
+                    Toast.makeText(this, R.string.clipboard_pull_none, Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                // This activity has focus, so a direct write is allowed.
+                ClipboardWatcher.note(text)
+                if (!ClipboardBridge.writeDirect(this, text)) ClipboardBridge.write(text)
+                Toast.makeText(
+                    this, getString(R.string.clipboard_pulled, from ?: "your computer"),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
     }
 
     private fun colorAttr(attr: Int): Int {

@@ -482,6 +482,16 @@ class MainWindow(QMainWindow):
         mirror_action = QAction("Mirror phone screen", self)
         mirror_action.triggered.connect(self._mirror_from_tray)
         menu.addAction(mirror_action)
+
+        clipboard_action = QAction("Copy phone clipboard", self)
+        clipboard_action.triggered.connect(lambda: self.hub.clipboard.pull(force=True))
+        menu.addAction(clipboard_action)
+        self.hub.clipboard.pulled.connect(
+            lambda _text, source: self._set_status(
+                f"Copied the clipboard from {'the phone' if source == 'phone' else source}"
+            )
+        )
+        self.hub.clipboard.pullFailed.connect(self._set_status)
         menu.addSeparator()
 
         quit_action = QAction("Quit", self)

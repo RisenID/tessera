@@ -93,6 +93,18 @@ class Session(
     var token: String = ""
         private set
 
+    /** The computer's own name, as it sent it. */
+    @Volatile
+    var computerName: String = ""
+        private set
+
+    /** Tags events this session caused, so they are not echoed back to it. */
+    private val key = Store.randomHex(8)
+
+    /** Requests this phone made of the desktop, by id. */
+    private val queries = java.util.concurrent.ConcurrentHashMap<Int, (JSONObject?) -> Unit>()
+    private val nextQuery = java.util.concurrent.atomic.AtomicInteger(1)
+
     val isAuthenticated: Boolean
         get() = authenticated
 
@@ -162,7 +174,7 @@ class Session(
 
             "pair" -> {
                 if (Pairing.consume(message.optString("code"))) {
-                    val token = store.addToken()
+                    val token = store.addToken(message.optString("name"))
                     send(JSONObject().put("t", "pair_ok").put("token", token))
                 } else {
                     send(
@@ -177,11 +189,14 @@ class Session(
                     authenticated = true
                     token = message.optString("token")
                     role = message.optString("role")
+                    computerName = message.optString("name")
+                    store.noteComputer(token, computerName)
                     send(
                         JSONObject()
                             .put("t", "auth_ok")
                             .put("caps", org.json.JSONArray(capabilities()))
                     )
+                    TesseraService.running_instance?.onAuthenticated(this)
                 } else {
                     send(
                         JSONObject().put("t", "auth_fail")
@@ -253,6 +268,10 @@ class Session(
         // "req", not "id": commands like media_get and notif_dismiss carry their
         // own "id", and reusing that key overwrote them.
         val id = if (message.has("req")) message.optInt("req") else null
+        if (message.has("rid")) {
+            queries.remove(message.optInt("rid"))?.invoke(message)
+            return
+        }
         when (val kind = message.optString("t")) {
             "sub" -> subscribe()
 
@@ -540,12 +559,27 @@ class Session(
                 ClipboardWatcher.note(text)
                 if (!ClipboardBridge.write(text)) {
                     fail(id, "The phone would not let Tessera set the clipboard.")
+                } else {
+                    // Pass it on to any other connected computer.
+                    Bus.publish(
+                        JSONObject().put("t", "clipboard").put("text", text).put("origin", key)
+                    )
                 }
             }
 
-            "clipboard_get" -> reply(
-                id, JSONObject().put("text", ClipboardBridge.read().orEmpty())
-            )
+            "clipboard_get" -> {
+                val own = ClipboardBridge.read()
+                val service = TesseraService.running_instance
+                if (!message.optBoolean("latest") || service == null) {
+                    reply(id, JSONObject().put("text", own.orEmpty()))
+                } else {
+                    // The newest of the phone's clipboard and the other computers'.
+                    val phone = own?.let { Store.Computer("", "phone", ClipboardWatcher.changedAt) to it }
+                    service.latestClipboard(exclude = this, phone = phone) { text, from ->
+                        reply(id, JSONObject().put("text", text.orEmpty()).put("from", from.orEmpty()))
+                    }
+                }
+            }
 
             "calls_recent" -> reply(
                 id,
@@ -602,7 +636,13 @@ class Session(
 
     private fun subscribe() {
         if (subscriber != null) return
-        val listener = Bus.Subscriber { event -> send(event) }
+        val listener = Bus.Subscriber { event ->
+            if (!event.has("origin")) {
+                send(event)
+            } else if (event.optString("origin") != key) {
+                send(JSONObject(event.toString()).apply { remove("origin") })
+            }
+        }
         subscriber = listener
         Bus.subscribe(listener)
         ClipboardWatcher.addUser(context)
@@ -785,6 +825,17 @@ class Session(
         startNextOutgoing()
     }
 
+    /** Asks the desktop for its clipboard and when it last changed. Null if unanswerable. */
+    fun queryClipboard(callback: (JSONObject?) -> Unit) {
+        if (!open.get() || !authenticated || role.isNotEmpty()) {
+            callback(null)
+            return
+        }
+        val id = nextQuery.getAndIncrement()
+        queries[id] = callback
+        send(JSONObject().put("t", "clipboard_query").put("req", id))
+    }
+
     /** Text shared from the phone, put on the desktop's clipboard. */
     fun offerText(text: String) {
         if (!open.get() || !authenticated || text.isEmpty()) return
@@ -953,6 +1004,8 @@ class Session(
         // interrupted transfer must not look like a complete download.
         incoming.values.forEach { it.discard() }
         incoming.clear()
+        queries.values.forEach { runCatching { it(null) } }
+        queries.clear()
         toSend.clear()
         outgoing?.cancel()
         outgoing?.close()

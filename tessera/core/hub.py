@@ -240,6 +240,7 @@ class Hub(QObject):
         self.companion.notificationRemoved.connect(self.remove_notification)
         self.companion.dndChanged.connect(self._on_phone_dnd)
         self.companion.clipboardChanged.connect(self.clipboard.apply_remote)
+        self.companion.clipboardQueried.connect(self._answer_clipboard_query)
         # Whether the adb route is needed changes with what the phone offers.
         self.companion.connectedChanged.connect(lambda _c: self.update_clipboard_route())
         self.companion.capabilitiesChanged.connect(lambda _c: self.update_clipboard_route())
@@ -475,6 +476,15 @@ class Hub(QObject):
             self.clipboard_adb.start(self._serial)
         elif self.clipboard_adb.serial:
             self.clipboard_adb.stop()
+
+    def _answer_clipboard_query(self, req: int) -> None:
+        """The phone wants this computer's clipboard, to pick the newest one."""
+        text, copied_at = ("", 0)
+        if self.config.features.clipboard:
+            text, copied_at = self.clipboard.state()
+        self.companion.send(
+            {"t": "clipboard_state", "rid": req, "text": text, "copiedAt": copied_at}
+        )
 
     # -- webcam ---------------------------------------------------------------
 

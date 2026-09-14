@@ -270,6 +270,8 @@ class CompanionClient(QObject):
     notificationRemoved = Signal(str)
     dndChanged = Signal(str)
     clipboardChanged = Signal(str)
+    #: The phone asks for this computer's clipboard; the argument is the request id.
+    clipboardQueried = Signal(int)
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
     batteryChanged = Signal(int, bool)
@@ -661,14 +663,16 @@ class CompanionClient(QObject):
         self.phone.device_id = message.get("id", "") or self.phone.device_id
 
         if self._pair_code:
-            self._send({"t": "pair", "code": self._pair_code})
+            self._send({"t": "pair", "code": self._pair_code, "name": computer_name()})
         elif self.phone.token:
             self._send(self._auth_message())
         else:
             self.pairingRequired.emit()
 
     def _auth_message(self) -> dict[str, Any]:
-        message: dict[str, Any] = {"t": "auth", "token": self.phone.token}
+        message: dict[str, Any] = {
+            "t": "auth", "token": self.phone.token, "name": computer_name(),
+        }
         if self.role:
             message["role"] = self.role
         return message
@@ -735,6 +739,9 @@ class CompanionClient(QObject):
 
     def _recv_clipboard(self, message: dict[str, Any]) -> None:
         self.clipboardChanged.emit(str(message.get("text", "")))
+
+    def _recv_clipboard_query(self, message: dict[str, Any]) -> None:
+        self.clipboardQueried.emit(int(message.get("req", 0)))
 
     def _recv_media(self, message: dict[str, Any]) -> None:
         self.mediaChanged.emit(message)
@@ -893,6 +900,21 @@ def _fingerprint(certificate: QSslCertificate) -> str:
 
     digest = certificate.digest(QCryptographicHash.Algorithm.Sha256)
     return bytes(digest).hex()
+
+
+def computer_name() -> str:
+    """This computer's name, for the phone's list of paired computers."""
+    try:
+        with open("/etc/machine-info", encoding="utf-8") as info:
+            for line in info:
+                if line.startswith("PRETTY_HOSTNAME="):
+                    pretty = line.split("=", 1)[1].strip().strip('"')
+                    if pretty:
+                        return pretty
+    except OSError:
+        pass
+    import socket
+    return socket.gethostname().split(".")[0] or "Computer"
 
 
 def generate_token() -> str:

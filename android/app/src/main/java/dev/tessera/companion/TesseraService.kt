@@ -92,6 +92,7 @@ class TesseraService : Service() {
                         } finally {
                             sessions.remove(session)
                             updateNotification(statusText())
+                            onSessionsChanged?.invoke()
                         }
                     }
                     updateNotification(statusText())
@@ -287,7 +288,74 @@ class TesseraService : Service() {
         return desktops.size
     }
 
-    private fun statusText(): String = when (val count = sessions.count { it.role.isEmpty() }) {
+    /** A computer that reconnects replaces its old connection, which may be dead. */
+    fun onAuthenticated(session: Session) {
+        sessions.filter {
+            it !== session && it.isAuthenticated && it.token == session.token && it.role == session.role
+        }.forEach(Session::close)
+        updateNotification(statusText())
+        onSessionsChanged?.invoke()
+    }
+
+    /** Tokens of the computers connected right now. */
+    fun connectedTokens(): Set<String> =
+        sessions.filter { it.isAuthenticated }.map { it.token }.toSet()
+
+    fun disconnect(token: String) {
+        sessions.filter { it.token == token }.forEach(Session::close)
+        updateNotification(statusText())
+    }
+
+    /**
+     * The most recently copied clipboard among the connected computers (and [phone], if given).
+     * Calls back once, with null text if nobody had anything.
+     */
+    fun latestClipboard(
+        exclude: Session? = null,
+        phone: Pair<Store.Computer, String>? = null,
+        callback: (text: String?, from: String?) -> Unit,
+    ) {
+        val lock = Any()
+        var bestText: String? = phone?.second
+        var bestAt = phone?.first?.lastSeen ?: -1L
+        var bestFrom: String? = phone?.first?.name
+        val targets = sessions
+            .filter { it !== exclude && it.isAuthenticated && it.role.isEmpty() }
+            .distinctBy { it.token }
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        fun finish() {
+            if (finished.compareAndSet(false, true)) {
+                synchronized(lock) { callback(bestText, bestFrom) }
+            }
+        }
+        if (targets.isEmpty()) {
+            finish()
+            return
+        }
+        val remaining = java.util.concurrent.atomic.AtomicInteger(targets.size)
+        for (session in targets) {
+            session.queryClipboard { answer ->
+                val text = answer?.optString("text").orEmpty()
+                val at = answer?.optLong("copiedAt") ?: 0L
+                if (text.isNotEmpty()) {
+                    synchronized(lock) {
+                        if (bestText == null || at > bestAt) {
+                            bestText = text
+                            bestAt = at
+                            bestFrom = session.computerName.ifBlank { "your computer" }
+                        }
+                    }
+                }
+                if (remaining.decrementAndGet() == 0) finish()
+            }
+        }
+        Handler(Looper.getMainLooper()).postDelayed(::finish, CLIPBOARD_WAIT_MS)
+    }
+
+    private fun statusText(): String = when (
+        val count = sessions.filter { it.isAuthenticated && it.role.isEmpty() }
+            .map { it.token }.distinct().size
+    ) {
         0 -> "Ready on port ${tls.localPort}"
         1 -> "Connected to 1 computer"
         else -> "Connected to $count computers"
@@ -371,6 +439,12 @@ class TesseraService : Service() {
         @Volatile
         var running_instance: TesseraService? = null
             private set
+
+        /** Called when a computer connects or disconnects. */
+        @Volatile
+        var onSessionsChanged: (() -> Unit)? = null
+
+        private const val CLIPBOARD_WAIT_MS = 2_500L
 
         private const val CHANNEL_ID = "tessera-status"
         private const val CONSENT_CHANNEL_ID = "tessera-consent"

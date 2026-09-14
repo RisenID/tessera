@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -677,6 +678,11 @@ class DevicePanel(QWidget):
             self.hub.config.features.clipboard
             and self.hub.config.clipboard.mode != "off"
         )
+        self.clipboard_toggle.setToolTip(
+            "Clipboard sharing \N{EM DASH} right-click to copy the phone's clipboard"
+        )
+        self.clipboard_toggle.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.clipboard_toggle.customContextMenuRequested.connect(self._clipboard_menu)
         # Named because the readings and the sync signals reach for them.
         self.dnd_toggle = self.tiles["dnd"]
         self.ringer_tile = self.tiles["ringer"]
@@ -937,6 +943,11 @@ class DevicePanel(QWidget):
         self.statusMessage.emit(
             "Clipboard sharing on" if on else "Clipboard sharing off"
         )
+
+    def _clipboard_menu(self, position) -> None:
+        menu = QMenu(self)
+        menu.addAction("Copy phone clipboard now", lambda: self.hub.clipboard.pull(force=True))
+        menu.exec(self.clipboard_toggle.mapToGlobal(position))
 
     def _ring(self) -> None:
         # The companion app rings the phone itself, on the alarm stream so a
