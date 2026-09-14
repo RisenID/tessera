@@ -71,6 +71,12 @@ class MainActivity : AppCompatActivity() {
 
         binding.pairButton.setOnClickListener { showPairingCode() }
         binding.clipboardPull.setOnClickListener { pullClipboard() }
+        binding.swipeRefresh.setOnRefreshListener {
+            TesseraService.running_instance?.refreshComputerNames()
+            refresh()
+            // Names arrive a moment later and refresh the list again on their own.
+            binding.swipeRefresh.postDelayed({ binding.swipeRefresh.isRefreshing = false }, 600)
+        }
         binding.startService.setOnClickListener {
             TesseraService.start(this)
             refresh()

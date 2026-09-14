@@ -108,6 +108,7 @@ dependencies {
     // the app asks or not, so insets must be handled explicitly.
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
