@@ -49,8 +49,10 @@ first start asks for administrator approval to copy the DLL to
 ## Phone storage
 
 `backends/storage_win.py` runs `sshfs.exe` on the first free letter from Z:,
-trusting only the key the phone sent over the paired link. Log:
-`%LOCALAPPDATA%\Tessera\sshfs.log`.
+trusting only the key the phone sent over the paired link. The drive gets a
+phone icon and the phone's name (per-user Explorer keys, removed on unmount).
+Its size comes from the companion's `statvfs@openssh.com`, which MINA SSHD
+lacks. Log: `%LOCALAPPDATA%\Tessera\sshfs.log`.
 
 ## Install
 
@@ -75,6 +77,19 @@ Python 3.11+ and Visual Studio Build Tools (C++):
 
 Builds and self-tests the camera component, runs PyInstaller, checks the
 frozen app imports everything, and writes the zip and installer.
+
+The companion app: JDK 21, the Android SDK in `%LOCALAPPDATA%\Android\Sdk`,
+and Gradle 9.6+ unpacked in `%LOCALAPPDATA%\Programs`.
+
+```powershell
+.\scripts\build-companion.ps1            # debug, installs over adb
+.\scripts\build-companion.ps1 release    # signed
+```
+
+Release signing reads `%USERPROFILE%\.gradle\gradle.properties`:
+`TESSERA_KEYSTORE`, `TESSERA_KEYSTORE_PASSWORD`, optionally
+`TESSERA_KEY_ALIAS` and `TESSERA_KEY_PASSWORD`. Output goes to
+`%USERPROFILE%\android\build\tessera`.
 
 ## Testing
 
