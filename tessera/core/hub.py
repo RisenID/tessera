@@ -175,6 +175,8 @@ class Hub(QObject):
         self.storage_message = ""
         #: Bumped by every mount and unmount, so a late result can tell it is stale.
         self._storage_generation = 0
+        #: A Cloud Files mount kept through a dropped link, remounted on reconnect.
+        self._storage_stale = False
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -773,7 +775,7 @@ class Hub(QObject):
             and self.config.storage.auto_mount
             and "storage_allowed" in capabilities
             and storage.backend()
-            and self.storage_mount is None
+            and (self.storage_mount is None or self._storage_stale)
             and self.storage_state != "starting"
         ):
             self.mount_storage()
@@ -783,7 +785,7 @@ class Hub(QObject):
         if not self.config.features.storage:
             self._storage("idle", "Phone storage is switched off in Settings.")
             return
-        if self.storage_mount is not None or self.storage_state == "starting":
+        if (self.storage_mount is not None and not self._storage_stale) or self.storage_state == "starting":
             return
         if not storage.backend():
             self._storage("error", storage.missing_advice())
@@ -832,6 +834,7 @@ class Hub(QObject):
                 self._storage("idle", "")
             return
         self.storage_mount = mounted
+        self._storage_stale = False
         self._storage("mounted", str(mounted.local_path or mounted.location))
 
     def _on_storage_failed(self, message: str, generation: int) -> None:
@@ -843,6 +846,7 @@ class Hub(QObject):
 
     def unmount_storage(self, tell_phone: bool = True) -> None:
         self._storage_generation += 1
+        self._storage_stale = False
         mounted, self.storage_mount = self.storage_mount, None
         if tell_phone and self.companion.connected:
             self.companion.send({"t": "storage_stop"})
@@ -868,7 +872,14 @@ class Hub(QObject):
         self.companion.request({"t": "storage_grant"}, replied)
 
     def _on_link_for_storage(self, connected: bool) -> None:
-        if not connected and (self.storage_mount is not None or self.storage_state == "starting"):
+        if connected:
+            return
+        mounted = self.storage_mount
+        if mounted is not None and mounted.backend == storage.CLOUD and self.storage_state != "starting":
+            # A stopped provider makes Explorer say "not running"; keep it and remount on reconnect.
+            self._storage_stale = True
+            return
+        if mounted is not None or self.storage_state == "starting":
             self.unmount_storage(tell_phone=False)
 
     def _unmount_now(self) -> None:

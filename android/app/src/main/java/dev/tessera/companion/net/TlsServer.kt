@@ -24,6 +24,9 @@ class TlsServer {
     val localPort: Int
         get() = serverSocket?.localPort ?: -1
 
+    val listening: Boolean
+        get() = serverSocket?.isClosed == false
+
     fun start(port: Int): SSLServerSocket {
         val keyStore = androidKeyStore()
         ensureIdentity(keyStore)

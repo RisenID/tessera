@@ -278,6 +278,24 @@ def orchestration(app: QApplication) -> None:
         check("without telling a phone that is not there",
               not any(m.get("t") == "storage_stop" for m in sent))
 
+        storage.mount = lambda info, name, sidebar=True: (
+            mounts.append(info) or Mount(storage.CLOUD, "C:/phone", name))
+        hub, sent, asked, replies = make_hub()
+        replies["storage_start"] = REPLY
+        connect(hub, ["storage", "storage_allowed"])
+        mounts.clear()
+        unmounts.clear()
+        hub.companion._authenticated = False
+        hub.companion.connectedChanged.emit(False)
+        check("a Cloud Files mount is kept through a dropped link",
+              not unmounts and hub.storage_mount is not None)
+        connect(hub, ["storage", "storage_allowed"])
+        check("and mounted again on reconnect",
+              len(mounts) == 1 and hub.storage_state == "mounted" and not hub._storage_stale,
+              hub.storage_state)
+        storage.mount = lambda info, name, sidebar=True: (
+            mounts.append(info) or Mount(storage.SSHFS, "/tmp/phone", name))
+
         hub, sent, asked, replies = make_hub()
         hub.config.storage.auto_mount = False
         replies["storage_start"] = REPLY

@@ -83,7 +83,17 @@ class TesseraService : Service() {
                 updateNotification("Ready on port ${tls.localPort}")
 
                 while (running) {
-                    val socket = tls.accept() ?: break
+                    val socket = tls.accept()
+                    if (socket == null) {
+                        if (!running) break
+                        // A failed accept (e.g. a probe reset before it was taken) must not end the listener.
+                        if (!tls.listening) {
+                            runCatching { tls.stop(); tls.start(store.port) }
+                                .onFailure { Log.w(TAG, "could not reopen the listener", it) }
+                        }
+                        Thread.sleep(if (tls.listening) 50 else 2_000)
+                        continue
+                    }
                     val session = Session(applicationContext, socket, store)
                     sessions.add(session)
                     workers.execute {
