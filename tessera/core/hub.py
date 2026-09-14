@@ -482,6 +482,11 @@ class Hub(QObject):
             self.dnd.set_serial(serial)
             self.adbChanged.emit(bool(serial))
             self.update_clipboard_route()
+            if serial:
+                # Android 15 hides one-time codes from the companion without this.
+                submit(adb.try_shell, serial,
+                       "appops set dev.tessera.companion RECEIVE_SENSITIVE_NOTIFICATIONS allow",
+                       on_error=lambda message: log.debug("sensitive notifications: %s", message))
 
     def update_clipboard_route(self) -> None:
         """Run the adb clipboard helper exactly when it is the only way."""

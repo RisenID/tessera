@@ -133,6 +133,18 @@ def receiving(app: QApplication) -> None:
     settle(app, sync)
     check("and is not sent straight back", helper.sent == [], str(helper.sent))
 
+    clipboard.setText("copied here later", QClipboard.Mode.Clipboard)
+    settle(app, sync)
+    helper.changed.emit("copied on the phone")
+    app.processEvents()
+    check("the phone repeating its old text does not replace a newer copy here",
+          clipboard.text(QClipboard.Mode.Clipboard) == "copied here later",
+          clipboard.text(QClipboard.Mode.Clipboard))
+    helper.changed.emit("a new phone copy")
+    app.processEvents()
+    check("but a new phone copy still arrives",
+          clipboard.text(QClipboard.Mode.Clipboard) == "a new phone copy")
+
     sync.pull()
     check("asking for the phone's clipboard goes to the helper", helper.pulled == 1)
 

@@ -20,6 +20,8 @@ class NotificationBridge : NotificationListenerService() {
         super.onListenerConnected()
         instance = this
         Log.i(TAG, "notification listener connected")
+        val context = applicationContext
+        Thread({ SensitiveNotifications.ensure(context) }, "tessera-sensitive").start()
 
         // The platform binds this listener on boot, after an update and after the process is
         // reclaimed, which makes it a far more dependable trigger than BOOT_COMPLETED for

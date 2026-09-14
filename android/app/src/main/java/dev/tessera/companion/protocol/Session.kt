@@ -568,10 +568,16 @@ class Session(
                 val text = message.optString("text")
                 // Remember it first: the watcher must not announce our own
                 // write back to the desktop that sent it.
-                ClipboardWatcher.note(text)
-                if (!ClipboardBridge.write(text)) {
+                ClipboardWatcher.note(text, changed = false)
+                // Read back through Shizuku: a write can be accepted and not take.
+                val stored = ClipboardBridge.write(text) &&
+                    (!ClipboardBridge.viaShizuku() || ClipboardBridge.read().let { it == null || it == text })
+                if (!stored) {
+                    // What is still there is not a new copy.
+                    ClipboardBridge.read()?.let { ClipboardWatcher.note(it, changed = false) }
                     fail(id, "The phone would not let Tessera set the clipboard.")
                 } else {
+                    ClipboardWatcher.note(text)
                     // Pass it on to any other connected computer.
                     Bus.publish(
                         JSONObject().put("t", "clipboard").put("text", text).put("origin", key)
@@ -680,6 +686,8 @@ class Session(
         NowPlaying.activeContext = context
         NowPlaying.addUser(context)
         PhoneStatus.addUser(context)
+        // Shizuku may have started since the listener connected.
+        dev.tessera.companion.features.SensitiveNotifications.ensure(context)
 
         // Current state now, rather than at the next change.
         sendSnapshot(null)

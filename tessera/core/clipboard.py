@@ -158,6 +158,9 @@ class ClipboardSync(QObject):
             return
         if clipboard.text(QClipboard.Mode.Clipboard) == text:
             return
+        if not force and text == self._applied and self._last_sent is not None:
+            # The phone repeating its old text after this computer copied something newer.
+            return
 
         self._applied = text
         # The phone has something else now, so an earlier send may be needed again.

@@ -101,10 +101,10 @@ object ClipboardWatcher {
         runCatching { context.applicationContext.unregisterReceiver(listener) }
     }
 
-    /** Records a value the desktop just sent, so it is not echoed straight back. */
-    fun note(text: String) {
+    /** Records a value so it is not announced; [changed] when it is a real new copy. */
+    fun note(text: String, changed: Boolean = true) {
         lastSeen = text
-        changedAt = System.currentTimeMillis()
+        if (changed) changedAt = System.currentTimeMillis()
     }
 
     /** Reads once, now, and announces a change. Blocks; not on the main thread. */
