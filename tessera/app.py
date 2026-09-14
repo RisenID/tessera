@@ -25,7 +25,11 @@ def configure_logging(verbose: bool = False) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
     try:
-        handlers.append(logging.FileHandler(directory / "tessera.log"))
+        from logging.handlers import RotatingFileHandler
+
+        handlers.append(RotatingFileHandler(
+            directory / "tessera.log", maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8"
+        ))
     except OSError:
         pass  # a read-only home should not stop the app starting
     logging.basicConfig(

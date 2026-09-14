@@ -252,6 +252,9 @@ class WinRT:
                 return made
 
         win._winrt = lambda: (DeviceInformation, AudioPlaybackConnection)
+        # Radio links by address; one not listed is taken as up.
+        self.links: dict[str, bool] = {}
+        win.link_states = lambda: dict(fake.links)
         win._connections.clear()
         win._ids.clear()
 
@@ -305,6 +308,10 @@ def audio_playback_connection() -> None:
     check("and opens nothing, so no audio moves",
           fake.made[0].state == 0 and bluetooth.audio_transport(PHONE) == "")
     check("the phone now reads as connected", bluetooth.find_phone(name_hint="S25").connected)
+    fake.links[PHONE] = False
+    check("but not once its radio link is down",
+          not bluetooth.find_phone(name_hint="S25").connected)
+    fake.links.clear()
     bluetooth.connect_quietly(PHONE)
     check("connecting again uses the same one", len(fake.made) == 1, f"{len(fake.made)} made")
 

@@ -212,9 +212,9 @@ class MainWindow(QMainWindow):
                 tray.showMessage(transfer.name, body,
                                  QSystemTrayIcon.MessageIcon.Information, 6000)
             return
-        notifier.send(
+        notifier.send_async(
             f"{transfer.name}",
-            f"Saved to {transfer.path.parent}" if transfer.path else "Saved",
+            body,
             icon="document-save",
             # Neither of the phone's actions applies to a file on this disk:
             # there is nothing to dismiss on the phone and nothing to reply to.

@@ -13,12 +13,18 @@ object Pairing {
     @Volatile
     private var issuedAt = 0L
 
+    /** Wrong guesses allowed before the code is thrown away. */
+    private const val MAX_FAILURES = 5
+    private var failures = 0
+
     val active: String?
         get() = code?.takeIf { SystemClock.elapsedRealtime() - issuedAt < VALID_MILLIS }
 
+    @Synchronized
     fun issue(): String {
         val generated = Store.pairingCode()
         code = generated
+        failures = 0
         issuedAt = SystemClock.elapsedRealtime()
         return generated
     }
@@ -28,16 +34,19 @@ object Pairing {
     }
 
     /** Checks *candidate* and burns the code on success. */
+    @Synchronized
     fun consume(candidate: String): Boolean {
         val current = active ?: return false
         // Constant-time-ish comparison; the code is short but there is no reason
         // to leak position information.
-        if (candidate.length != current.length) return false
-        var difference = 0
+        var difference = candidate.length xor current.length
         for (index in current.indices) {
-            difference = difference or (candidate[index].code xor current[index].code)
+            difference = difference or ((candidate.getOrNull(index)?.code ?: 0) xor current[index].code)
         }
-        if (difference != 0) return false
+        if (difference != 0) {
+            if (++failures >= MAX_FAILURES) code = null
+            return false
+        }
         code = null
         return true
     }

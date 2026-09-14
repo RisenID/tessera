@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -163,10 +164,11 @@ def conversations(serial: str, limit: int = 500) -> list[Conversation]:
 
 def compose_on_phone(serial: str, address: str, body: str) -> None:
     """Open the phone's messaging app with the message pre-filled."""
-    escaped = body.replace("\\", "\\\\").replace('"', '\\"')
+    # Quoted for the phone's shell: $ and backticks in a message stay text.
     ok, out = adb.try_shell(
         serial,
-        f'am start -a android.intent.action.SENDTO -d "sms:{address}" --es sms_body "{escaped}"',
+        f"am start -a android.intent.action.SENDTO -d {shlex.quote('sms:' + address)} "
+        f"--es sms_body {shlex.quote(body)}",
         timeout=20.0,
     )
     if not ok or "error" in out.lower():

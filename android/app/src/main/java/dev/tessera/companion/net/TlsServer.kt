@@ -41,6 +41,10 @@ class TlsServer {
 
         val socket = (sslContext.serverSocketFactory.createServerSocket() as SSLServerSocket).apply {
             reuseAddress = true
+            // Forward secrecy only: no plain RSA key exchange.
+            enabledCipherSuites = supportedCipherSuites.filter {
+                "_ECDHE_" in it || it.startsWith("TLS_AES_") || it.startsWith("TLS_CHACHA20_")
+            }.toTypedArray().ifEmpty { enabledCipherSuites }
             // Every interface: the desktop may arrive over Wi-Fi or over a
             // USB tether, and the service should not care which.
             bind(InetSocketAddress(port))

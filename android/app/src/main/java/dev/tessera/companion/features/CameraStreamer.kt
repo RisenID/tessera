@@ -40,8 +40,9 @@ class CameraStreamer(
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
 
-    private val thread = HandlerThread("tessera-camera").apply { start() }
-    private val handler = Handler(thread.looper)
+    // Started only once the camera really starts, so a refused start leaks no thread.
+    private val thread = HandlerThread("tessera-camera")
+    private val handler by lazy { Handler(thread.looper) }
     private val running = AtomicBoolean(false)
 
     fun start() {
@@ -50,6 +51,7 @@ class CameraStreamer(
             return
         }
         if (!running.compareAndSet(false, true)) return
+        thread.start()
 
         runCatching {
             startEncoder()
@@ -153,6 +155,7 @@ class CameraStreamer(
 
             override fun onDisconnected(camera: CameraDevice) {
                 Log.i(TAG, "camera disconnected")
+                this@CameraStreamer.onError("The camera was taken by another app.")
                 stop()
             }
 

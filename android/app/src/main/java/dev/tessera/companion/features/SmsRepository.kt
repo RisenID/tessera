@@ -94,8 +94,13 @@ object SmsRepository {
         if (!canSend(context)) return "SMS permission has not been granted on the phone."
         if (address.isBlank()) return "No recipient."
         return runCatching {
-            val manager = context.getSystemService(SmsManager::class.java)
-                ?: return "SMS is not available on this device."
+            // A system service only from Android 12.
+            val manager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            } ?: return "SMS is not available on this device."
             val parts = manager.divideMessage(text)
             if (parts.size > 1) {
                 manager.sendMultipartTextMessage(address, null, parts, null, null)
@@ -116,7 +121,7 @@ object SmsRepository {
 /** Number-to-name lookup, cached per process. */
 object Contacts {
 
-    private val cache = HashMap<String, String>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun nameFor(context: Context, number: String): String {
         if (number.isBlank()) return ""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -49,8 +50,12 @@ def available() -> bool:
     return have(NETSH)
 
 
+#: netsh writes in the console's OEM code page.
+_ENCODING = "oem" if sys.platform.startswith("win") else "utf-8"
+
+
 def _wlan(*args: str, timeout: float = 20.0):
-    return run([NETSH, "wlan", *args], timeout=timeout)
+    return run([NETSH, "wlan", *args], timeout=timeout, encoding=_ENCODING)
 
 
 def active_ssid() -> str:
@@ -58,15 +63,11 @@ def active_ssid() -> str:
     result = _wlan("show", "interfaces")
     if not result.ok:
         return ""
-    connected = False
+    # Keys are translated, but "SSID" is not, and netsh lists it only while joined.
     for raw in result.stdout.splitlines():
-        line = raw.strip()
-        key, _, value = line.partition(":")
-        key, value = key.strip().lower(), value.strip()
-        if key == "state":
-            connected = value.lower() == "connected"
-        elif key == "ssid" and connected and value:
-            return value
+        key, _, value = raw.strip().partition(":")
+        if key.strip().lower() == "ssid" and value.strip():
+            return value.strip()
     return ""
 
 
@@ -86,12 +87,13 @@ def profiles() -> list[str]:
     result = _wlan("show", "profiles")
     if not result.ok:
         return []
+    # Profile rows are the indented "label : name" lines, in any language.
     names = []
     for raw in result.stdout.splitlines():
-        if ":" not in raw or "profile" not in raw.lower():
+        if not raw[:1].isspace() or " : " not in raw:
             continue
-        name = raw.split(":", 1)[1].strip()
-        if name and not name.lower().startswith("all user"):
+        name = raw.split(" : ", 1)[1].strip()
+        if name:
             names.append(name)
     return names
 
@@ -187,14 +189,10 @@ def disconnect(ssid: str = "") -> None:
 
 def addresses() -> list[str]:
     """Every IPv4 address this computer holds, for finding the phone again."""
-    result = run([NETSH, "interface", "ipv4", "show", "addresses"], timeout=20.0)
-    found: list[str] = []
-    for raw in result.stdout.splitlines():
-        line = raw.strip()
-        if not line.lower().startswith("ip address"):
-            continue
-        _, _, value = line.partition(":")
-        value = value.strip()
-        if value and value != "0.0.0.0":
-            found.append(value)
-    return found
+    from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
+
+    return [
+        address.toString() for address in QNetworkInterface.allAddresses()
+        if address.protocol() == QAbstractSocket.NetworkLayerProtocol.IPv4Protocol
+        and not address.isLoopback()
+    ]

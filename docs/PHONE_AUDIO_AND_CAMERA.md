@@ -45,8 +45,6 @@ still captured full signal), so the phone can be muted while the desktop plays.
 2. Virtual camera: companion frames → shared memory → small MIT media source in
    `native/`, registered by an optional elevated step.
 
-Nothing here has been run on Windows.
-
 ## Sources
 
 - [AudioPlaybackConnection](https://learn.microsoft.com/en-us/windows/apps/develop/media-playback/enable-remote-audio-playback), [AudioPlaybackConnector](https://github.com/ysc3839/AudioPlaybackConnector)

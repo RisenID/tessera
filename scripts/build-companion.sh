@@ -12,15 +12,19 @@ mkdir -p "$TESSERA_BUILD_DIR"
 
 VERSION="$(sed -n 's/^Version:[[:space:]]*//p' packaging/tessera.spec)"
 VARIANT=debug
-TASK="${1:-assembleDebug}"
-if [[ ${1:-} == release ]]; then
-    VARIANT=release
-    TASK=assembleRelease
-    if ! grep -qE '^\s*TESSERA_KEYSTORE\s*=' "$HOME/.gradle/gradle.properties" 2>/dev/null; then
-        printf 'No TESSERA_KEYSTORE in ~/.gradle/gradle.properties; cannot sign a release.\n' >&2
-        exit 1
-    fi
-fi
+TASK=assembleDebug
+case "${1:-debug}" in
+    debug) ;;
+    release)
+        VARIANT=release
+        TASK=assembleRelease
+        if ! grep -qE '^\s*TESSERA_KEYSTORE\s*=' "$HOME/.gradle/gradle.properties" 2>/dev/null; then
+            printf 'No TESSERA_KEYSTORE in ~/.gradle/gradle.properties; cannot sign a release.\n' >&2
+            exit 1
+        fi
+        ;;
+    *) printf 'usage: %s [debug|release]\n' "$0" >&2; exit 2 ;;
+esac
 printf 'Building the companion app (%s) at version %s\n\n' "$VARIANT" "$VERSION"
 
 cd android

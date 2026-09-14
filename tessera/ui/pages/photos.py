@@ -23,13 +23,15 @@ from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, EmptyState, Toast, header_row, heading
 
 
-def fetch_full(hub, cache: dict, item: dict, on_data) -> None:
+def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None) -> None:
     """The full-size picture, cached in *cache* for the session."""
     media_id = item.get("id", "")
     if media_id in cache:
         on_data(cache[media_id])
         return
     if not hub.companion.connected:
+        if on_error is not None:
+            on_error("No phone connected.")
         return
 
     def arrived(reply: dict) -> None:
@@ -37,6 +39,8 @@ def fetch_full(hub, cache: dict, item: dict, on_data) -> None:
         if isinstance(data, (bytes, bytearray)):
             cache[media_id] = bytes(data)
             on_data(cache[media_id])
+        elif on_error is not None:
+            on_error(str(reply.get("message") or "The phone could not send it."))
 
     hub.companion.request({"t": "media_get", "id": media_id, "thumb": False}, arrived)
 
@@ -57,7 +61,8 @@ def save_media(widget, hub, cache: dict, item: dict, toast, palette) -> None:
             return
         toast.show_message("Saved", palette, "success")
 
-    fetch_full(hub, cache, item, write)
+    fetch_full(hub, cache, item, write,
+               lambda message: toast.show_message(message[:140], palette, "danger"))
 
 
 def _date(item: dict) -> str:
@@ -180,7 +185,15 @@ class PhotoViewer(QDialog):
         # The thumbnail first, then the full picture once it arrives.
         self.set_pixmap(self.page.thumbnail(item))
         if not item.get("video"):
-            self.page.fetch_full(item, lambda data, key=item.get("id"): self._on_full(key, data))
+            self.page.fetch_full(
+                item,
+                lambda data, key=item.get("id"): self._on_full(key, data),
+                lambda message, key=item.get("id"): self._on_failed(key, message),
+            )
+
+    def _on_failed(self, media_id: str, message: str) -> None:
+        if media_id == self.item.get("id"):
+            self.caption.setText(message)
 
     def _on_full(self, media_id: str, data: bytes) -> None:
         if media_id != self.item.get("id"):
@@ -333,8 +346,8 @@ class PhotosPage(QWidget):
         tile = self._tiles.get(item.get("id", ""))
         return tile.thumbnail if tile is not None else QPixmap()
 
-    def fetch_full(self, item: dict, on_data) -> None:
-        fetch_full(self.hub, self._full, item, on_data)
+    def fetch_full(self, item: dict, on_data, on_error=None) -> None:
+        fetch_full(self.hub, self._full, item, on_data, on_error)
 
     def save(self, item: dict) -> None:
         save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)

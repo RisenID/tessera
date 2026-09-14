@@ -125,10 +125,12 @@ def popups() -> None:
         title="Aai", text="Dinner at 8?", repliable=True,
     )
     popup.show(note)
+    settle(1500)                    # sent from a worker now
     check("an arriving notification raises a popup", popup._by_phone.get("n1", 0) > 0)
 
     first = popup._by_phone["n1"]
     popup.show(Notification(**{**note.__dict__, "text": "Or 9?"}))
+    settle(1500)
     check(
         "a second message replaces its own popup rather than stacking",
         len(popup._by_phone) == 1 and popup._by_phone["n1"] == first,
@@ -165,9 +167,9 @@ def popups() -> None:
           str(popup._by_phone))
 
     # Silence must be honoured whichever route is in use.
-    hub.config.notification_popups = False
+    hub.config.features.notification_popups = False
     check("switched off, nothing is raised", not popup.wanted(note))
-    hub.config.notification_popups = True
+    hub.config.features.notification_popups = True
     hub.config.dnd.mode = "phone_to_desktop"
     hub._phone_dnd = "priority"
     check("a silenced phone silences the desktop", not popup.wanted(note))

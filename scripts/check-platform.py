@@ -214,7 +214,7 @@ def windows_checks() -> None:
     wifi = importlib.reload(importlib.import_module("tessera.backends.wifi_win"))
     calls: list[list[str]] = []
 
-    def fake_run(argv, timeout=15.0, stdin=None):
+    def fake_run(argv, timeout=15.0, stdin=None, **_options):
         calls.append(list(argv))
         text = ""
         if argv[:3] == ["netsh", "wlan", "show"] and argv[3] == "interfaces":
@@ -241,7 +241,7 @@ def windows_checks() -> None:
     wifi.has_profile = lambda _ssid: False
     profile_bodies: list[str] = []
 
-    def capture(argv, timeout=15.0, stdin=None):
+    def capture(argv, timeout=15.0, stdin=None, **_options):
         for part in argv:
             if str(part).startswith("filename="):
                 path = Path(str(part).split("=", 1)[1])
@@ -525,13 +525,13 @@ def interface_checks() -> None:
               [("WhatsApp: Aai", "Dinner?")])
     forget()
 
-    hub.config.notification_popups = False
+    hub.config.features.notification_popups = False
     hub._add(Notification(id="2", app="WhatsApp", title="Aai", text="Again?"))
     settle()
     check("switched off, nothing pops up", told(), False)
     forget()
 
-    hub.config.notification_popups = True
+    hub.config.features.notification_popups = True
     hub._phone_dnd = "priority"
     hub.config.dnd.mode = "phone_to_desktop"
     hub._add(Notification(id="3", app="WhatsApp", title="Aai", text="Quiet?"))

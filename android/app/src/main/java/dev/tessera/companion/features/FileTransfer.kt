@@ -100,17 +100,26 @@ object FileTransfer {
 
         /** Hand a chunk to the writer, waiting if it is already behind. */
         fun write(bytes: ByteArray) {
-            failure.get()?.let { throw IOException(it) }
-            // put(), not offer(): a full queue must stop the socket being
-            // read, which is how the sender is told to slow down.
-            queue.put(bytes)
+            // Blocking here is what slows the sender down, but a writer that
+            // has died never drains the queue, so check again while waiting.
+            while (true) {
+                failure.get()?.let { throw IOException(it) }
+                if (writer?.isAlive != true) throw IOException("the file writer stopped")
+                if (queue.offer(bytes, 1, java.util.concurrent.TimeUnit.SECONDS)) return
+            }
         }
 
         /** Publish it: the file becomes visible to the rest of the phone. */
         fun finish(): String {
             runCatching {
-                queue.put(end)
-                writer?.join(30_000)
+                val thread = writer
+                while (thread?.isAlive == true && !queue.offer(end, 1, java.util.concurrent.TimeUnit.SECONDS)) Unit
+                thread?.join(30_000)
+                if (thread?.isAlive == true) {
+                    failure.compareAndSet(null, "the file took too long to write")
+                    thread.interrupt()
+                    thread.join(5_000)
+                }
             }
             writer = null
             runCatching { stream?.flush() }

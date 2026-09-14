@@ -43,6 +43,8 @@ object DndController {
 
     /** Sets [name] and checks it took. Null when it did, else why not. */
     fun set(context: Context, name: String): String? {
+        // Goes into a shell command, so only the four known words.
+        if (name !in setOf(OFF, PRIORITY, ALARMS, NONE)) return "Unknown Do Not Disturb mode."
         val filter = toFilter(name)
         // Since Android 15 an app only switches its own mode; the shell switches the phone's.
         if (PrivilegedShell.hasPermission()) {

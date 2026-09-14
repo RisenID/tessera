@@ -151,7 +151,7 @@ def local_networks() -> list[tuple[str, Any]]:
 
     result = run(["ip", "-4", "-o", "addr", "show"], timeout=8.0)
     if not result.ok:
-        return []
+        return _qt_networks()
 
     networks = []
     for line in result.stdout.splitlines():
@@ -165,6 +165,32 @@ def local_networks() -> list[tuple[str, Any]]:
             networks.append((name, ipaddress.ip_interface(cidr)))
         except ValueError:
             continue
+    return networks
+
+
+def _qt_networks() -> list[tuple[str, Any]]:
+    """The same list from Qt, where there is no `ip` (Windows)."""
+    import ipaddress
+
+    from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
+
+    flags = QNetworkInterface.InterfaceFlag
+    networks = []
+    for face in QNetworkInterface.allInterfaces():
+        wanted = flags.IsUp | flags.IsRunning
+        if (face.flags() & wanted) != wanted or face.flags() & flags.IsLoopBack:
+            continue
+        if face.type() == QNetworkInterface.InterfaceType.Virtual:
+            continue
+        for entry in face.addressEntries():
+            address = entry.ip()
+            if address.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
+                continue
+            try:
+                networks.append((face.name(), ipaddress.ip_interface(
+                    f"{address.toString()}/{entry.prefixLength()}")))
+            except ValueError:
+                continue
     return networks
 
 
@@ -214,7 +240,7 @@ def default_gateways() -> list[str]:
     """IPv4 gateways of the active routes."""
     result = run(["ip", "-4", "route", "show", "default"], timeout=5.0)
     if not result.ok:
-        return []
+        return _route_print_gateways()
     gateways = []
     for line in result.stdout.splitlines():
         parts = line.split()
@@ -222,6 +248,20 @@ def default_gateways() -> list[str]:
             address = parts[parts.index("via") + 1]
             if address not in gateways:
                 gateways.append(address)
+    return gateways
+
+
+def _route_print_gateways() -> list[str]:
+    """Default gateways from Windows' `route print`, whose numbers are not localised."""
+    result = run(["route", "print", "-4", "0.0.0.0"], timeout=5.0)
+    if not result.ok:
+        return []
+    gateways = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[0] == "0.0.0.0" and parts[1] == "0.0.0.0":
+            if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", parts[2]) and parts[2] not in gateways:
+                gateways.append(parts[2])
     return gateways
 
 
@@ -497,12 +537,13 @@ class CompanionClient(QObject):
         self._connect_timer.start(self.CONNECT_TIMEOUT_MS)
         # Detect a peer that has silently gone away with the network.
         socket.setSocketOption(QAbstractSocket.SocketOption.KeepAliveOption, 1)
-        socket.setSocketOption(QAbstractSocket.SocketOption.LowDelayOption, 1)
         socket.connectToHostEncrypted(host, port)
 
     def _teardown(self, silent: bool = False) -> None:
         was_connected = self._authenticated
         self._authenticated = False
+        # What the phone offered belongs to that connection.
+        self._capabilities = []
         self._heartbeat.stop()
         self._connect_timer.stop()
         self._pending.clear()
@@ -714,15 +755,25 @@ class CompanionClient(QObject):
         # The file connection subscribes to nothing: every event it carried
         # would arrive twice.
         if not self.role:
-            self._send({"t": "sub", "topics": self._subscription_topics()})
+            self.resubscribe()
+
+    def resubscribe(self) -> None:
+        """Tell the phone which events are wanted, now."""
+        if self.connected and not self.role:
+            self.send({"t": "sub", "topics": self._subscription_topics()})
 
     def _subscription_topics(self) -> list[str]:
         """Ask only for the events the user wants."""
         if self.wanted_topics is None:
-            return ["notifications", "dnd", "battery"]
+            return ["notifications", "dnd", "battery", "status", "clipboard"]
         return list(self.wanted_topics)
 
     def _recv_auth_fail(self, message: dict[str, Any]) -> None:
+        # The file link shares the phone with the main one, which decides.
+        if self.role:
+            self._want_connection = False
+            self._teardown()
+            return
         self.phone.token = ""
         self._want_connection = False
         self.errorOccurred.emit(
@@ -882,6 +933,7 @@ class CompanionClient(QObject):
         # Mark the link down before announcing it, so listeners see it as down.
         was_connected = self._authenticated
         self._authenticated = False
+        self._capabilities = []
         self._heartbeat.stop()
         if was_connected:
             self.connectedChanged.emit(False)

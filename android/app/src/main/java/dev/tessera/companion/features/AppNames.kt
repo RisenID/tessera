@@ -10,8 +10,9 @@ import java.io.ByteArrayOutputStream
 /** Human-readable app labels and icons, cached because notifications repeat. */
 object AppNames {
 
-    private val labels = HashMap<String, String>()
-    private val icons = HashMap<String, ByteArray>()
+    // Read from the listener's thread and every session's.
+    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val icons = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
 
     fun label(context: Context, packageName: String): String =
         labels.getOrPut(packageName) {

@@ -28,7 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..backends.mpris import MprisPlayer
+from ..backends.webcam import WebcamError
 from ..core import otp, platform
+from ..core.proc import submit
 from ..core.hub import Hub
 from ..core.models import Notification
 from .theme import RADIUS, SPACE, Palette
@@ -314,6 +316,7 @@ class DevicePanel(QWidget):
         self.palette_tokens = palette
         self._player = MprisPlayer(self)
         self._media_service = ""
+        self._media_busy = False
         self._scale = 1.0
         self._rows: list[FeedRow] = []
 
@@ -750,6 +753,9 @@ class DevicePanel(QWidget):
         columns = max(3, min(len(buttons), usable // max(1, span)))
         for index in reversed(range(self.tile_grid.count())):
             self.tile_grid.takeAt(index)
+        # Stretch from an earlier, different column count would stay behind.
+        for column in range(self.tile_grid.columnCount()):
+            self.tile_grid.setColumnStretch(column, 0)
         for index, button in enumerate(buttons):
             self.tile_grid.addWidget(button, index // columns, index % columns)
         self.tile_grid.setColumnStretch(columns, 1)
@@ -975,8 +981,12 @@ class DevicePanel(QWidget):
             self.hub.stop_camera()
             self.statusMessage.emit("Stopping the phone camera")
         else:
-            self.hub.start_camera()
-            self.statusMessage.emit("Starting the phone camera")
+            try:
+                self.hub.start_camera()
+            except WebcamError as exc:
+                self.statusMessage.emit(str(exc))
+            else:
+                self.statusMessage.emit("Starting the phone camera")
         self.sync_toggles()
 
     def _dismiss_all(self) -> None:
@@ -1193,11 +1203,28 @@ class DevicePanel(QWidget):
             self.album_label.setText(f"{detail}{state}")
             return
 
-        address = self.hub.config.bluetooth.address
-        self._media_service = self._player.find_player(address, self.hub.bluetooth_name)
-        track = self._player.track(self._media_service)
-        self.track_label.setText(track.summary)
-        self.album_label.setText(track.album)
+        # busctl and D-Bus calls, off the interface thread.
+        if self._media_busy:
+            return
+        self._media_busy = True
+        address, name = self.hub.config.bluetooth.address, self.hub.bluetooth_name
+
+        def look() -> tuple:
+            service = self._player.find_player(address, name)
+            return service, self._player.track(service)
+
+        def show(result: tuple) -> None:
+            self._media_busy = False
+            self._media_service, track = result
+            if self.hub.media.get("title"):
+                return
+            self.track_label.setText(track.summary)
+            self.album_label.setText(track.album)
+
+        def failed(_message: str) -> None:
+            self._media_busy = False
+
+        submit(look, on_done=show, on_error=failed)
 
     def refresh_feed(self) -> None:
         notifications = self.hub.notifications

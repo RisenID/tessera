@@ -25,7 +25,7 @@ classifiers = [
 # rather than from PyPI: the RPM build must not pull a second copy of Qt into
 # site-packages. On Windows there is no such package, so pip installs it.
 dependencies = [
-    "PySide6>=6.5",
+    "PySide6>=6.5; sys_platform != 'linux'",
     # Bluetooth audio from the phone on Windows, through AudioPlaybackConnection.
     "winrt-runtime>=3.0; sys_platform == 'win32'",
     "winrt-Windows.Foundation>=3.0; sys_platform == 'win32'",

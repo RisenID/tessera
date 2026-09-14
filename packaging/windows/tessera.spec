@@ -6,9 +6,9 @@
 One folder rather than one file: Qt starts faster when its plugins are on disk,
 and an installer wants a directory anyway. The result is dist/Tessera/.
 
-The app uses five Qt modules -- Core, Gui, Widgets, Network (the TLS link to
-the phone) and Svg (the icons it draws itself). Everything else Qt ships is
-excluded, which is most of its size.
+The app uses six Qt modules -- Core, Gui, Widgets, Network (the TLS link to
+the phone), Svg (the icons it draws itself) and Multimedia (the phone's audio).
+Everything else Qt ships is excluded, which is most of its size.
 """
 
 import sys

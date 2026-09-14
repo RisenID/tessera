@@ -101,5 +101,6 @@ class IconStore(QObject):
         self.iconReady.emit(package, pixmap)
 
     def forget_missing(self) -> None:
-        """Retry icons that failed, e.g. after reconnecting."""
+        """Retry icons that failed or were cut off, e.g. after reconnecting."""
         self._missing.clear()
+        self._pending.clear()

@@ -17,6 +17,14 @@ KEYWORDS = (
     "signing in", "sign in", "sign-in", "logging in", "log in", "authenticate",
 )
 
+#: Whole words only: "pin" is not in "shopping", nor "code" in "barcode".
+_KEYWORD = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in KEYWORDS) + r")\b", re.IGNORECASE
+)
+
+#: Marketing that carries codes which are not passcodes.
+_PROMO = re.compile(r"\b(?:promo|coupon|discount|voucher|referral|cashback|\d+\s*% off)", re.IGNORECASE)
+
 #: Phrases that usually sit immediately before or after the code itself.
 _STRONG_BEFORE = re.compile(
     r"(?:code|otp|pin|passcode|password)\W{0,4}(?:is|:|=)?\W{0,4}$",
@@ -71,8 +79,10 @@ def _score(token: str, text: str, start: int, end: int, app: str) -> int:
     lowered = text.lower()
     score = 0
 
-    if any(keyword in lowered for keyword in KEYWORDS):
+    if _KEYWORD.search(text):
         score += 2
+    if _PROMO.search(text):
+        score -= 5
     if any(marker in app.lower() for marker in _CODE_APPS):
         score += 3
 

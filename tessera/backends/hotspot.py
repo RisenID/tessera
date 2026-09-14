@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import time
 from dataclasses import dataclass
 
@@ -88,7 +89,8 @@ def start_phone_hotspot(serial: str, config: HotspotConfig) -> ApConfig:
         attempts.append(
             (
                 "start-softap with your settings",
-                f'cmd -w wifi start-softap "{config.ssid}" wpa2 "{config.passphrase}" {band}',
+                f"cmd -w wifi start-softap {shlex.quote(config.ssid)} wpa2 "
+                f"{shlex.quote(config.passphrase)} {band}",
             )
         )
     attempts.append(("start the saved hotspot", "cmd -w wifi start-softap"))

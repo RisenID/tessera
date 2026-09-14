@@ -78,6 +78,36 @@ def adapter_ready() -> bool:
     return available()
 
 
+#: Bluetooth Classic association endpoints, with their live connection state.
+_PAIRED_AQS = (
+    'System.Devices.Aep.ProtocolId:="{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}" AND '
+    "System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
+)
+_ADDRESS_KEY = "System.Devices.Aep.DeviceAddress"
+_CONNECTED_KEY = "System.Devices.Aep.IsConnected"
+
+
+def link_states() -> dict[str, bool]:
+    """Whether each paired device's radio link is up, by address. Empty if unknown."""
+    try:
+        from winrt.system import unbox_boolean, unbox_string
+        from winrt.windows.devices.enumeration import DeviceInformation, DeviceInformationKind
+
+        found = DeviceInformation.find_all_async_with_kind_aqs_filter_and_additional_properties(
+            _PAIRED_AQS, [_CONNECTED_KEY, _ADDRESS_KEY], DeviceInformationKind.ASSOCIATION_ENDPOINT
+        ).get()
+        states = {}
+        for info in found:
+            props = info.properties
+            if props.has_key(_ADDRESS_KEY) and props.has_key(_CONNECTED_KEY):
+                address = unbox_string(props.lookup(_ADDRESS_KEY)).upper()
+                states[address] = bool(unbox_boolean(props.lookup(_CONNECTED_KEY)))
+        return states
+    except (ImportError, OSError, AttributeError, TypeError) as exc:
+        log.debug("could not read Bluetooth link states: %s", exc)
+        return {}
+
+
 def paired_devices() -> list[BtDevice]:
     """Every paired device Windows would take audio from."""
     if not available():
@@ -91,12 +121,15 @@ def paired_devices() -> list[BtDevice]:
         log.debug("could not list Bluetooth audio sources: %s", exc)
         return []
 
+    links = link_states()
     devices = []
     for info in found:
         address = address_of(info.id) or info.id
         with _lock:
             _ids[address] = info.id
-            connected = address in _connections
+            # A started connection is only a permission; the radio link says
+            # whether the phone is actually there.
+            connected = address in _connections and links.get(address.upper(), True)
         devices.append(BtDevice(
             address=address,
             name=info.name,

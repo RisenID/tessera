@@ -129,8 +129,8 @@ class MirrorSession(QObject):
 
     def start(self, argv: list[str]) -> None:
         log.info("mirror: %s", " ".join(argv))
-        self._proc.start(argv)
-        self.started.emit()
+        if self._proc.start(argv):
+            self.started.emit()
 
     def stop(self) -> None:
         self._proc.stop()
@@ -172,6 +172,10 @@ class MirrorManager(QObject):
         session.stopped.connect(lambda _code, k=key: self._forget(k))
         self._sessions[key] = session
         session.start(argv)
+        if not session.running:
+            # failed has already said why.
+            self._sessions.pop(key, None)
+            session.deleteLater()
         self.changed.emit()
 
     def close(self, key: str) -> None:

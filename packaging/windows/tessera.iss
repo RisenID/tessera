@@ -64,6 +64,10 @@ Root: HKCU; Subkey: "Software\Classes\AppUserModelId\{#AppUserModelID}"; \
 [Run]
 Filename: "{app}\Tessera.exe"; Description: "Start Tessera"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+; Takes the phones out of File Explorer's navigation pane.
+Filename: "{app}\Tessera.exe"; Parameters: "--cleanup"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveSyncRoots"
+
 [Code]
 const
   Agreements = ' --accept-source-agreements --disable-interactivity';

@@ -66,6 +66,8 @@ class SettingsPage(QWidget):
         #: Set while the widgets are being filled in, so that filling them in
         #: does not look like the user changing them.
         self._loading = True
+        #: A pairing was started here, so its result shows the fingerprint.
+        self._pairing = False
 
         # The page is taller than any window, so it scrolls. Without this the
         # layout compresses every card until the text is unreadable.
@@ -626,7 +628,7 @@ class SettingsPage(QWidget):
         # preference and does not mention LDAC until it can be decoded, so
         # installing a decoder changes nothing until that file is rewritten.
         choice = self.hub.config.bluetooth.codec
-        if btcodecs.write_preference(choice):
+        if platform.supported("bluetooth_codecs") and btcodecs.write_preference(choice):
             submit(btcodecs.reload_session, on_error=lambda _m: None)
         self.toast.show_message(
             "LDAC is ready. Play something and press “Play phone audio here”."
@@ -679,12 +681,11 @@ class SettingsPage(QWidget):
             return
 
         self.pair_status.setText(f"Pairing with {host}...")
+        self._pairing = True
         self.hub.companion.connect_to_phone(host, port, code)
 
     def _forget(self) -> None:
-        self.hub.companion.disconnect_from_phone()
-        self.hub.companion.phone = companion.PairedPhone()
-        self.hub.save_phone()
+        self.hub.forget_phone()
         self._refresh()
         self.toast.show_message("Phone forgotten", self.palette_tokens)
 
@@ -729,7 +730,8 @@ class SettingsPage(QWidget):
         # Only restart the audio service when the offer actually changed:
         # it cuts this computer's sound for a moment, which is not
         # something to do on every save.
-        if btcodecs.write_preference(codec, phone_codecs):
+        # WirePlumber's file: only where PipeWire chooses the codec.
+        if platform.supported("bluetooth_codecs") and btcodecs.write_preference(codec, phone_codecs):
             submit(btcodecs.reload_session, on_error=lambda _m: None)
 
         self.hub.config.clipboard.mode = self.clipboard_mode.currentData()
@@ -757,9 +759,19 @@ class SettingsPage(QWidget):
     def _refresh(self) -> None:
         self._refresh_grant()
         if self.hub.companion.connected:
-            name = self.hub.companion.phone.name or "the phone"
-            self.link_pill.set_state(self.hub.companion.phone.name or "Connected", "success")
-            self.pair_status.setText(f"Paired with {name}.")
+            phone = self.hub.companion.phone
+            name = phone.name or "the phone"
+            self.link_pill.set_state(phone.name or "Connected", "success")
+            if self._pairing:
+                # The code proves this computer to the phone; the fingerprint
+                # proves the phone to this computer.
+                grouped = " ".join(phone.fingerprint[i:i + 4] for i in range(0, len(phone.fingerprint), 4))
+                self.pair_status.setText(
+                    f"Paired with {name}. Check the phone shows this certificate fingerprint: {grouped}"
+                )
+                self._pairing = False
+            elif not self.pair_status.text().startswith(f"Paired with {name}."):
+                self.pair_status.setText(f"Paired with {name}.")
             self.code.clear()
         elif self.hub.companion.phone.configured:
             self.link_pill.set_state("Paired, offline", "warning")

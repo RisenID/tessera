@@ -77,7 +77,8 @@ def tool_path(program: str) -> str:
     return platform.find_tool(program) or platform.tool(program)
 
 
-def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) -> Result:
+def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None,
+        encoding: str = "utf-8") -> Result:
     """Run *argv* to completion and capture its output."""
     argv = [str(a) for a in argv]
     # The first word is a tool name, which on Windows may be neither on PATH
@@ -90,7 +91,9 @@ def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None) ->
             argv,
             input=stdin,
             capture_output=True,
-            text=True,
+            # Explicit: the locale's codec (cp1252 on Windows) fails on UTF-8 output.
+            encoding=encoding,
+            errors="replace",
             timeout=timeout,
             env=_BASE_ENV,
             check=False,
@@ -211,7 +214,8 @@ class ManagedProcess(QObject):
 
     # -- control -------------------------------------------------------------
 
-    def start(self, argv: Sequence[str]) -> None:
+    def start(self, argv: Sequence[str]) -> bool:
+        """Start *argv*. False, after emitting failed, when it would not start."""
         if self.running:
             raise RuntimeError("process is already running")
         argv = [str(a) for a in argv]
@@ -236,8 +240,10 @@ class ManagedProcess(QObject):
         if not proc.waitForStarted(5000):
             self._proc = None
             self.failed.emit(f"could not start {argv[0]}: {proc.errorString()}")
-            return
+            proc.deleteLater()
+            return False
         self.started.emit()
+        return True
 
     def write(self, payload: bytes) -> bool:
         """Send bytes to the child's stdin. False when it is not running."""
@@ -286,6 +292,8 @@ class ManagedProcess(QObject):
             self._log.append(self._buffer)
             self.output.emit(self._buffer)
             self._buffer = ""
+        if self._proc is not None:
+            self._proc.deleteLater()
         self._proc = None
         self.stopped.emit(code)
 

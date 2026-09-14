@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic, sleep
@@ -14,7 +15,7 @@ from ..backends import adb, mirror
 from ..backends import audio as bt_audio
 from ..backends import bluetooth, btcodecs
 from ..backends.companion import CompanionClient, PairedPhone, b64decode
-from ..backends.dnd import MODE_OFF, DndSync, ZenMode
+from ..backends.dnd import MODE_PHONE_TO_DESKTOP, MODE_TWO_WAY, DndSync, ZenMode
 from ..backends import mpris_server
 from ..backends import storage
 from ..backends.filetransfer import FileTransfers
@@ -172,6 +173,8 @@ class Hub(QObject):
         self.storage_mount: storage.Mount | None = None
         self.storage_state = "idle"          # idle | starting | mounted | error
         self.storage_message = ""
+        #: Bumped by every mount and unmount, so a late result can tell it is stale.
+        self._storage_generation = 0
         self._notifications: dict[str, Notification] = {}
         self._otp_seen: set[str] = set()
         self._serial = ""
@@ -221,6 +224,17 @@ class Hub(QObject):
             device_id=saved.device_id,
         )
 
+    def forget_phone(self) -> None:
+        """Unpair: both links, the storage and the saved pairing all go."""
+        name = self.phone_name
+        self.unmount_storage(tell_phone=False)
+        self.files_link.disconnect_from_phone()
+        self.companion.disconnect_from_phone()
+        # Reset in place: both links hold this same object.
+        vars(self.companion.phone).update(vars(PairedPhone()))
+        self.save_phone()
+        submit(storage.forget, name, on_error=lambda m: log.debug("forget storage: %s", m))
+
     def save_phone(self) -> None:
         phone = self.companion.phone
         saved = self.config.companion
@@ -263,6 +277,8 @@ class Hub(QObject):
             self.kdeconnect.select_device(self.config.device_id)
 
     def _wire_dnd(self) -> None:
+        # Weak: a strong bound method on a child is a cycle PySide tears down badly at exit.
+        self.dnd.push_via = weakref.WeakMethod(self._push_dnd_to_phone)
         self.dnd.errorOccurred.connect(self.errorOccurred)
         self.dnd.statusChanged.connect(self.statusChanged)
         # Anything that changes whether the phone is reporting DND itself.
@@ -297,6 +313,7 @@ class Hub(QObject):
         if features.clipboard:
             topics.append("clipboard")
         self.companion.wanted_topics = topics
+        self.companion.resubscribe()
 
         if not features.clipboard:
             self.clipboard.set_mode("off")
@@ -397,7 +414,7 @@ class Hub(QObject):
     def _reconnect_adb(self) -> tuple[str, str]:
         """Bring the wireless link back after it has dropped."""
         now = monotonic()
-        if now < self._adb_next_try:
+        if now < self._adb_next_try or not adb.available():
             return "", ""
         self._adb_next_try = now + self.ADB_RETRY_SECONDS
 
@@ -505,7 +522,16 @@ class Hub(QObject):
             raise WebcamError("The webcam is switched off in Settings.")
 
         if self.camera_uses_companion and self.config.webcam.source == "camera":
+            # One-time setup that waits on an administrator prompt or pkexec: off
+            # the interface thread, then start again.
+            setup = self.companion_camera.setup_needed()
+            if setup is not None:
+                submit(setup, on_done=lambda _r: self._start_after_setup(),
+                       on_error=self.cameraFailed.emit)
+                return
             device = self.companion_camera.start()
+            if not device:
+                return
             self.companion.send(
                 {
                     "t": "camera_start",
@@ -523,6 +549,12 @@ class Hub(QObject):
             raise WebcamError("On Windows the webcam needs the companion app's camera.")
         # Screen mirroring, or no companion app: fall back to scrcpy over adb.
         self.webcam.start(self._serial)
+
+    def _start_after_setup(self) -> None:
+        try:
+            self.start_camera()
+        except WebcamError as exc:
+            self.cameraFailed.emit(str(exc))
 
     def stop_camera(self) -> None:
         if self.companion_camera.running:
@@ -604,6 +636,9 @@ class Hub(QObject):
             self.errorOccurred.emit(
                 "Playing the phone's audio is switched off in Settings."
             )
+            return
+        if not self.companion.connected:
+            self.errorOccurred.emit("The companion app is not connected.")
             return
         if "phone_audio" not in self.companion.capabilities:
             self.errorOccurred.emit(
@@ -767,8 +802,12 @@ class Hub(QObject):
 
         self._storage("starting", "Asking the phone to start its file server...")
         host = address[0]
+        self._storage_generation += 1
+        generation = self._storage_generation
 
         def started(reply: dict) -> None:
+            if generation != self._storage_generation:
+                return
             if reply.get("t") == "error":
                 self._storage("error", str(reply.get("message") or "The phone refused."))
                 return
@@ -779,27 +818,31 @@ class Hub(QObject):
             name, sidebar = self.phone_name, self.config.storage.sidebar
             submit(
                 lambda: storage.mount(info, name, sidebar),
-                on_done=self._on_storage_mounted,
-                on_error=self._on_storage_failed,
+                on_done=lambda mounted: self._on_storage_mounted(mounted, generation),
+                on_error=lambda message: self._on_storage_failed(message, generation),
             )
 
         self.companion.request({"t": "storage_start"}, started)
 
-    def _on_storage_mounted(self, mounted: storage.Mount) -> None:
-        if not self.companion.connected:
-            # The phone went away while the mount was being made.
+    def _on_storage_mounted(self, mounted: storage.Mount, generation: int) -> None:
+        if generation != self._storage_generation or not self.companion.connected:
+            # Unmounted, or the phone went away, while the mount was being made.
             submit(lambda: storage.unmount(mounted), on_error=lambda _m: None)
-            self._storage("idle", "")
+            if generation == self._storage_generation:
+                self._storage("idle", "")
             return
         self.storage_mount = mounted
         self._storage("mounted", str(mounted.local_path or mounted.location))
 
-    def _on_storage_failed(self, message: str) -> None:
+    def _on_storage_failed(self, message: str, generation: int) -> None:
+        if generation != self._storage_generation:
+            return
         if self.companion.connected:
             self.companion.send({"t": "storage_stop"})
         self._storage("error", message)
 
     def unmount_storage(self, tell_phone: bool = True) -> None:
+        self._storage_generation += 1
         mounted, self.storage_mount = self.storage_mount, None
         if tell_phone and self.companion.connected:
             self.companion.send({"t": "storage_stop"})
@@ -1426,27 +1469,37 @@ class Hub(QObject):
     def phone_dnd(self) -> str:
         return self._phone_dnd
 
-    def _on_phone_dnd(self, mode: str) -> None:
+    def _on_phone_dnd(self, mode: str, mirror: bool = True) -> None:
         self._phone_dnd = mode
         self.dndChanged.emit(mode)
-        if self.config.dnd.mode != MODE_OFF:
-            # The companion app pushes the phone's state; mirror it to Plasma.
+        if mirror and self.config.dnd.mode in (MODE_PHONE_TO_DESKTOP, MODE_TWO_WAY):
+            # The companion app pushes the phone's state; mirror it to the desktop.
             self.dnd._apply_to_desktop(_zen_from_name(mode))
 
-    def set_phone_dnd(self, mode: str) -> None:
+    def _push_dnd_to_phone(self, zen: ZenMode) -> bool:
+        """The desktop's DND, sent through the companion. False when it cannot be."""
+        if not (self.companion.connected and self.companion.supports("dnd")):
+            return False
+        if (self._phone_dnd != "off") == (zen != ZenMode.OFF):
+            return True
+        # Not mirrored back: the desktop is where this change came from.
+        self.set_phone_dnd(zen.adb_name, mirror=False)
+        return True
+
+    def set_phone_dnd(self, mode: str, mirror: bool = True) -> None:
         if self.companion.connected:
             previous = self._phone_dnd
 
             def replied(message: dict[str, Any]) -> None:
                 # Refused, e.g. a mode set by something other than Tessera: undo the guess.
                 if message.get("t") == "error":
-                    self._on_phone_dnd(previous)
+                    self._on_phone_dnd(previous, mirror)
                     self.errorOccurred.emit(
                         message.get("message") or "The phone kept its Do Not Disturb."
                     )
 
             # Shown first: a refusal can come back before request() returns.
-            self._on_phone_dnd(mode)
+            self._on_phone_dnd(mode, mirror)
             self.companion.request({"t": "dnd_set", "mode": mode}, replied)
         elif self._serial:
             self.dnd.set_phone(_zen_from_name(mode))

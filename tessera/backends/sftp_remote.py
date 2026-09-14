@@ -142,8 +142,13 @@ class Remote:
     def upload(self, local: str, relative: str, mtime: float) -> None:
         with self._lock:
             self._make_parents(relative)
-            self._sftp.put(local, self.path(relative))
-            self._sftp.utime(self.path(relative), (mtime, mtime))
+        # Its own session: listings and opens carry on while a big file goes up.
+        session = self.reader()
+        try:
+            session.put(local, self.path(relative))
+            session.utime(self.path(relative), (mtime, mtime))
+        finally:
+            session.close()
 
     def mkdir(self, relative: str) -> None:
         with self._lock:

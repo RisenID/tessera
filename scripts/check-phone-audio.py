@@ -179,7 +179,7 @@ def hub_state() -> None:
     hub.start_phone_audio()
     check(
         "asking without a phone says why",
-        errors and "Android 10" in errors[-1],
+        errors and "not connected" in errors[-1],
         errors[-1] if errors else "no error",
     )
     check("nothing is playing", not hub.phone_audio_active)

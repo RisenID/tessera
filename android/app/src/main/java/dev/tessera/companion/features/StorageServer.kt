@@ -9,7 +9,7 @@ import android.util.Log
 import dev.tessera.companion.Store
 import org.apache.sshd.common.config.keys.KeyUtils
 import org.apache.sshd.common.config.keys.PublicKeyEntry
-import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory
+import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.common.util.buffer.Buffer
 import org.apache.sshd.common.util.io.PathUtils
 import org.apache.sshd.server.SshServer
@@ -97,7 +97,9 @@ object StorageServer {
             val sshd = SshServer.setUpDefaultServer().apply {
                 this.port = port
                 keyPairProvider = keys
-                fileSystemFactory = NativeFileSystemFactory()
+                // Rooted at shared storage: the app's own files, pairing tokens and
+                // host key included, are out of reach.
+                fileSystemFactory = VirtualFileSystemFactory(File(root).toPath())
                 passwordAuthenticator = PasswordAuthenticator { user, given, _ ->
                     user == USER && MessageDigest.isEqual(
                         given.toByteArray(), password.toByteArray()
@@ -106,6 +108,7 @@ object StorageServer {
                 subsystemFactories = listOf(
                     WithStatVfs().apply {
                         fileSystemAccessor = MediaIndexing(context.applicationContext, root)
+                        statRoot = root
                     }
                 )
             }
@@ -119,7 +122,8 @@ object StorageServer {
             server = sshd
             users = 1
             Log.i(TAG, "file server on port $port")
-            return Info(port, password, hostKey, root).also { info = it }
+            // Paths on the wire are relative to the virtual root.
+            return Info(port, password, hostKey, "/").also { info = it }
         }
         throw IOException(last?.message ?: "no free port for the file server", last)
     }
@@ -147,11 +151,18 @@ object StorageServer {
 
     /** MINA has no statvfs, so sshfs showed a made-up 1000 GiB drive. */
     private class WithStatVfs : SftpSubsystemFactory() {
-        override fun createSubsystem(channel: ChannelSession): Command = StatVfsSubsystem(channel, this)
+        /** The one volume the server exposes. */
+        var statRoot: String = "/"
+
+        override fun createSubsystem(channel: ChannelSession): Command =
+            StatVfsSubsystem(channel, this, statRoot)
     }
 
-    private class StatVfsSubsystem(channel: ChannelSession, configurator: SftpSubsystemConfigurator) :
-        SftpSubsystem(channel, configurator) {
+    private class StatVfsSubsystem(
+        channel: ChannelSession,
+        configurator: SftpSubsystemConfigurator,
+        private val statRoot: String,
+    ) : SftpSubsystem(channel, configurator) {
 
         override fun resolveOpenSSHExtensions(session: ServerSession?): List<OpenSSHExtension> =
             super.resolveOpenSSHExtensions(session).orEmpty() +
@@ -162,7 +173,8 @@ object StorageServer {
                 super.executeExtendedCommand(buffer, id, extension)
                 return
             }
-            val stats = runCatching { StatFs(resolveFile(buffer.string).toString()) }.getOrNull()
+            buffer.string       // the path; everything is on one volume
+            val stats = runCatching { StatFs(statRoot) }.getOrNull()
             if (stats == null) {
                 sendStatus(prepareReply(buffer), id, SftpConstants.SSH_FX_FAILURE, "statvfs failed")
                 return
@@ -187,8 +199,9 @@ object StorageServer {
     ) : SftpFileSystemAccessor {
 
         private fun rescan(path: Path?) {
-            val target = path?.toString() ?: return
-            if (!target.startsWith(root)) return
+            // Paths are virtual, "/DCIM/x.jpg", under the rooted file system.
+            val virtual = path?.toString() ?: return
+            val target = File(root, virtual.trimStart('/')).path
             runCatching { MediaScannerConnection.scanFile(context, arrayOf(target), null, null) }
         }
 

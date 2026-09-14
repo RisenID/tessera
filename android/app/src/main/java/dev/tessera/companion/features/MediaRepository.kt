@@ -117,12 +117,31 @@ object MediaRepository {
         }.onFailure { Log.w(TAG, "thumbnail for $mediaId failed", it) }.getOrNull()
     }
 
-    /** The original file's bytes, for download or full-size viewing. */
-    fun original(context: Context, mediaId: String): ByteArray? {
+    /** The original file's bytes, or null when unreadable or over [limit]. */
+    fun original(context: Context, mediaId: String, limit: Int): ByteArray? {
         val uri = uriFor(mediaId) ?: return null
         return runCatching {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (out.size() + read > limit) return null
+                    out.write(buffer, 0, read)
+                }
+                out.toByteArray()
+            }
         }.onFailure { Log.w(TAG, "read $mediaId failed", it) }.getOrNull()
+    }
+
+    /** Whether the item is larger than [limit] bytes. */
+    fun tooLarge(context: Context, mediaId: String, limit: Int): Boolean {
+        val uri = uriFor(mediaId) ?: return false
+        val length = runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+        }.getOrNull() ?: return false
+        return length > limit
     }
 
     /**

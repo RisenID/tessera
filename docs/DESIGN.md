@@ -72,7 +72,7 @@ the real kernel. `scripts/check-platform.py` relies on it.
 
 ## Settings
 
-No Save button: each control writes the config 300 ms after the last change.
+No Save button: each control writes the config 350 ms after the last change.
 `_loading` and blocked signals keep the initial fill from counting as edits.
 
 ## Bluetooth audio

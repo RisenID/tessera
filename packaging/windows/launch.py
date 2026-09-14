@@ -74,6 +74,15 @@ if __name__ == "__main__":
     if "--self-test" in sys.argv:
         at = sys.argv.index("--self-test")
         sys.exit(self_test(sys.argv[at + 1] if len(sys.argv) > at + 1 else ""))
+    if "--cleanup" in sys.argv:
+        # Run by the uninstaller: the phones leave File Explorer's navigation pane.
+        try:
+            from tessera.backends import storage_cloud
+
+            storage_cloud.unregister_all()
+        except Exception:                               # noqa: BLE001
+            pass
+        sys.exit(0)
 
     from tessera.app import main
 

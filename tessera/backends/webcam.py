@@ -268,7 +268,9 @@ class Webcam(QObject):
         self._device = device
         argv = self.build_command(serial, device)
         log.info("starting virtual camera on %s", device)
-        self._proc.start(argv)
+        if not self._proc.start(argv):
+            self._device = ""
+            return
         self.started.emit(device)
 
     def stop(self) -> None:
@@ -330,7 +332,14 @@ class CompanionCamera(QObject):
             device,
         ]
 
+    def setup_needed(self):
+        """A blocking step (pkexec modprobe) to run first, or None."""
+        if self._config.device.strip() or loopback_devices():
+            return None
+        return ensure_module
+
     def start(self) -> str:
+        """The device, or "" when ffmpeg would not start (failed says why)."""
         if self.running:
             raise WebcamError("The virtual camera is already running.")
         if not have("ffmpeg"):
@@ -338,7 +347,9 @@ class CompanionCamera(QObject):
 
         device = self._config.device.strip() or ensure_module()[0].path
         self._device = device
-        self._proc.start(self.build_command(device))
+        if not self._proc.start(self.build_command(device)):
+            self._device = ""
+            return ""
         self.started.emit(device)
         return device
 

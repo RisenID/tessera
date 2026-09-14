@@ -7,7 +7,7 @@ import re
 
 from PySide6.QtCore import QObject, SLOT, Signal, Slot
 
-from ..core.proc import have, run
+from ..core.proc import have, run, submit
 from .dbus import HAVE_QTDBUS, QDBusMessage, session
 
 log = logging.getLogger(__name__)
@@ -148,9 +148,19 @@ class Notifier(QObject):
         )
         return _first_id(result)
 
+    def send_async(self, summary: str, body: str, on_done=None, **options) -> None:
+        """send(), on a worker: gdbus is a process per notification."""
+        if not self.available:
+            if on_done is not None:
+                on_done(0)
+            return
+        submit(lambda: self.send(summary, body, **options), on_done=on_done,
+               on_error=lambda message: log.debug("notify: %s", message))
+
     def close(self, notification_id: int) -> None:
         if notification_id and self._can_send:
-            self._gdbus("CloseNotification", f"uint32 {int(notification_id)}")
+            submit(self._gdbus, "CloseNotification", f"uint32 {int(notification_id)}",
+                   on_error=lambda message: log.debug("close: %s", message))
 
     # -- plumbing ------------------------------------------------------------
 

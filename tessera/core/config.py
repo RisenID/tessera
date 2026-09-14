@@ -217,7 +217,6 @@ class Config:
     adb_serial: str = ""           # empty -> use the only attached device
     adb_wireless_host: str = ""    # host:port remembered from a previous pairing
     start_minimised: bool = False
-    notification_popups: bool = True
     companion: CompanionConfig = field(default_factory=CompanionConfig)
     dnd: DndConfig = field(default_factory=DndConfig)
     mirror: MirrorConfig = field(default_factory=MirrorConfig)

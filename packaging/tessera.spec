@@ -105,10 +105,11 @@ install -Dm0644 packaging/%{appid}.metainfo.xml \
 install -Dm0644 packaging/icons/%{appid}.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
 
-# Virtual-camera module options.
+# Receive-side Bluetooth roles for WirePlumber.
 install -Dm0644 packaging/51-tessera-bluez.conf \
     %{buildroot}%{_datadir}/wireplumber/wireplumber.conf.d/51-tessera-bluez.conf
 
+# Virtual-camera module options.
 install -Dm0644 packaging/tessera-v4l2loopback.conf \
     %{buildroot}%{_prefix}/lib/modprobe.d/tessera-v4l2loopback.conf
 
@@ -152,20 +153,20 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
-* Mon Sep 14 2026 Ruchit M - 1.10.0-31
+* Mon Sep 14 2026 RisenID -1.10.0-31
 - Phone learns computer names on connect and refresh; overview photos open fullscreen.
 
-* Mon Sep 14 2026 Ruchit M - 1.10.0-30
+* Mon Sep 14 2026 RisenID -1.10.0-30
 - Remove paired computers from the phone; count connected computers correctly.
 - Force-copy the newest clipboard across phone and computers; fullscreen photo viewer.
 
-* Mon Sep 14 2026 Ruchit M - 1.10.0-29
+* Mon Sep 14 2026 RisenID -1.10.0-29
 - Windows Bluetooth audio, calls, storage and webcam; phone DND overrides other apps.
 
-* Mon Sep 14 2026 Ruchit M - 1.10.0-28
+* Mon Sep 14 2026 RisenID -1.10.0-28
 - Sidebar goes offline when the phone drops the connection; hide empty Bluetooth track titles.
 
-* Mon Sep 14 2026 Ruchit M - 1.10.0-27
+* Mon Sep 14 2026 RisenID -1.10.0-27
 - Keep phone audio on the phone when Bluetooth connects, and resume paused music.
 - Shorter comments and docs.
 

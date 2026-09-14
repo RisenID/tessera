@@ -272,6 +272,10 @@ class AudioPage(QWidget):
         volume_label = QLabel("Volume")
         volume_label.setObjectName("Muted")
         buttons.addWidget(volume_label)
+        self._volume_save = QTimer(self)
+        self._volume_save.setSingleShot(True)
+        self._volume_save.setInterval(600)
+        self._volume_save.timeout.connect(self.hub.config.save)
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 100)
         self.volume.setFixedWidth(160)
@@ -312,7 +316,8 @@ class AudioPage(QWidget):
     def _set_volume(self, value: int) -> None:
         self.hub.phone_audio.set_volume(value)
         self.hub.config.phone_audio.volume = int(value)
-        self.hub.config.save()
+        # Saved once the slider rests, not on every step of a drag.
+        self._volume_save.start()
 
     def _on_stream_changed(self, _playing: bool) -> None:
         self._apply_stream_state()
@@ -679,7 +684,15 @@ class AudioPage(QWidget):
             )
             return
 
-        def work() -> str:
+        if mode == "music":
+            # Here, not in the worker: the watch timer belongs to this thread.
+            self._stop_routing()
+            # An explicit stream: stop handing the media profile back.
+            self.hub.end_bluetooth_guard()
+        address = self._address
+
+        def work() -> tuple[str, bool]:
+            """What to say, and whether to wait for the stream."""
             audio.set_profile(card.name, profile)
 
             if mode == "call":
@@ -689,31 +702,29 @@ class AudioPage(QWidget):
                         audio.set_default_sink(sink)
                     if source:
                         audio.set_default_source(source)
-                return "Call audio is connected."
-
-            self._stop_routing()
-
-            # An explicit stream: stop handing the media profile back.
-            self.hub.end_bluetooth_guard()
+                return "Call audio is connected.", False
 
             # Make the card able to receive before asking the phone to send.
-            audio.ready_to_receive(self._address)
+            audio.ready_to_receive(address)
 
             # The received audio appears as a playback stream rather than a
             # source: PipeWire names it bluez_input.<address>.<n> with media
             # class Stream/Output/Audio.
             for attempt in range(2):
-                bluetooth.claim_audio(self._address)
+                bluetooth.claim_audio(address)
                 stream = audio.wait_for_stream(attempts=16 if attempt == 0 else 24)
                 if stream:
                     self._link(stream)
-                    return self._playing_note(stream)
+                    return self._playing_note(stream), False
 
-            return self._explain_silence()
+            return self._explain_silence(), True
 
         resume = mode == "music" and bool(self.hub.media.get("playing"))
 
-        def done(note: object) -> None:
+        def done(result: object) -> None:
+            note, wait = result  # type: ignore[misc]
+            if wait:
+                self._watch_for_stream()
             # Otherwise the sidebar learns of it only at the next 15 s check.
             self.hub._watch_bluetooth()
             self.refresh()
@@ -758,8 +769,7 @@ class AudioPage(QWidget):
         self._stream_node = stream.node
 
     def _explain_silence(self) -> str:
-        """Say why no sound is arriving, distinguishing the causes."""
-        self._watch_for_stream()
+        """Say why no sound is arriving, distinguishing the causes. Off the GUI thread."""
         state = bluetooth.audio_transport(self._address)
 
         if not state:

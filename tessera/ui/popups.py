@@ -76,7 +76,7 @@ class Popups(QObject):
     def wanted(self, note: Notification) -> bool:
         """Whether this one should appear on the desktop."""
         config = self.hub.config
-        if not config.notification_popups or not config.features.notifications:
+        if not config.features.notification_popups or not config.features.notifications:
             return False
         if note.package in QUIET_PACKAGES:
             return False
@@ -105,21 +105,24 @@ class Popups(QObject):
             # than crowding the title, which is usually the sender.
             body = f"{body}\n{note.app}" if body else note.app
 
-        given = self.notifier.send(
+        def raised(given: int) -> None:
+            if not given:
+                self._show_tray(note)
+                return
+            self._live[given] = note.id
+            self._by_phone[note.id] = given
+            self._trim()
+
+        self.notifier.send_async(
             summary[:120],
             body[:400],
+            on_done=raised,
             icon=self._icon_for(note),
             replace=self._by_phone.get(note.id, 0),
             repliable=note.repliable,
             clearable=note.clearable,
             reply_placeholder=f"Reply to {note.title}" if note.title else "Reply",
         )
-        if not given:
-            self._show_tray(note)
-            return
-        self._live[given] = note.id
-        self._by_phone[note.id] = given
-        self._trim()
 
     def _show_tray(self, note: Notification) -> None:
         # Each tray message replaces the last, so a burst would flicker:

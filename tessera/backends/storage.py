@@ -7,7 +7,7 @@ import os
 import re
 import secrets
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -73,6 +73,8 @@ class Mount:
     location: str               # a directory for sshfs, an sftp:// URI for gio,
                                 # the sync root folder for Cloud Files
     name: str
+    #: The Cloud Files provider, so an unmount stops this mount and no later one.
+    handle: object = field(default=None, compare=False, repr=False)
 
     @property
     def local_path(self) -> Path | None:
@@ -182,7 +184,8 @@ def _run(command: list[str], stdin: str = "", timeout: float = 25.0) -> tuple[in
             command,
             input=stdin,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             env={**os.environ, "LC_ALL": "C"},
         )
@@ -209,8 +212,8 @@ def mount(info: ServerInfo, name: str, sidebar: bool = True) -> Mount:
         from .sftp_remote import Remote
 
         folder = storage_cloud.base_folder() / folder_name(name)
-        storage_cloud.mount(Remote(info), folder, name, storage_cloud.root_id(folder_name(name)))
-        mounted = Mount(CLOUD, str(folder), name)
+        provider = storage_cloud.mount(Remote(info), folder, name, storage_cloud.root_id(folder_name(name)))
+        mounted = Mount(CLOUD, str(folder), name, provider)
     elif chosen == SSHFS:
         mounted = _mount_sshfs(info, name)
     elif chosen == GIO:
@@ -273,7 +276,7 @@ def unmount(mounted: Mount) -> None:
         from . import storage_cloud
 
         # The folder stays in the navigation pane, its files unavailable until next time.
-        storage_cloud.unmount(Path(mounted.location))
+        storage_cloud.unmount(Path(mounted.location), mounted.handle)
         return
 
     try:
@@ -294,13 +297,21 @@ def unmount(mounted: Mount) -> None:
     _remove_empty(path)
 
 
+def forget(name: str) -> None:
+    """Take a forgotten phone out of the file manager for good."""
+    if backend() == CLOUD:
+        from . import storage_cloud
+
+        storage_cloud.unregister(storage_cloud.root_id(folder_name(name)))
+
+
 def _fusermount(path: Path, lazy: bool) -> bool:
     flags = "-uz" if lazy else "-u"
     for tool in ("fusermount3", "fusermount"):
         if have(tool):
             code, _output = _run([tool, flags, str(path)], timeout=10.0)
             return code == 0
-    code, _output = _run(["umount", "-l" if lazy else "", str(path)], timeout=10.0)
+    code, _output = _run(["umount", *(["-l"] if lazy else []), str(path)], timeout=10.0)
     return code == 0
 
 

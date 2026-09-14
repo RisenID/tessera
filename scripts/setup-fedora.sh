@@ -77,7 +77,7 @@ if [[ ! -f /etc/modprobe.d/tessera-v4l2loopback.conf ]]; then
     sudo tee /etc/modprobe.d/tessera-v4l2loopback.conf >/dev/null <<'CONF'
 # Tessera virtual camera.
 # exclusive_caps=1 makes Firefox, Chrome and Zoom recognise the device.
-options v4l2loopback devices=1 exclusive_caps=1 card_label="Tessera"
+options v4l2loopback devices=1 exclusive_caps=1 card_label="Tessera Camera"
 CONF
     ok "module options written"
 else

@@ -15,6 +15,9 @@ object PrivilegedShell {
         val ok: Boolean get() = code == 0 && !text.contains("error", ignoreCase = true)
     }
 
+    /** [value] as one single-quoted shell word. */
+    fun quote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
+
     /** True when the Shizuku service is running and reachable. */
     fun available(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
 
@@ -49,13 +52,24 @@ object PrivilegedShell {
             val errorStream = processClass.getMethod("getErrorStream")
                 .invoke(process) as java.io.InputStream
 
-            val stdout = inputStream.bufferedReader().use(BufferedReader::readText)
-            val stderr = errorStream.bufferedReader().use(BufferedReader::readText)
+            // Both streams at once, so a full stderr pipe cannot stall stdout.
+            var stdout = ""
+            var stderr = ""
+            val readers = listOf(
+                kotlin.concurrent.thread { stdout = inputStream.bufferedReader().use(BufferedReader::readText) },
+                kotlin.concurrent.thread { stderr = errorStream.bufferedReader().use(BufferedReader::readText) },
+            )
 
-            processClass.getMethod("waitForTimeout", Long::class.java, java.util.concurrent.TimeUnit::class.java)
-                .runCatching {
-                    invoke(process, timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
-                }
+            val finished = runCatching {
+                processClass.getMethod("waitForTimeout", Long::class.java, java.util.concurrent.TimeUnit::class.java)
+                    .invoke(process, timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS) as Boolean
+            }.getOrDefault(true)
+            if (!finished) {
+                runCatching { processClass.getMethod("destroy").invoke(process) }
+                readers.forEach { it.join(1_000) }
+                return Output(-1, "timed out: $command")
+            }
+            readers.forEach { it.join(timeoutMillis) }
 
             val code = runCatching {
                 processClass.getMethod("exitValue").invoke(process) as Int
@@ -125,7 +139,10 @@ object Hotspot {
         val bandFlag = if (band == "5") "-b 5" else "-b 2"
         val attempts = buildList {
             if (ssid.isNotBlank() && passphrase.length >= 8) {
-                add("cmd -w wifi start-softap '$ssid' wpa2 '$passphrase' $bandFlag")
+                add(
+                    "cmd -w wifi start-softap ${PrivilegedShell.quote(ssid)} wpa2 " +
+                        "${PrivilegedShell.quote(passphrase)} $bandFlag"
+                )
             }
             add("cmd -w wifi start-softap")
         }

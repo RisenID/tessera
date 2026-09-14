@@ -3,6 +3,7 @@ package dev.tessera.companion
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -22,8 +23,12 @@ class ShareActivity : Activity() {
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> listOfNotNull(stream(intent))
             Intent.ACTION_SEND_MULTIPLE ->
-                intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                    ?: emptyList()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                } ?: emptyList()
             else -> emptyList()
         }
         val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
@@ -52,7 +57,12 @@ class ShareActivity : Activity() {
     }
 
     private fun stream(intent: Intent): Uri? =
-        intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
 
     private fun toast(message: String) {
         Log.i(TAG, message)

@@ -117,6 +117,7 @@ class Session(
         // acknowledgement between the two, which cost about 150 ms per chunk and held transfers to
         // a megabyte a second on a link capable of far more.
         runCatching { socket.tcpNoDelay = true }
+        runCatching { socket.soTimeout = HANDSHAKE_MS }
         try {
             loop()
         } catch (_: ClosedException) {
@@ -159,7 +160,7 @@ class Session(
                 val version = message.optInt("v")
                 if (version != PROTOCOL_VERSION) {
                     send(JSONObject().put("t", "error").put("message", "protocol v$PROTOCOL_VERSION required"))
-                    close()
+                    closeAfterWrites()
                     return
                 }
                 send(
@@ -181,12 +182,15 @@ class Session(
                         JSONObject().put("t", "pair_fail")
                             .put("message", "That code was wrong or has expired. Open the app on your phone for a new one.")
                     )
+                    // One guess per connection, and the code burns after a few.
+                    closeAfterWrites()
                 }
             }
 
             "auth" -> {
                 if (store.isKnown(message.optString("token"))) {
                     authenticated = true
+                    runCatching { socket.soTimeout = 0 }
                     token = message.optString("token")
                     role = message.optString("role")
                     computerName = message.optString("name")
@@ -204,7 +208,7 @@ class Session(
                         JSONObject().put("t", "auth_fail")
                             .put("message", "This computer is not paired with the phone any more.")
                     )
-                    close()
+                    closeAfterWrites()
                 }
             }
 
@@ -275,7 +279,7 @@ class Session(
             return
         }
         when (val kind = message.optString("t")) {
-            "sub" -> subscribe()
+            "sub" -> subscribe(message.optJSONArray("topics"))
 
             "notif_dismiss" ->
                 NotificationBridge.instance?.dismiss(message.optString("id"))
@@ -348,12 +352,18 @@ class Session(
 
             "media_get" -> {
                 val mediaId = message.optString("id")
-                val bytes = if (message.optBoolean("thumb"))
+                val thumb = message.optBoolean("thumb")
+                val bytes = if (thumb)
                     MediaRepository.thumbnail(context, mediaId)
                 else
-                    MediaRepository.original(context, mediaId)
+                    MediaRepository.original(context, mediaId, MEDIA_LIMIT)
                 if (bytes == null) {
-                    fail(id, "That item could not be read.")
+                    fail(
+                        id,
+                        if (!thumb && MediaRepository.tooLarge(context, mediaId, MEDIA_LIMIT))
+                            "That file is too large to open here. Share it to your computer from the phone."
+                        else "That item could not be read."
+                    )
                 } else {
                     sendBinary(
                         JSONObject().put("t", "media").put("id", mediaId)
@@ -636,9 +646,27 @@ class Session(
         }
     }
 
-    private fun subscribe() {
-        if (subscriber != null) return
+    /** Topics the desktop asked for; null means everything. */
+    @Volatile
+    private var topics: Set<String>? = null
+
+    private fun wanted(event: JSONObject): Boolean {
+        val chosen = topics ?: return true
+        val topic = TOPICS[event.optString("t")] ?: return true
+        return topic in chosen
+    }
+
+    private fun subscribe(requested: org.json.JSONArray?) {
+        val previous = topics
+        topics = requested?.let { list -> (0 until list.length()).map(list::optString).toSet() }
+        if (subscriber != null) {
+            // A changed subscription: send what was off and is now on.
+            val added = (topics ?: TOPICS.values.toSet()) - (previous ?: TOPICS.values.toSet())
+            sendSnapshot(added)
+            return
+        }
         val listener = Bus.Subscriber { event ->
+            if (!wanted(event)) return@Subscriber
             if (!event.has("origin")) {
                 send(event)
             } else if (event.optString("origin") != key) {
@@ -653,19 +681,34 @@ class Session(
         NowPlaying.addUser(context)
         PhoneStatus.addUser(context)
 
-        // Send current state immediately: a desktop that just connected should
-        // not have to wait for the next change to know what is on the phone.
-        NotificationBridge.instance?.snapshot()?.forEach(::send)
-        send(JSONObject().put("t", "dnd").put("mode", DndController.current(context)))
+        // Current state now, rather than at the next change.
+        sendSnapshot(null)
         send(CallMonitor.snapshot(context))
         send(NowPlaying.snapshot())
-        send(PhoneStatus.snapshot(context))
+    }
+
+    /** The state of [only] topics, or of every wanted one. */
+    private fun sendSnapshot(only: Set<String>?) {
+        fun included(topic: String) = (only == null || topic in only) && (topics?.contains(topic) ?: true)
+        if (included("notifications")) NotificationBridge.instance?.snapshot()?.forEach(::send)
+        if (included("dnd")) send(JSONObject().put("t", "dnd").put("mode", DndController.current(context)))
+        if (included("status")) send(PhoneStatus.snapshot(context))
     }
 
     // -- camera --------------------------------------------------------------
 
     private fun startCamera(message: JSONObject, id: Int?) {
         stopCamera()
+        val service = TesseraService.running_instance
+        if (service == null || !service.setCameraActive(true)) {
+            fail(
+                id,
+                "The phone will not allow camera access to a background service. " +
+                    "Open Phone Link on the phone once, then start the camera again."
+            )
+            send(JSONObject().put("t", "camera_stopped"))
+            return
+        }
         val streamer = CameraStreamer(
             context = context,
             facing = message.optString("facing", "back"),
@@ -681,17 +724,12 @@ class Session(
                     null,
                 )
             },
-            onError = { reason -> fail(id, reason) },
+            onError = { reason ->
+                fail(id, reason)
+                // The desktop stops its decoder on this.
+                send(JSONObject().put("t", "camera_stopped"))
+            },
         )
-        val service = TesseraService.running_instance
-        if (service == null || !service.setCameraActive(true)) {
-            fail(
-                id,
-                "The phone will not allow camera access to a background service. " +
-                    "Open Phone Link on the phone once, then start the camera again."
-            )
-            return
-        }
         camera = streamer
         streamer.start()
     }
@@ -896,10 +934,12 @@ class Session(
                 // Wait for room rather than queueing the whole file: the writer's queue is
                 // unbounded, and reading from storage is far faster than a Wi-Fi link, so without
                 // this the file would sit in memory in its entirety.
-                if (!sendWindow.tryAcquire(10, java.util.concurrent.TimeUnit.SECONDS)) {
-                    if (!open.get()) break
-                    continue
+                // Keep the chunk in hand while waiting: skipping it would corrupt the file.
+                var room = false
+                while (open.get() && !room) {
+                    room = sendWindow.tryAcquire(10, java.util.concurrent.TimeUnit.SECONDS)
                 }
+                if (!room) break
                 val header = JSONObject().put("t", "file_chunk").put("id", transfer.id)
                     .put("binary", true).put("length", chunk.size)
                 submitWrite {
@@ -925,16 +965,21 @@ class Session(
                     send(JSONObject().put("t", "file_done").put("id", transfer.id))
                 }
             }
-            endOutgoing()
+            endOutgoing(transfer)
         }
     }
 
+    /** Ends [only] if given and still current, otherwise whatever is current. */
     @Synchronized
-    private fun endOutgoing() {
-        outgoing?.let {
-            it.cancel()
-            it.close()
+    private fun endOutgoing(only: FileTransfer.Outgoing? = null) {
+        val current = outgoing ?: return
+        if (only != null && current !== only) {
+            only.cancel()
+            only.close()
+            return
         }
+        current.cancel()
+        current.close()
         outgoing = null
         startNextOutgoing()
     }
@@ -1013,6 +1058,11 @@ class Session(
         send(message)
     }
 
+    /** Closes once the messages already queued have been written. */
+    private fun closeAfterWrites() {
+        runCatching { writer.execute { close() } }.onFailure { close() }
+    }
+
     fun close() {
         if (!open.compareAndSet(true, false)) return
         // Half-written files are thrown away rather than published: an
@@ -1047,5 +1097,21 @@ class Session(
     companion object {
         private const val TAG = "TesseraSession"
         const val PROTOCOL_VERSION = 1
+
+        /** An unauthenticated connection gets this long to finish the handshake. */
+        private const val HANDSHAKE_MS = 20_000
+
+        /** Originals sent in one frame; leaves room under Frames.MAX_FRAME. */
+        private const val MEDIA_LIMIT = Frames.MAX_FRAME - 64 * 1024
+
+        /** Event type to the subscription topic that governs it. */
+        private val TOPICS = mapOf(
+            "notification" to "notifications",
+            "notification_removed" to "notifications",
+            "dnd" to "dnd",
+            "clipboard" to "clipboard",
+            "battery" to "battery",
+            "status" to "status",
+        )
     }
 }

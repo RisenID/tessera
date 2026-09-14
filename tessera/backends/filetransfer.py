@@ -88,12 +88,17 @@ def unique_path(directory: Path, name: str) -> Path:
     """A path in *directory* that is not already taken."""
     safe = safe_name(name)
     candidate = directory / safe
-    if not candidate.exists():
+
+    def free(path: Path) -> bool:
+        # A file still arriving under this name holds it too.
+        return not path.exists() and not partial_path(path).exists()
+
+    if free(candidate):
         return candidate
     stem, suffix = candidate.stem, candidate.suffix
     for index in range(2, 1000):
         candidate = directory / f"{stem} ({index}){suffix}"
-        if not candidate.exists():
+        if free(candidate):
             return candidate
     return directory / f"{stem} ({secrets.token_hex(4)}){suffix}"
 
@@ -441,18 +446,21 @@ class FileTransfers(QObject):
         handle = self._incoming.get(transfer_id)
         if transfer is None or handle is None:
             return
-        try:
-            handle.write(payload)                           # type: ignore[union-attr]
-        except OSError as exc:
-            transfer.link.send({
-                "t": "file_cancel", "id": transfer_id,
-                "message": f"writing failed: {exc}",
-            })
+        problem = ""
+        if transfer.size > 0 and transfer.done + len(payload) > transfer.size:
+            problem = "more data arrived than the file's size"
+        else:
+            try:
+                handle.write(payload)                       # type: ignore[union-attr]
+            except OSError as exc:
+                problem = f"writing failed: {exc}"
+        if problem:
+            transfer.link.send({"t": "file_cancel", "id": transfer_id, "message": problem})
             transfer.state = FAILED
-            transfer.error = str(exc)
+            transfer.error = problem
             self._discard_incoming(transfer_id)
             self.changed.emit(transfer)
-            self.failed.emit(f"{transfer.name}: {exc}")
+            self.failed.emit(f"{transfer.name}: {problem}")
             return
         transfer.done += len(payload)
         self.changed.emit(transfer)
@@ -468,6 +476,19 @@ class FileTransfers(QObject):
             handle.close()                                  # type: ignore[union-attr]
         except OSError:
             pass
+
+        if transfer.size > 0 and transfer.done != transfer.size:
+            problem = f"only {transfer.done} of {transfer.size} bytes arrived"
+            transfer.link.send({"t": "file_cancel", "id": transfer_id, "message": problem})
+            transfer.state = FAILED
+            transfer.error = problem
+            transfer.finished = time.monotonic()
+            # Put the handle back so the discard finds and removes the stub.
+            self._incoming[transfer_id] = handle
+            self._discard_incoming(transfer_id)
+            self.changed.emit(transfer)
+            self.failed.emit(f"{transfer.name}: {problem}")
+            return
 
         partial = partial_path(transfer.path)
         try:
@@ -619,12 +640,16 @@ def reveal(path: Path) -> None:
                              creationflags=platform.no_window_flags())
         return
     if have("dbus-send"):
+        from urllib.parse import quote
+
+        # Encoded, and commas too: dbus-send splits array items on them.
+        uri = "file://" + quote(str(path)).replace(",", "%2C")
         result = run([
             "dbus-send", "--session", "--print-reply",
             "--dest=org.freedesktop.FileManager1",
             "/org/freedesktop/FileManager1",
             "org.freedesktop.FileManager1.ShowItems",
-            f"array:string:file://{path}", "string:",
+            f"array:string:{uri}", "string:",
         ], timeout=5.0)
         if result.ok:
             return

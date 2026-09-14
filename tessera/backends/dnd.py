@@ -117,6 +117,9 @@ class DndSync(QObject):
         #: True while the companion app is reporting the phone's state,
         #: which makes the adb poll redundant. See set_pushed.
         self._pushed = False
+        #: A weakref.WeakMethod to a function that sends a desktop change to
+        #: the phone another way (the companion), returning False when it cannot.
+        self.push_via = None
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll)
@@ -389,9 +392,12 @@ class DndSync(QObject):
     def _push_to_phone(self, desktop_on: bool) -> None:
         if self._config.mode not in (MODE_DESKTOP_TO_PHONE, MODE_TWO_WAY):
             return
+        target = ZenMode.PRIORITY if desktop_on else ZenMode.OFF
+        push = self.push_via() if self.push_via is not None else None
+        if push is not None and push(target):
+            return
         if not self._serial:
             return
-        target = ZenMode.PRIORITY if desktop_on else ZenMode.OFF
         if target == self._phone:
             return
         self._busy = True

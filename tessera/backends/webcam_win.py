@@ -185,6 +185,12 @@ class WindowsCamera(QObject):
         if not (native_dir() / SOURCE_DLL).is_file() or not (native_dir() / HELPER_EXE).is_file():
             raise WebcamError("This build of Tessera has no camera component.")
 
+    def setup_needed(self):
+        """The one-time elevated registration, or None. Raises what check() raises."""
+        self.check()
+        source = native_dir() / SOURCE_DLL
+        return None if registered(source) else (lambda: register(source))
+
     def start(self) -> str:
         if self.running:
             raise WebcamError("The virtual camera is already running.")

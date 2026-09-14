@@ -209,9 +209,9 @@ def _wifi(level: int, size: int) -> QPixmap:
     scale = size / BOX
     _pen(painter, 1.9, size)
     painter.setBrush(Qt.BrushStyle.NoBrush)
+    # Arcs light from the inside out: level 4 lights all three, level 1 none.
     for index, radius in enumerate((9.5, 6.5, 3.5)):
-        if index >= max(0, level - 1):
-            painter.setOpacity(0.28)
+        painter.setOpacity(1.0 if 2 - index < level - 1 else 0.28)
         rect = QRectF(
             (12 - radius) * scale, (15 - radius) * scale,
             2 * radius * scale, 2 * radius * scale,

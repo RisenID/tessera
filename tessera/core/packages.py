@@ -141,7 +141,7 @@ PACKAGES: dict[str, dict[str, str]] = {
         "dnf": "gcc", "apt": "build-essential", "pacman": "base-devel",
         "zypper": "gcc", "apk": "build-base", "xbps": "gcc",
     },
-    # The only Python dependency.
+    # The Qt bindings, from the distribution on Linux.
     "pyside6": {
         "dnf": "python3-pyside6", "apt": "python3-pyside6.qtwidgets",
         "pacman": "pyside6", "zypper": "python3-pyside6",

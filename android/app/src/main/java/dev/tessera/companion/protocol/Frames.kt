@@ -46,6 +46,8 @@ object Frames {
      */
     fun write(output: OutputStream, type: Int, payload: ByteArray) {
         val length = payload.size + 1
+        // The desktop drops the link on a larger frame.
+        if (length > MAX_FRAME) throw ProtocolException("frame of $length bytes exceeds the limit")
         output.write((length ushr 24) and 0xFF)
         output.write((length ushr 16) and 0xFF)
         output.write((length ushr 8) and 0xFF)

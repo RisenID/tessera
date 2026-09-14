@@ -41,7 +41,10 @@ phone   -> desktop {"t":"pair_ok","token":"<64 hex>"}
 The phone refreshes it with `{"t":"computer_info","req"}`, answered with `name`.
 A reconnecting computer replaces its older connection with the same token.
 
-Codes last 60 seconds. `caps` lists only what the user granted.
+Codes last 60 seconds and burn after five wrong guesses; a wrong code closes the
+connection. The desktop should show the certificate fingerprint for comparison
+with the phone. An unauthenticated connection has 20 seconds to finish the
+handshake. `caps` lists only what the user granted.
 
 ## Requests
 
@@ -89,12 +92,13 @@ either -> other   {"t":"file_cancel","id","message"}
 ```
 desktop -> phone  {"t":"storage_start","req":7}
 phone   -> desktop {"rid":7,"port":8766,"user":"tessera","password":"<random>",
-                    "path":"/storage/emulated/0","hostKey":"ecdsa-sha2-nistp256 ..."}
+                    "path":"/","hostKey":"ecdsa-sha2-nistp256 ..."}
 desktop -> phone  {"t":"storage_stop"}
 desktop -> phone  {"t":"storage_grant","req":8}
 ```
 
-SFTP-only Apache MINA SSHD server. The desktop mounts with sshfs (or GVfs) and
+SFTP-only Apache MINA SSHD server, rooted at shared storage (`/` is
+`/storage/emulated/0`). The desktop mounts with sshfs (or GVfs) and
 `StrictHostKeyChecking=yes` against the host key received over this link.
 Random password per start; the server stops when the last desktop leaves.
 
@@ -106,9 +110,12 @@ Caps: `storage`, `storage_allowed`, `storage_grant`.
 desktop -> phone  {"t":"sub","topics":["notifications","dnd","battery","status","clipboard"]}
 ```
 
+Only the listed topics are sent; `call` and `media` always are. Without
+`topics`, everything. Sent again whenever the desktop's features change.
+
 | Event | Meaning |
 | --- | --- |
-| `{"t":"notification","id","app","package","title","text","time","repliable","dismissable","icon"}` | Posted or updated |
+| `{"t":"notification","id","app","package","title","text","time","repliable","clearable","ongoing","sms","icon"}` | Posted or updated |
 | `{"t":"notification_removed","id"}` | Removed |
 | `{"t":"dnd","mode":"off\|priority\|alarms\|none"}` | Interruption filter |
 | `{"t":"battery","level","charging"}` | Battery (KDE Connect style) |
@@ -140,8 +147,8 @@ Icons: `{"t":"icon_get","icon":"<id>"}` → header + PNG.
 | `{"t":"sms_threads","limit"}` | Conversations |
 | `{"t":"sms_messages","thread","limit"}` | Messages in a thread |
 | `{"t":"sms_send","address","text"}` | Send SMS |
-| `{"t":"media_list","limit","cursor"}` | Photo/video index |
-| `{"t":"media_get","id","thumb":true}` | Header + JPEG |
+| `{"t":"media_list","limit","offset"}` | Photo/video index |
+| `{"t":"media_get","id","thumb"}` | Header + JPEG, or the original; an error when the original is over one frame |
 | `{"t":"camera_start","facing","width","height","fps"}` | Start H.264 stream |
 | `{"t":"camera_stop"}` | Stop it |
 | `{"t":"hotspot_panel"}` | Open tethering settings |
@@ -154,7 +161,8 @@ Icons: `{"t":"icon_get","icon":"<id>"}` → header + PNG.
 
 `camera_start` → `{"t":"camera_started","codec":"h264","sps_pps":"<base64>"}`,
 then `{"t":"camera_frame","pts","key","binary":true}` + Annex-B data per frame,
-piped into ffmpeg → v4l2loopback.
+piped into ffmpeg → v4l2loopback. `{"t":"camera_stopped"}` when the phone's
+camera stops by itself, so the desktop stops its decoder.
 
 ## Clipboard
 

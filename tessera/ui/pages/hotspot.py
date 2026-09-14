@@ -25,6 +25,9 @@ class HotspotPage(QWidget):
         #: Where the phone says it can be reached, sent while both ends are
         #: still on the same network.
         self._addresses: list[str] = []
+        #: The network last joined here, for a hotspot with no name in Settings.
+        self._joining = ""
+        self._joined_ssid = ""
 
         # Watching for a hotspot switched on by hand.
         self._waiting = QTimer(self)
@@ -322,6 +325,7 @@ class HotspotPage(QWidget):
             self._fail("The hotspot started, but its network name is unknown.")
             return
         self._busy = True
+        self._joining = ssid
         self.status.setText(f"Waiting for '{ssid}' to appear, then connecting...")
         timeout = float(self.hub.config.hotspot.scan_timeout)
 
@@ -346,6 +350,7 @@ class HotspotPage(QWidget):
 
     def _succeed(self, message: str) -> None:
         self._busy = False
+        self._joined_ssid = self._joining
         self.status.setText(message)
         self.toast.show_message(message, self.palette_tokens, "success")
         self._refresh()
@@ -413,7 +418,7 @@ class HotspotPage(QWidget):
             self.state_pill.set_state("Not connected", "muted")
         # Only the phone's own network counts as joined; any other Wi-Fi is
         # just Wi-Fi. The panel's tile reads this.
-        wanted = self.hub.config.hotspot.ssid.strip()
+        wanted = self.hub.config.hotspot.ssid.strip() or self._joined_ssid
         self.hub.set_hotspot_joined(bool(ssid) and bool(wanted) and ssid == wanted)
 
     def resizeEvent(self, event) -> None:  # noqa: N802

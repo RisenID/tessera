@@ -95,6 +95,8 @@ object PhoneStatus {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
+            // Hidden constant, public broadcast: the desktop's volume slider follows it.
+            addAction("android.media.VOLUME_CHANGED_ACTION")
         }
         val listener = object : BroadcastReceiver() {
             override fun onReceive(from: Context?, intent: Intent?) {
@@ -107,7 +109,11 @@ object PhoneStatus {
         // ACTION_BATTERY_CHANGED is sticky, so this returns the current level
         // without waiting for the next change.
         runCatching {
-            val sticky = context.registerReceiver(listener, filter)
+            val sticky = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(listener, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(listener, filter)
+            }
             receiver = listener
             if (sticky != null) battery = describeBattery(context, sticky)
         }.onFailure { Log.w(TAG, "could not watch battery", it) }

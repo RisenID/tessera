@@ -25,8 +25,12 @@ log = logging.getLogger(__name__)
 
 PROVIDER = "Tessera"
 PHONE_ICON = r"%SystemRoot%\System32\imageres.dll,42"
-#: How often the phone is looked at for changes, as Sefirah does.
+#: How often the phone is looked at for changes, as Sefirah does, backing off
+#: to the maximum while nothing changes and nobody is browsing.
 WATCH_SECONDS = 2.0
+WATCH_MAX_SECONDS = 30.0
+#: How long a folder listing or file open counts as someone browsing.
+ACTIVE_SECONDS = 60.0
 RECONNECT_SECONDS = 5.0
 #: TRANSFER_DATA lengths must be 4 KiB aligned, except at the end of a file.
 CHUNK = 4096 * 4
@@ -119,6 +123,16 @@ def unregister(identity: str) -> None:
         log.debug("unregister %s: %s", identity, exc)
 
 
+def unregister_all() -> None:
+    """Every Tessera sync root of this user, for uninstalling."""
+    from winrt.windows.storage.provider import StorageProviderSyncRootManager
+
+    prefix = f"{PROVIDER}!{user_sid()}!"
+    for info in StorageProviderSyncRootManager.get_current_sync_roots():
+        if info.id.startswith(prefix):
+            unregister(info.id)
+
+
 class Provider:
     """Keeps one sync root and the phone's storage in step."""
 
@@ -131,6 +145,8 @@ class Provider:
         self._cancelled: dict[int, threading.Event] = {}
         self._threads: list[threading.Thread] = []
         self._watch_handle = None
+        self._stopped = False
+        self._active_until = 0.0
         self._known: dict[str, tuple[float, bool]] = {}
         self._callbacks = {
             cf.FETCH_PLACEHOLDERS: cf.CALLBACK(self._guard(self._on_fetch_placeholders)),
@@ -154,10 +170,14 @@ class Provider:
             self._threads.append(thread)
 
     def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
         self._stop.set()
         self._tasks.put(None)
-        if self._watch_handle is not None:
-            cf.kernel32().CancelIoEx(self._watch_handle, None)
+        handle = self._watch_handle
+        if handle is not None:
+            cf.kernel32().CancelIoEx(handle, None)
         for event in list(self._cancelled.values()):
             event.set()
         for thread in self._threads:
@@ -183,7 +203,15 @@ class Provider:
         return (info.VolumeDosName or "") + (normalized if normalized is not None else info.NormalizedPath)
 
     def _inside(self, full: str) -> bool:
-        return os.path.normcase(os.path.abspath(full)).startswith(os.path.normcase(self.folder))
+        # commonpath, not a prefix: "Pixel" is not inside "Pixel 8".
+        root = os.path.normcase(os.path.abspath(self.folder))
+        try:
+            return os.path.commonpath([root, os.path.normcase(os.path.abspath(full))]) == root
+        except ValueError:                              # another drive
+            return False
+
+    def _busy(self) -> None:
+        self._active_until = time.monotonic() + ACTIVE_SECONDS
 
     # -- callbacks, on cldapi's threads ----------------------------------------
 
@@ -196,6 +224,7 @@ class Provider:
         return call
 
     def _on_fetch_placeholders(self, info, _params) -> None:
+        self._busy()
         relative = self._relative(self._full_path(info))
         try:
             entries = self.remote.list(relative)
@@ -206,6 +235,7 @@ class Provider:
         cf.transfer_placeholders(info, [(e.name, e.size, e.mtime, e.is_dir) for e in entries])
 
     def _on_fetch_data(self, info, params) -> None:
+        self._busy()
         fetch = params.u.FetchData
         offset, end = fetch.RequiredFileOffset, fetch.RequiredFileOffset + fetch.RequiredLength
         relative = self._relative(self._full_path(info))
@@ -280,6 +310,7 @@ class Provider:
         self._known.pop(old_relative, None)
 
     def _changed_here(self, full: str) -> None:
+        self._busy()
         name = os.path.basename(full)
         if not os.path.exists(full) or name.lower() in LOCAL_JUNK or name.startswith("~$"):
             return
@@ -335,6 +366,7 @@ class Provider:
             while not self._stop.is_set():
                 if not kernel.ReadDirectoryChangesW(handle.value, buffer, len(buffer), True, NOTIFY_FILTER,
                                                     ctypes.byref(returned), None, None):
+                    self._watch_handle = None
                     return
                 data = ctypes.string_at(buffer, returned.value)
                 offset = 0
@@ -386,7 +418,8 @@ class Provider:
         return found
 
     def _watch_remote(self) -> None:
-        while not self._stop.wait(WATCH_SECONDS):
+        interval = WATCH_SECONDS
+        while not self._stop.wait(interval):
             try:
                 if not self.remote.connected:
                     self.remote.connect()
@@ -396,20 +429,30 @@ class Provider:
                 self._stop.wait(RECONNECT_SECONDS)
                 continue
             known, self._known = self._known, found
-            for relative in sorted(set(known) - set(found), reverse=True):
+            gone = sorted(set(known) - set(found), reverse=True)
+            changed = [r for r in sorted(found) if r not in known or found[r][0] > known[r][0]]
+            for relative in gone:
                 self._tasks.put(lambda r=relative: self._deleted_there(r))
-            for relative in sorted(found):
-                if relative not in known or found[relative][0] > known[relative][0]:
-                    self._tasks.put(lambda r=relative: self._changed_there(r))
+            for relative in changed:
+                self._tasks.put(lambda r=relative: self._changed_there(r))
+            if gone or changed or time.monotonic() < self._active_until:
+                interval = WATCH_SECONDS
+            else:
+                interval = min(interval * 2, WATCH_MAX_SECONDS)
 
     def _deleted_there(self, relative: str) -> None:
         full = self._local(relative)
         if not os.path.exists(full) or not cf.in_sync(full) or self.remote.exists(relative):
             return
-        if os.path.isdir(full):
-            shutil.rmtree(full, ignore_errors=True)
-        else:
-            os.remove(full)
+        try:
+            if os.path.isdir(full):
+                shutil.rmtree(full)
+            else:
+                os.remove(full)
+        except OSError as exc:
+            # Open in an app, most likely: remembered, so the next look tries again.
+            log.info("could not remove %s yet: %s", relative, exc)
+            self._known[relative] = (0, os.path.isdir(full))
 
     def _changed_there(self, relative: str) -> None:
         entry: Entry | None = self.remote.stat(relative)
@@ -417,28 +460,46 @@ class Provider:
         parent = os.path.dirname(full)
         if entry is None or not os.path.isdir(parent):
             return
-        if not os.path.exists(full):
-            cf.create_placeholder(parent, entry.name, entry.size, entry.mtime, entry.is_dir)
-            return
-        if entry.is_dir or not cf.in_sync(full):
-            return                          # a local edit wins until it is uploaded
-        if os.path.getsize(full) == entry.size and int(os.path.getmtime(full)) == int(entry.mtime):
-            return
-        cf.update_placeholder(full, entry.size, entry.mtime)
+        try:
+            if not os.path.exists(full):
+                cf.create_placeholder(parent, entry.name, entry.size, entry.mtime, entry.is_dir)
+                return
+            if entry.is_dir or not cf.in_sync(full):
+                return                      # a local edit wins until it is uploaded
+            if os.path.getsize(full) == entry.size and int(os.path.getmtime(full)) == int(entry.mtime):
+                return
+            cf.update_placeholder(full, entry.size, entry.mtime)
+        except OSError as exc:
+            # Open or pinned, most likely: forgotten, so the next look sees it as new again.
+            log.info("could not update %s yet: %s", relative, exc)
+            self._known.pop(relative, None)
 
 
 #: Running providers, by folder.
 _providers: dict[str, Provider] = {}
+#: Mounts and unmounts arrive on pool threads, in either order.
+_lock = threading.Lock()
 
 
-def mount(remote: Remote, folder: Path, name: str, identity: str) -> None:
-    register(folder, name, identity)
-    provider = Provider(remote, folder)
-    provider.start()
-    _providers[str(folder)] = provider
+def mount(remote: Remote, folder: Path, name: str, identity: str) -> Provider:
+    with _lock:
+        # A provider left from before a reconnect holds the sync root.
+        old = _providers.pop(str(folder), None)
+        if old is not None:
+            old.stop()
+        register(folder, name, identity)
+        provider = Provider(remote, folder)
+        provider.start()
+        _providers[str(folder)] = provider
+        return provider
 
 
-def unmount(folder: Path) -> None:
-    provider = _providers.pop(str(folder), None)
-    if provider is not None:
-        provider.stop()
+def unmount(folder: Path, provider: Provider | None = None) -> None:
+    """Stop *provider*, or whichever runs for *folder*; never a newer one."""
+    with _lock:
+        current = _providers.get(str(folder))
+        if provider is None or current is provider:
+            _providers.pop(str(folder), None)
+            provider = current
+        if provider is not None:
+            provider.stop()

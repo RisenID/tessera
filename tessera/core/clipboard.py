@@ -160,6 +160,8 @@ class ClipboardSync(QObject):
             return
 
         self._applied = text
+        # The phone has something else now, so an earlier send may be needed again.
+        self._last_sent = None
         clipboard.setText(text, QClipboard.Mode.Clipboard)
         self.received.emit(text)
 
