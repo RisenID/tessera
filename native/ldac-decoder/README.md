@@ -41,3 +41,8 @@ Round trip through Sony's encoder:
 
 - Output is 16-bit; wider formats are zero-padded.
 - Dual-channel mode is rejected (libldacdec overwrites the first block).
+- The header and frame length are validated before decoding, and frames are
+  decoded from a zero-padded copy: libldacdec's bit reader has no bounds.
+- libldacdec still asserts on some corrupt frame bodies (`calculatePrecisions`).
+
+`python3 scripts/check-ldac-decoder.py` tests this against Sony's encoder.

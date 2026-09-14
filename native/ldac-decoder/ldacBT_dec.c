@@ -46,6 +46,17 @@
 /* The largest frame libldacdec can produce: 256 samples, two channels. */
 #define MAX_FRAME_PCM (MAX_FRAME_SAMPLES * 2)
 
+/* Sync byte, then sample rate (3 bits), channel config (2), length - 1 (9), status (2). */
+#define HEADER_BYTES 3
+#define MAX_FRAME_BYTES (512 + HEADER_BYTES)
+
+/*
+ * libldacdec's bit reader has no bounds, and a malformed frame can steer it
+ * about 2 KB past the header (16-bit words, twice, for 512 samples). Frames are
+ * decoded from a zero-padded copy so it can never read the caller's memory.
+ */
+#define DECODE_PAD 4096
+
 struct slot {
     HANDLE_LDAC_BT handle;
     ldacdec_t decoder;
@@ -160,10 +171,38 @@ static int widen(const int16_t *pcm, int samples, LDACBT_SMPL_FMT_T fmt, unsigne
     }
 }
 
+/*
+ * The frame's size in bytes, or -1 when its header is one libldacdec would
+ * index its tables out of range with, or one this shim refuses.
+ */
+static int frame_bytes(const unsigned char *src, int src_size)
+{
+    if (src_size < HEADER_BYTES || src[0] != 0xAA)
+        return -1;
+
+    int rate_id = src[1] >> 5;
+    int config_id = (src[1] >> 3) & 0x3;
+    int length = (((src[1] & 0x7) << 6) | (src[2] >> 2)) + 1;
+
+    /* Four sample rates exist. Config 3 has no channel count. */
+    if (rate_id > 3 || config_id > 2)
+        return -1;
+
+    /*
+     * Dual-channel (config 1) is refused: libldacdec decodes both of its blocks
+     * to the start of the output, so the second overwrites the first.
+     */
+    if (config_id == 1)
+        return -1;
+
+    return length + HEADER_BYTES;
+}
+
 int ldacBT_decode(HANDLE_LDAC_BT handle, unsigned char *src, unsigned char *dst,
                   LDACBT_SMPL_FMT_T fmt, int src_size, int *consumed, int *dst_out)
 {
     int16_t pcm[MAX_FRAME_PCM];
+    unsigned char padded[MAX_FRAME_BYTES + DECODE_PAD];
     int used = 0;
 
     if (consumed)
@@ -174,6 +213,13 @@ int ldacBT_decode(HANDLE_LDAC_BT handle, unsigned char *src, unsigned char *dst,
     if (handle == NULL || src == NULL || dst == NULL || src_size <= 0)
         return -1;
 
+    /* Everything the decoder reads is checked before it runs. */
+    int needed = frame_bytes(src, src_size);
+    if (needed < 0 || needed > src_size)
+        return -1;
+    memcpy(padded, src, (size_t)needed);
+    memset(padded + needed, 0, sizeof(padded) - (size_t)needed);
+
     pthread_mutex_lock(&lock);
 
     struct slot *slot = find(handle);
@@ -183,7 +229,7 @@ int ldacBT_decode(HANDLE_LDAC_BT handle, unsigned char *src, unsigned char *dst,
     }
     slot->used_at = ++clock_tick;
 
-    if (ldacDecode(&slot->decoder, src, pcm, &used) < 0) {
+    if (ldacDecode(&slot->decoder, padded, pcm, &used) < 0) {
         pthread_mutex_unlock(&lock);
         return -1;
     }
@@ -192,18 +238,8 @@ int ldacBT_decode(HANDLE_LDAC_BT handle, unsigned char *src, unsigned char *dst,
     int channels = frame->channelCount;
     int samples = frame->frameSamples * channels;
 
-    /*
-     * Dual-channel LDAC is refused rather than decoded.
-     *
-     * That mode splits a stereo pair across two independently coded blocks,
-     * and libldacdec's frame loop decodes every channel inside each block and
-     * writes all of them to the start of the output -- the second block
-     * overwrites the first, and the result is not the audio that was sent.
-     * Phones use stereo; this exists so a device that does not send silent
-     * rubbish instead.
-     */
-    if (frame->channelConfigId == 1 || channels < 1 || channels > 2 ||
-        samples > MAX_FRAME_PCM || used <= 0 || used > src_size) {
+    /* A frame whose contents ran past its own declared length is corrupt. */
+    if (channels < 1 || channels > 2 || samples > MAX_FRAME_PCM || used != needed) {
         pthread_mutex_unlock(&lock);
         return -1;
     }
