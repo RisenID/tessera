@@ -131,7 +131,7 @@ Icons: `{"t":"icon_get","icon":"<id>"}` → header + PNG.
 | --- | --- |
 | `{"t":"notif_dismiss","id"}` | Dismiss |
 | `{"t":"notif_reply","id","text"}` | Inline reply |
-| `{"t":"dnd_set","mode"}` | Set interruption filter |
+| `{"t":"dnd_set","mode"}` | Set interruption filter; replies `mode`, or an error when something else holds DND |
 | `{"t":"ringer_set","mode":"normal\|vibrate\|silent"}` | Set ringer |
 | `{"t":"sms_threads","limit"}` | Conversations |
 | `{"t":"sms_messages","thread","limit"}` | Messages in a thread |

@@ -41,6 +41,35 @@ object DndController {
         return manager.isNotificationPolicyAccessGranted
     }
 
+    /** Sets [name] and checks it took. Null when it did, else why not. */
+    fun set(context: Context, name: String): String? {
+        val filter = toFilter(name)
+        // Since Android 15 an app only switches its own mode; the shell switches the phone's.
+        if (PrivilegedShell.hasPermission()) {
+            PrivilegedShell.run("cmd notification set_dnd $name", 10_000)
+            if (settled(context, filter)) return null
+        }
+        if (!apply(context, name)) {
+            return "Do Not Disturb could not be changed. Grant notification access on the phone."
+        }
+        if (settled(context, filter)) return null
+        return if (PrivilegedShell.hasPermission()) {
+            "Something else on the phone is holding Do Not Disturb. Change it on the phone."
+        } else {
+            "Do Not Disturb was set by something other than Tessera. " +
+                "Start Shizuku on the phone to let Tessera change it."
+        }
+    }
+
+    private fun settled(context: Context, filter: Int): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return false
+        repeat(10) {
+            if (manager.currentInterruptionFilter == filter) return true
+            Thread.sleep(100)
+        }
+        return false
+    }
+
     /** Applies a new filter. */
     fun apply(context: Context, name: String): Boolean {
         val filter = toFilter(name)

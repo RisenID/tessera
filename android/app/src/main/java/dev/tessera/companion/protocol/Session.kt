@@ -275,8 +275,14 @@ class Session(
 
             "dnd_set" -> {
                 val mode = message.optString("mode")
-                if (!DndController.apply(context, mode)) {
-                    fail(id, "Do Not Disturb could not be changed. Grant notification access on the phone.")
+                // Off the reader: checking the change took waits a moment.
+                thread(name = "tessera-dnd") {
+                    val problem = DndController.set(context, mode)
+                    if (problem == null) {
+                        reply(id, JSONObject().put("mode", DndController.current(context)))
+                    } else {
+                        fail(id, problem)
+                    }
                 }
             }
 

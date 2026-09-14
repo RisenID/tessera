@@ -1425,8 +1425,19 @@ class Hub(QObject):
 
     def set_phone_dnd(self, mode: str) -> None:
         if self.companion.connected:
-            self.companion.send({"t": "dnd_set", "mode": mode})
+            previous = self._phone_dnd
+
+            def replied(message: dict[str, Any]) -> None:
+                # Refused, e.g. a mode set by something other than Tessera: undo the guess.
+                if message.get("t") == "error":
+                    self._on_phone_dnd(previous)
+                    self.errorOccurred.emit(
+                        message.get("message") or "The phone kept its Do Not Disturb."
+                    )
+
+            # Shown first: a refusal can come back before request() returns.
             self._on_phone_dnd(mode)
+            self.companion.request({"t": "dnd_set", "mode": mode}, replied)
         elif self._serial:
             self.dnd.set_phone(_zen_from_name(mode))
         else:
