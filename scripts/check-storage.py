@@ -259,7 +259,9 @@ def drive_on_windows() -> None:
     check("passing over ones in use", win.free_letter({"C", "Z", "Y"}) == "X")
     check("and there may be none", win.free_letter(set(win.LETTERS)) == "")
 
-    real = (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters)
+    real = (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters,
+            win.dress_drive, win.undress_drive)
+    dressed: list[tuple[str, ...]] = []
     try:
         win.sshfs_path = lambda: ""
         win.winfsp_installed = lambda: False
@@ -288,6 +290,9 @@ def drive_on_windows() -> None:
 
         win._spawn = spawn
         win._exists = lambda root: root == "Y:\\"
+        # Recorded, not written: a check must not touch the real registry.
+        win.dress_drive = lambda letter, name: dressed.append(("dress", letter, name))
+        win.undress_drive = lambda letter: dressed.append(("undress", letter))
         bookmarks = ROOT / "config" / "gtk-3.0" / "bookmarks"
         before = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
 
@@ -307,9 +312,13 @@ def drive_on_windows() -> None:
               process.env["PATH"].startswith(str(Path(sshfs).parent)))
         after = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else None
         check("no Linux file manager bookmark is written", after == before)
+        check("the drive shows as the phone, with its icon and name",
+              dressed == [("dress", "Y", "Ruchit's S25")], str(dressed))
+        check("with a phone from Windows' own icons", "imageres.dll" in win.PHONE_ICON)
 
         storage.unmount(mounted)
         check("unmounting stops sshfs, which takes the drive away", process.stopped)
+        check("and takes the icon and name back", dressed[-1] == ("undress", "Y"), str(dressed))
         storage.unmount(mounted)
         check("and doing it twice is harmless", len(spawned) == 1)
 
@@ -330,8 +339,11 @@ def drive_on_windows() -> None:
             said = str(exc)
         check("a server with the wrong key is not trusted", "key" in said, said)
         check("and nothing is left running", spawned[-1].stopped)
+        check("nor a phone icon on a drive that never came up",
+              dressed[-1][0] == "undress", str(dressed[-1:]))
     finally:
-        win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters = real
+        (win.sshfs_path, win.winfsp_installed, win._spawn, win._exists, win.used_letters,
+         win.dress_drive, win.undress_drive) = real
 
 
 # -- the hub and the page, on either system -----------------------------------

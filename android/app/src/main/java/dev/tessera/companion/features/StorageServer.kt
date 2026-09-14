@@ -4,17 +4,27 @@ import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
+import android.os.StatFs
 import android.util.Log
 import dev.tessera.companion.Store
 import org.apache.sshd.common.config.keys.KeyUtils
 import org.apache.sshd.common.config.keys.PublicKeyEntry
 import org.apache.sshd.common.file.nativefs.NativeFileSystemFactory
+import org.apache.sshd.common.util.buffer.Buffer
 import org.apache.sshd.common.util.io.PathUtils
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.password.PasswordAuthenticator
+import org.apache.sshd.server.channel.ChannelSession
+import org.apache.sshd.server.command.Command
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider
+import org.apache.sshd.server.session.ServerSession
+import org.apache.sshd.sftp.common.SftpConstants
+import org.apache.sshd.sftp.common.extensions.openssh.AbstractOpenSSHExtensionParser.OpenSSHExtension
+import org.apache.sshd.sftp.common.extensions.openssh.StatVfsExtensionParser
 import org.apache.sshd.sftp.server.FileHandle
 import org.apache.sshd.sftp.server.SftpFileSystemAccessor
+import org.apache.sshd.sftp.server.SftpSubsystem
+import org.apache.sshd.sftp.server.SftpSubsystemConfigurator
 import org.apache.sshd.sftp.server.SftpSubsystemFactory
 import org.apache.sshd.sftp.server.SftpSubsystemProxy
 import java.io.File
@@ -94,9 +104,9 @@ object StorageServer {
                     )
                 }
                 subsystemFactories = listOf(
-                    SftpSubsystemFactory.Builder()
-                        .withFileSystemAccessor(MediaIndexing(context.applicationContext, root))
-                        .build()
+                    WithStatVfs().apply {
+                        fileSystemAccessor = MediaIndexing(context.applicationContext, root)
+                    }
                 )
             }
             try {
@@ -133,6 +143,41 @@ object StorageServer {
         System.setProperty("user.home", context.filesDir.path)
         System.setProperty("org.apache.sshd.security.provider.BC.enabled", "false")
         runCatching { PathUtils.setUserHomeFolderResolver { context.filesDir.toPath() } }
+    }
+
+    /** MINA has no statvfs, so sshfs showed a made-up 1000 GiB drive. */
+    private class WithStatVfs : SftpSubsystemFactory() {
+        override fun createSubsystem(channel: ChannelSession): Command = StatVfsSubsystem(channel, this)
+    }
+
+    private class StatVfsSubsystem(channel: ChannelSession, configurator: SftpSubsystemConfigurator) :
+        SftpSubsystem(channel, configurator) {
+
+        override fun resolveOpenSSHExtensions(session: ServerSession?): List<OpenSSHExtension> =
+            super.resolveOpenSSHExtensions(session).orEmpty() +
+                OpenSSHExtension(StatVfsExtensionParser.NAME, "2")
+
+        override fun executeExtendedCommand(buffer: Buffer, id: Int, extension: String) {
+            if (extension != StatVfsExtensionParser.NAME) {
+                super.executeExtendedCommand(buffer, id, extension)
+                return
+            }
+            val stats = runCatching { StatFs(resolveFile(buffer.string).toString()) }.getOrNull()
+            if (stats == null) {
+                sendStatus(prepareReply(buffer), id, SftpConstants.SSH_FX_FAILURE, "statvfs failed")
+                return
+            }
+            val reply = prepareReply(buffer)
+            reply.putByte(SftpConstants.SSH_FXP_EXTENDED_REPLY.toByte())
+            reply.putInt(id.toLong())
+            val block = stats.blockSizeLong
+            // bsize, frsize, blocks, bfree, bavail, files, ffree, favail, fsid, flag, namemax
+            longArrayOf(
+                block, block, stats.blockCountLong, stats.freeBlocksLong, stats.availableBlocksLong,
+                0, 0, 0, 0, 0, 255,
+            ).forEach(reply::putLong)
+            send(reply)
+        }
     }
 
     /** Tell the phone's gallery and music apps about files the desktop changes. */

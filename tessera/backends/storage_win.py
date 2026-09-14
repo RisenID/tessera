@@ -139,6 +139,41 @@ def sshfs_command(info: storage.ServerInfo, letter: str, known_hosts: Path,
     return command
 
 
+#: Explorer's per-user drive icon and label, by letter.
+DRIVE_KEY = r"Software\Classes\Applications\Explorer.exe\Drives\{letter}"
+#: The phone in Windows' own icon set.
+PHONE_ICON = r"%SystemRoot%\System32\imageres.dll,42"
+
+
+def dress_drive(letter: str, name: str) -> None:
+    """Show the drive as the phone: its icon and its name."""
+    try:
+        import winreg
+    except ImportError:
+        return
+    base = DRIVE_KEY.format(letter=letter)
+    try:
+        for sub, value in (("DefaultIcon", PHONE_ICON), ("DefaultLabel", name)):
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{base}\{sub}") as key:
+                winreg.SetValueEx(key, "", 0, winreg.REG_EXPAND_SZ if sub == "DefaultIcon"
+                                  else winreg.REG_SZ, value)
+    except OSError as exc:
+        log.debug("could not set the drive icon: %s", exc)
+
+
+def undress_drive(letter: str) -> None:
+    try:
+        import winreg
+    except ImportError:
+        return
+    base = DRIVE_KEY.format(letter=letter)
+    for sub in (rf"{base}\DefaultIcon", rf"{base}\DefaultLabel", base):
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+        except OSError:
+            pass
+
+
 def _spawn(command: list[str], env: dict, log_path: Path) -> subprocess.Popen:
     with open(log_path, "w", encoding="utf-8") as output:
         return subprocess.Popen(
@@ -180,6 +215,8 @@ def mount(info: storage.ServerInfo, name: str) -> storage.Mount:
         **os.environ,
         "PATH": str(Path(sshfs).parent) + os.pathsep + os.environ.get("PATH", ""),
     }
+    # Before the drive appears: Explorer reads these when it first shows it.
+    dress_drive(letter, volume_name(name))
     process = _spawn(sshfs_command(info, letter, known_hosts, name, sshfs), env, log_path)
     try:
         process.stdin.write(info.password + "\n")
@@ -196,6 +233,7 @@ def mount(info: storage.ServerInfo, name: str) -> storage.Mount:
         time.sleep(0.2)
 
     _stop(process)
+    undress_drive(letter)
     try:
         output = log_path.read_text(encoding="utf-8", errors="replace").strip()
     except OSError:
@@ -205,9 +243,11 @@ def mount(info: storage.ServerInfo, name: str) -> storage.Mount:
 
 def unmount(mounted: storage.Mount) -> None:
     """Stop sshfs.exe, which takes the drive away with it. Never raises."""
-    process = _processes.pop(mounted.location[:1].upper(), None)
+    letter = mounted.location[:1].upper()
+    process = _processes.pop(letter, None)
     if process is not None:
         _stop(process)
+    undress_drive(letter)
 
 
 def _stop(process) -> None:
