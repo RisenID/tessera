@@ -117,30 +117,6 @@ object MediaRepository {
         }.onFailure { Log.w(TAG, "thumbnail for $mediaId failed", it) }.getOrNull()
     }
 
-    /** An upright JPEG for viewing, decoded from any format (HEIC included). */
-    fun display(context: Context, mediaId: String, maxEdge: Int = 2560): ByteArray? {
-        val uri = uriFor(mediaId) ?: return null
-        return runCatching {
-            val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
-            val bitmap = android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                val longest = maxOf(info.size.width, info.size.height)
-                if (longest > maxEdge) {
-                    val scale = maxEdge.toDouble() / longest
-                    decoder.setTargetSize(
-                        (info.size.width * scale).toInt().coerceAtLeast(1),
-                        (info.size.height * scale).toInt().coerceAtLeast(1),
-                    )
-                }
-                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
-            }
-            ByteArrayOutputStream().use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
-                bitmap.recycle()
-                stream.toByteArray()
-            }
-        }.onFailure { Log.w(TAG, "display image for $mediaId failed", it) }.getOrNull()
-    }
-
     /** The original file's bytes, or null when unreadable or over [limit]. */
     fun original(context: Context, mediaId: String, limit: Int): ByteArray? {
         val uri = uriFor(mediaId) ?: return null

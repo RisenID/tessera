@@ -23,16 +23,11 @@ from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, EmptyState, Toast, header_row, heading
 
 
-def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None,
-               display: bool = False) -> None:
-    """The full-size picture, cached in *cache* for the session.
-
-    *display* asks for an upright JPEG to view; otherwise the original file.
-    """
+def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None) -> None:
+    """The full-size picture, cached in *cache* for the session."""
     media_id = item.get("id", "")
-    key = f"{media_id}:display" if display else media_id
-    if key in cache:
-        on_data(cache[key])
+    if media_id in cache:
+        on_data(cache[media_id])
         return
     if not hub.companion.connected:
         if on_error is not None:
@@ -42,14 +37,12 @@ def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None,
     def arrived(reply: dict) -> None:
         data = reply.get("data")
         if isinstance(data, (bytes, bytearray)):
-            cache[key] = bytes(data)
-            on_data(cache[key])
+            cache[media_id] = bytes(data)
+            on_data(cache[media_id])
         elif on_error is not None:
             on_error(str(reply.get("message") or "The phone could not send it."))
 
-    hub.companion.request(
-        {"t": "media_get", "id": media_id, "thumb": False, "display": display}, arrived
-    )
+    hub.companion.request({"t": "media_get", "id": media_id, "thumb": False}, arrived)
 
 
 def save_media(widget, hub, cache: dict, item: dict, toast, palette) -> None:
@@ -212,7 +205,6 @@ class PhotoViewer(QDialog):
                 item,
                 lambda data, key=item.get("id"): self._on_full(key, data),
                 lambda message, key=item.get("id"): self._on_failed(key, message),
-                display=True,
             )
 
     def _on_failed(self, media_id: str, message: str) -> None:
@@ -282,10 +274,12 @@ class PhotosPage(QWidget):
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         host = QWidget()
         self.grid = QGridLayout(host)
         self.grid.setSpacing(SPACE["md"])
-        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self._columns = 0
         self.scroll.setWidget(host)
         outer.addWidget(self.scroll, 1)
 
@@ -320,12 +314,11 @@ class PhotosPage(QWidget):
         self._tiles.clear()
         self._items = list(items)
 
-        columns = 5
-        for index, item in enumerate(items):
-            tile = Thumb(item, self.palette_tokens, self.save, self.view)
-            self.grid.addWidget(tile, index // columns, index % columns)
-            self._tiles[item.get("id", "")] = tile
+        for item in items:
+            self._tiles[item.get("id", "")] = Thumb(item, self.palette_tokens, self.save, self.view)
             self._request_thumb(item.get("id", ""))
+        self._columns = 0
+        self._place_tiles()
 
         self.scroll.setVisible(bool(items))
         self.empty.setVisible(not items)
@@ -370,12 +363,30 @@ class PhotosPage(QWidget):
         tile = self._tiles.get(item.get("id", ""))
         return tile.thumbnail if tile is not None else QPixmap()
 
-    def fetch_full(self, item: dict, on_data, on_error=None, display: bool = False) -> None:
-        fetch_full(self.hub, self._full, item, on_data, on_error, display)
+    def fetch_full(self, item: dict, on_data, on_error=None) -> None:
+        fetch_full(self.hub, self._full, item, on_data, on_error)
 
     def save(self, item: dict) -> None:
         save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)
 
+    def _place_tiles(self) -> None:
+        """As many tiles per row as the width holds, without scrolling sideways."""
+        tiles = list(self._tiles.values())
+        if not tiles:
+            return
+        margins = self.grid.contentsMargins()
+        spacing = self.grid.spacing()
+        width = self.scroll.viewport().width() - margins.left() - margins.right()
+        columns = max(1, (width + spacing) // (tiles[0].width() + spacing))
+        if columns == self._columns:
+            return
+        self._columns = columns
+        for tile in tiles:
+            self.grid.removeWidget(tile)
+        for index, tile in enumerate(tiles):
+            self.grid.addWidget(tile, index // columns, index % columns)
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
+        self._place_tiles()
         self.toast._reposition()

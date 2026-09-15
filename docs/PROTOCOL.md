@@ -148,7 +148,7 @@ Icons: `{"t":"icon_get","icon":"<id>"}` → header + PNG.
 | `{"t":"sms_messages","thread","limit"}` | Messages in a thread |
 | `{"t":"sms_send","address","text"}` | Send SMS |
 | `{"t":"media_list","limit","offset"}` | Photo/video index |
-| `{"t":"media_get","id","thumb","display"}` | Header + JPEG thumbnail, an upright JPEG for viewing (`display`), or the original; an error when the original is over one frame |
+| `{"t":"media_get","id","thumb"}` | Header + JPEG, or the original; an error when the original is over one frame |
 | `{"t":"camera_start","facing","width","height","fps"}` | Start H.264 stream |
 | `{"t":"camera_stop"}` | Stop it |
 | `{"t":"hotspot_panel"}` | Open tethering settings |

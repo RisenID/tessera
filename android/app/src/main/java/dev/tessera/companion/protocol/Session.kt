@@ -353,12 +353,10 @@ class Session(
             "media_get" -> {
                 val mediaId = message.optString("id")
                 val thumb = message.optBoolean("thumb")
-                val bytes = when {
-                    thumb -> MediaRepository.thumbnail(context, mediaId)
-                    message.optBoolean("display") -> MediaRepository.display(context, mediaId)
-                        ?: MediaRepository.original(context, mediaId, MEDIA_LIMIT)
-                    else -> MediaRepository.original(context, mediaId, MEDIA_LIMIT)
-                }
+                val bytes = if (thumb)
+                    MediaRepository.thumbnail(context, mediaId)
+                else
+                    MediaRepository.original(context, mediaId, MEDIA_LIMIT)
                 if (bytes == null) {
                     fail(
                         id,

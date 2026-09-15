@@ -24,7 +24,6 @@
     <string name="granted">Ready</string>
     <string name="not_granted">Needs permission</string>
     <string name="grant">Grant</string>
-    <string name="grant_all">Grant all</string>
     <string name="unknown_ip">no Wi‑Fi address</string>
 
     <string name="channel_status">Connection status</string>

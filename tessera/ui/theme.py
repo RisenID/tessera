@@ -297,14 +297,14 @@ QScrollArea > QWidget > QWidget {{ background: transparent; }}
 QAbstractScrollArea::viewport {{ background: transparent; }}
 
 /* The rule above also clears the scroll bars, so draw them here. */
-QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+QScrollBar:vertical {{ background: {p.bg}; width: 10px; margin: 2px; border: none; }}
+QScrollBar:horizontal {{ background: {p.bg}; height: 10px; margin: 2px; border: none; }}
 QScrollBar::handle {{ background: {mix(p.bg, p.text, 0.3)}; border-radius: 3px; }}
 QScrollBar::handle:vertical {{ min-height: 24px; }}
 QScrollBar::handle:horizontal {{ min-width: 24px; }}
 QScrollBar::handle:hover {{ background: {mix(p.bg, p.text, 0.5)}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
-QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: {p.bg}; }}
 
 QComboBox QAbstractItemView {{
     selection-background-color: {p.accent};

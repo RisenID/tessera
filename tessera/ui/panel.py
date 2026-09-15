@@ -1082,10 +1082,8 @@ class DevicePanel(QWidget):
             self.comp_cell.set()
 
         ringer = str(status.get("ringer", ""))
-        volume = status.get("ringVolume", -1)
+        volume = status.get("volume", -1)
         loud = isinstance(volume, int) and volume >= 0
-        if ringer == "normal" and volume == 0:
-            ringer = "vibrate"      # older companion apps report this as normal
         if ringer == "silent":
             self.comp_ringer.set("audio-volume-muted", text="silent",
                                  tooltip="Ringer silent", tone=p.warning)
@@ -1097,7 +1095,7 @@ class DevicePanel(QWidget):
                 "audio-volume-high",
                 text=f"{volume}%" if loud else "",
                 tooltip="Ringer on" + (
-                    f" \N{MIDDLE DOT} ring volume {volume}%" if loud else ""
+                    f" \N{MIDDLE DOT} media volume {volume}%" if loud else ""
                 ),
             )
         else:

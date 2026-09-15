@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from array import array
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QProcess, Signal
 
+from ..core import packages
 from ..core.config import PhoneAudioConfig
+from ..core.proc import have, tool_path
 
 log = logging.getLogger(__name__)
+
+#: Linux plays through pw-cat or pacat. Qt's media backends probe CUDA and VDPAU
+#: on start (minutes on some NVIDIA setups) and lose the output device.
+USE_PROCESS = sys.platform.startswith("linux")
 
 try:  # pragma: no cover - depends on the Qt build
     from PySide6.QtMultimedia import (
@@ -43,34 +50,26 @@ MAX_BACKLOG_MS = 400
 LEVEL_STRIDE = 8
 
 
-_backend_ready = False
-
-
-def _start_backend() -> None:
-    """Load Qt's media backend without its VA-API probe.
-
-    Only audio is used, and the probe can hang for minutes on NVIDIA drivers.
-    """
-    global _backend_ready
-    if _backend_ready or not HAVE_QTMULTIMEDIA:
-        return
-    _backend_ready = True
-    if os.environ.get("LIBVA_DRIVERS_PATH"):
-        QMediaDevices.defaultAudioOutput()
-        return
-    os.environ["LIBVA_DRIVERS_PATH"] = os.devnull
-    try:
-        QMediaDevices.defaultAudioOutput()
-    finally:
-        del os.environ["LIBVA_DRIVERS_PATH"]
-
-
 def available() -> bool:
     """Whether this computer can play audio at all."""
+    if USE_PROCESS:
+        return bool(player_argv(RATE, CHANNELS, 0))
     if not HAVE_QTMULTIMEDIA:
         return False
-    _start_backend()
     return QMediaDevices.defaultAudioOutput() is not None
+
+
+def player_argv(rate: int, channels: int, latency_ms: int) -> list[str]:
+    """pw-cat or pacat reading raw PCM on stdin, or [] when neither is installed."""
+    latency = max(20, latency_ms)
+    if have("pw-cat"):
+        return [tool_path("pw-cat"), "--playback", "--raw", "--format=s16",
+                f"--rate={rate}", f"--channels={channels}", f"--latency={latency}ms", "-"]
+    if have("pacat"):
+        return [tool_path("pacat"), "--playback", "--raw", "--format=s16le",
+                f"--rate={rate}", f"--channels={channels}", f"--latency-msec={latency}",
+                "--client-name=Tessera", "--stream-name=Phone audio"]
+    return []
 
 
 def _bytes_for(milliseconds: int) -> int:
@@ -91,6 +90,7 @@ class PhoneAudio(QObject):
         self._config = config
         self._sink: QAudioSink | None = None
         self._device = None                 # the QIODevice the sink hands back
+        self._process: QProcess | None = None
         self._pending = bytearray()
         self._priming = True
         self._dropped = 0
@@ -100,7 +100,7 @@ class PhoneAudio(QObject):
 
     @property
     def running(self) -> bool:
-        return self._sink is not None
+        return self._sink is not None or self._process is not None
 
     @property
     def played_bytes(self) -> int:
@@ -116,7 +116,7 @@ class PhoneAudio(QObject):
 
     def open(self, header: dict) -> None:
         """Start playing, using the format the phone declared."""
-        if not HAVE_QTMULTIMEDIA:
+        if not USE_PROCESS and not HAVE_QTMULTIMEDIA:
             self.failed.emit(
                 "This build of Qt has no audio output, so the phone's audio "
                 "cannot be played here."
@@ -135,7 +135,10 @@ class PhoneAudio(QObject):
 
         self.close()
 
-        _start_backend()
+        if USE_PROCESS:
+            self._open_process(codec, rate, channels)
+            return
+
         output = self._output_device()
         if output is None:
             self.failed.emit("This computer has no audio output to play through.")
@@ -177,9 +180,45 @@ class PhoneAudio(QObject):
         )
         self.started.emit()
 
+    def _open_process(self, codec: str, rate: int, channels: int) -> None:
+        argv = player_argv(rate, channels, self._config.buffer_ms)
+        if not argv:
+            self.failed.emit(
+                "No audio player found. " + packages.advice("pipewire-tools")
+            )
+            return
+        process = QProcess(self)
+        process.setProgram(argv[0])
+        process.setArguments(argv[1:])
+        process.setStandardOutputFile(QProcess.nullDevice())
+        process.setStandardErrorFile(QProcess.nullDevice())
+        process.finished.connect(self._on_process_finished)
+        process.start()
+        if not process.waitForStarted(3000):
+            self.failed.emit("The audio player would not start.")
+            process.deleteLater()
+            return
+        self._process = process
+        self._pending.clear()
+        self._priming = True
+        self._dropped = 0
+        self._played = 0
+        log.info("playing the phone's audio through %s: %s %s Hz, %s channels",
+                 os.path.basename(argv[0]), codec, rate, channels)
+        self.started.emit()
+
+    def _on_process_finished(self, *_args) -> None:
+        if self.sender() is not self._process:
+            return
+        self._process.deleteLater()
+        self._process = None
+        self._pending.clear()
+        self.failed.emit("The audio player stopped.")
+        self.stopped.emit()
+
     def feed(self, payload: bytes) -> None:
         """Take one frame from the phone."""
-        if self._sink is None or self._device is None:
+        if not self.running or (self._sink is not None and self._device is None):
             return
         self._pending += payload
         self._emit_level(payload)
@@ -195,6 +234,16 @@ class PhoneAudio(QObject):
 
     def _drain(self) -> None:
         """Hand the sink as much as it will take."""
+        if self._process is not None:
+            free = _bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
+            free -= free % BYTES_PER_FRAME
+            if free <= 0 or not self._pending:
+                return
+            chunk = bytes(self._pending[:free])
+            del self._pending[:len(chunk)]
+            self._process.write(self._scaled(chunk))
+            self._played += len(chunk)
+            return
         device = self._device
         if device is None or not self._pending:
             return
@@ -222,8 +271,27 @@ class PhoneAudio(QObject):
         self._dropped += excess
         log.debug("dropped %s bytes to keep the delay down", excess)
 
+    def _scaled(self, chunk: bytes) -> bytes:
+        """*chunk* at the configured volume; pw-cat and pacat have no volume control."""
+        volume = max(0, min(100, self._config.volume))
+        if volume >= 100:
+            return chunk
+        samples = array("h")
+        samples.frombytes(chunk)
+        return array("h", (value * volume // 100 for value in samples)).tobytes()
+
     def close(self) -> None:
         """Stop playing and let the output go."""
+        process, self._process = self._process, None
+        if process is not None:
+            process.finished.disconnect(self._on_process_finished)
+            process.kill()
+            process.waitForFinished(1000)
+            process.deleteLater()
+            self._pending.clear()
+            self._priming = True
+            self.stopped.emit()
+            return
         sink, self._sink = self._sink, None
         self._device = None
         self._pending.clear()

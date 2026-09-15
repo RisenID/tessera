@@ -259,13 +259,6 @@
                         android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/grantAll"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/grant_all" />
-
                     <include android:id="@+id/rowNotifications" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowDnd" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowMessages" layout="@layout/view_setup_row" />
