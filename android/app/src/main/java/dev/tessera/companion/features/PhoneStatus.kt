@@ -60,6 +60,7 @@ object PhoneStatus {
             .put("wifi", wifi(app))
             .put("cell", cell(app))
             .put("ringer", ringer(app))
+            .put("ringVolume", ringVolume(app))
             .put("volume", mediaVolume(app))
     }
 
@@ -324,9 +325,18 @@ object PhoneStatus {
         return when (runCatching { audio.ringerMode }.getOrDefault(-1)) {
             AudioManager.RINGER_MODE_SILENT -> "silent"
             AudioManager.RINGER_MODE_VIBRATE -> "vibrate"
-            AudioManager.RINGER_MODE_NORMAL -> "normal"
+            // Some phones stay "normal" with the ring volume at zero.
+            AudioManager.RINGER_MODE_NORMAL -> if (ringVolume(context) == 0) "vibrate" else "normal"
             else -> ""
         }
+    }
+
+    private fun ringVolume(context: Context): Int {
+        val audio = context.getSystemService(AudioManager::class.java) ?: return -1
+        return runCatching {
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_RING).coerceAtLeast(1)
+            audio.getStreamVolume(AudioManager.STREAM_RING) * 100 / max
+        }.getOrDefault(-1)
     }
 
     private fun mediaVolume(context: Context): Int {

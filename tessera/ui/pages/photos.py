@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
+from PySide6.QtGui import QImageReader, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -23,11 +23,16 @@ from ..theme import RADIUS, SPACE, Palette
 from ..widgets import Card, EmptyState, Toast, header_row, heading
 
 
-def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None) -> None:
-    """The full-size picture, cached in *cache* for the session."""
+def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None,
+               display: bool = False) -> None:
+    """The full-size picture, cached in *cache* for the session.
+
+    *display* asks for an upright JPEG to view; otherwise the original file.
+    """
     media_id = item.get("id", "")
-    if media_id in cache:
-        on_data(cache[media_id])
+    key = f"{media_id}:display" if display else media_id
+    if key in cache:
+        on_data(cache[key])
         return
     if not hub.companion.connected:
         if on_error is not None:
@@ -37,12 +42,14 @@ def fetch_full(hub, cache: dict, item: dict, on_data, on_error=None) -> None:
     def arrived(reply: dict) -> None:
         data = reply.get("data")
         if isinstance(data, (bytes, bytearray)):
-            cache[media_id] = bytes(data)
-            on_data(cache[media_id])
+            cache[key] = bytes(data)
+            on_data(cache[key])
         elif on_error is not None:
             on_error(str(reply.get("message") or "The phone could not send it."))
 
-    hub.companion.request({"t": "media_get", "id": media_id, "thumb": False}, arrived)
+    hub.companion.request(
+        {"t": "media_get", "id": media_id, "thumb": False, "display": display}, arrived
+    )
 
 
 def save_media(widget, hub, cache: dict, item: dict, toast, palette) -> None:
@@ -63,6 +70,17 @@ def save_media(widget, hub, cache: dict, item: dict, toast, palette) -> None:
 
     fetch_full(hub, cache, item, write,
                lambda message: toast.show_message(message[:140], palette, "danger"))
+
+
+def load_pixmap(data: bytes) -> QPixmap:
+    """Decode *data*, turned upright by its EXIF orientation."""
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    reader = QImageReader(buffer)
+    reader.setAutoTransform(True)
+    image = reader.read()
+    return QPixmap.fromImage(image) if not image.isNull() else QPixmap()
 
 
 def _date(item: dict) -> str:
@@ -106,8 +124,8 @@ class Thumb(Card):
         self.body().addLayout(layout)
 
     def set_image(self, data: bytes) -> None:
-        pixmap = QPixmap()
-        if not pixmap.loadFromData(data):
+        pixmap = load_pixmap(data)
+        if pixmap.isNull():
             return
         self.thumbnail = pixmap
         self.image.setPixmap(
@@ -162,6 +180,11 @@ class PhotoViewer(QDialog):
         bar.addWidget(self.next_button)
         layout.addLayout(bar)
 
+        # Buttons would otherwise take the arrow keys for focus movement.
+        for button in self.findChildren(QPushButton):
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         self.show_item()
 
     @property
@@ -189,6 +212,7 @@ class PhotoViewer(QDialog):
                 item,
                 lambda data, key=item.get("id"): self._on_full(key, data),
                 lambda message, key=item.get("id"): self._on_failed(key, message),
+                display=True,
             )
 
     def _on_failed(self, media_id: str, message: str) -> None:
@@ -198,8 +222,8 @@ class PhotoViewer(QDialog):
     def _on_full(self, media_id: str, data: bytes) -> None:
         if media_id != self.item.get("id"):
             return
-        pixmap = QPixmap()
-        if pixmap.loadFromData(data):
+        pixmap = load_pixmap(data)
+        if not pixmap.isNull():
             self.set_pixmap(pixmap)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
@@ -224,9 +248,9 @@ class PhotoViewer(QDialog):
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         key = event.key()
-        if key in (Qt.Key.Key_Right, Qt.Key.Key_Space):
+        if key in (Qt.Key.Key_Right, Qt.Key.Key_Down, Qt.Key.Key_Space):
             self.step(1)
-        elif key == Qt.Key.Key_Left:
+        elif key in (Qt.Key.Key_Left, Qt.Key.Key_Up):
             self.step(-1)
         elif key == Qt.Key.Key_Escape:
             self.close()
@@ -346,8 +370,8 @@ class PhotosPage(QWidget):
         tile = self._tiles.get(item.get("id", ""))
         return tile.thumbnail if tile is not None else QPixmap()
 
-    def fetch_full(self, item: dict, on_data, on_error=None) -> None:
-        fetch_full(self.hub, self._full, item, on_data, on_error)
+    def fetch_full(self, item: dict, on_data, on_error=None, display: bool = False) -> None:
+        fetch_full(self.hub, self._full, item, on_data, on_error, display)
 
     def save(self, item: dict) -> None:
         save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)

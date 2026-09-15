@@ -67,8 +67,17 @@ class TesseraService : Service() {
         return START_STICKY
     }
 
+    /** Keeps Wi-Fi out of power save, which otherwise drops idle links. */
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+
     private fun startServer() {
         running = true
+        runCatching {
+            @Suppress("DEPRECATION")
+            wifiLock = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
+                ?.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "tessera:link")
+                ?.apply { setReferenceCounted(false); acquire() }
+        }.onFailure { Log.w(TAG, "could not hold a Wi-Fi lock", it) }
         // Always name the types explicitly.
         startForeground(
             NOTIFICATION_ID,
@@ -381,6 +390,8 @@ class TesseraService : Service() {
     override fun onDestroy() {
         running_instance = null
         running = false
+        runCatching { wifiLock?.release() }
+        wifiLock = null
         advertiser.stop()
         sessions.forEach(Session::close)
         sessions.clear()

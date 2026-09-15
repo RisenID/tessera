@@ -633,6 +633,9 @@ class CompanionClient(QObject):
         if socket is None:
             return
         chunk = bytes(socket.readAll())
+        if chunk:
+            # Anything arriving proves the link, even while a big reply delays the pong.
+            self._missed_beats = 0
         try:
             for kind, payload in self._decoder.feed(chunk):
                 if kind == TYPE_JSON:

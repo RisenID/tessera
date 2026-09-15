@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from array import array
 
 from PySide6.QtCore import QObject, Signal
@@ -42,10 +43,33 @@ MAX_BACKLOG_MS = 400
 LEVEL_STRIDE = 8
 
 
+_backend_ready = False
+
+
+def _start_backend() -> None:
+    """Load Qt's media backend without its VA-API probe.
+
+    Only audio is used, and the probe can hang for minutes on NVIDIA drivers.
+    """
+    global _backend_ready
+    if _backend_ready or not HAVE_QTMULTIMEDIA:
+        return
+    _backend_ready = True
+    if os.environ.get("LIBVA_DRIVERS_PATH"):
+        QMediaDevices.defaultAudioOutput()
+        return
+    os.environ["LIBVA_DRIVERS_PATH"] = os.devnull
+    try:
+        QMediaDevices.defaultAudioOutput()
+    finally:
+        del os.environ["LIBVA_DRIVERS_PATH"]
+
+
 def available() -> bool:
     """Whether this computer can play audio at all."""
     if not HAVE_QTMULTIMEDIA:
         return False
+    _start_backend()
     return QMediaDevices.defaultAudioOutput() is not None
 
 
@@ -111,6 +135,7 @@ class PhoneAudio(QObject):
 
         self.close()
 
+        _start_backend()
         output = self._output_device()
         if output is None:
             self.failed.emit("This computer has no audio output to play through.")

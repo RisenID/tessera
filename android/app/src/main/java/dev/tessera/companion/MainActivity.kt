@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
         applyInsets()
         buildRows()
 
+        binding.grantAll.setOnClickListener { requestRuntimePermissions(allPermissions()) }
         binding.pairButton.setOnClickListener { showPairingCode() }
         binding.clipboardPull.setOnClickListener { pullClipboard() }
         binding.swipeRefresh.setOnRefreshListener {
@@ -180,7 +181,7 @@ class MainActivity : AppCompatActivity() {
                 R.string.perm_messages_why,
                 R.drawable.ic_message,
                 granted = { SmsRepository.canRead(this) && SmsRepository.canSend(this) },
-                grant = { requestRuntimePermissions() },
+                grant = { requestRuntimePermissions(messagesPermissions()) },
             ),
             Row(
                 binding.rowCalls,
@@ -188,7 +189,7 @@ class MainActivity : AppCompatActivity() {
                 R.string.perm_calls_why,
                 R.drawable.ic_phone_link,
                 granted = { CallsRepository.canReadLog(this) && CallsRepository.canControl(this) },
-                grant = { requestRuntimePermissions() },
+                grant = { requestRuntimePermissions(callsPermissions()) },
             ),
             Row(
                 binding.rowPhotos,
@@ -196,7 +197,7 @@ class MainActivity : AppCompatActivity() {
                 R.string.perm_photos_why,
                 R.drawable.ic_photo,
                 granted = { MediaRepository.canRead(this) },
-                grant = { requestRuntimePermissions() },
+                grant = { requestRuntimePermissions(photosPermissions()) },
             ),
             Row(
                 binding.rowCamera,
@@ -206,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                 granted = {
                     checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 },
-                grant = { requestRuntimePermissions() },
+                grant = { requestRuntimePermissions(listOf(Manifest.permission.CAMERA)) },
             ),
             Row(
                 binding.rowAudio,
@@ -217,7 +218,8 @@ class MainActivity : AppCompatActivity() {
                     checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                         PackageManager.PERMISSION_GRANTED
                 },
-                grant = { requestRuntimePermissions() },
+                // Playback capture needs it; the microphone is never opened.
+                grant = { requestRuntimePermissions(listOf(Manifest.permission.RECORD_AUDIO)) },
             ),
             Row(
                 binding.rowProjection,
@@ -263,32 +265,52 @@ class MainActivity : AppCompatActivity() {
         refresh()
     }
 
-    private fun requestRuntimePermissions() {
-        val wanted = buildList {
-            add(Manifest.permission.READ_SMS)
-            add(Manifest.permission.SEND_SMS)
-            add(Manifest.permission.READ_CONTACTS)
-            add(Manifest.permission.READ_CALL_LOG)
-            add(Manifest.permission.READ_PHONE_STATE)
-            add(Manifest.permission.ANSWER_PHONE_CALLS)
-            add(Manifest.permission.CALL_PHONE)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun messagesPermissions() = listOf(
+        Manifest.permission.READ_SMS,
+        Manifest.permission.SEND_SMS,
+        Manifest.permission.READ_CONTACTS,
+    )
+
+    private fun callsPermissions() = buildList {
+        add(Manifest.permission.READ_CALL_LOG)
+        add(Manifest.permission.READ_PHONE_STATE)
+        add(Manifest.permission.ANSWER_PHONE_CALLS)
+        add(Manifest.permission.CALL_PHONE)
+        add(Manifest.permission.READ_CONTACTS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+    }
+
+    private fun photosPermissions() = buildList {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+            add(Manifest.permission.READ_MEDIA_VIDEO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
             }
-            add(Manifest.permission.CAMERA)
-            // Playback capture needs it; the microphone is never opened.
-            add(Manifest.permission.RECORD_AUDIO)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.READ_MEDIA_IMAGES)
-                add(Manifest.permission.READ_MEDIA_VIDEO)
-                add(Manifest.permission.POST_NOTIFICATIONS)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-                }
-            } else {
-                add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-        }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        } else {
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    /** Every runtime permission, for the Grant all button. */
+    private fun allPermissions() = buildList {
+        addAll(messagesPermissions())
+        addAll(callsPermissions())
+        addAll(photosPermissions())
+        add(Manifest.permission.CAMERA)
+        add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.distinct()
+
+    private fun missing(permissions: List<String>) =
+        permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+
+    private fun requestRuntimePermissions(permissions: List<String>) {
+        val wanted = missing(permissions)
 
         if (wanted.isEmpty()) {
             refresh()
@@ -348,6 +370,9 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
+
+        binding.grantAll.visibility =
+            if (missing(allPermissions()).isEmpty()) View.GONE else View.VISIBLE
 
         // The hero reports the thing that actually blocks the user.
         binding.statusText.text = when {

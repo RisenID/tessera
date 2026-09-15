@@ -166,6 +166,15 @@ PACKAGES: dict[str, dict[str, str]] = {
 }
 
 
+#: Repositories to enable first, where the distribution itself lacks the package.
+REPOSITORIES: dict[str, dict[str, str]] = {
+    "scrcpy": {"dnf": "dnf copr enable -y zeno/scrcpy"},
+    "v4l2loopback": {
+        "dnf": "dnf install -y https://mirrors.rpmfusion.org/free/fedora/"
+               "rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm",
+    },
+}
+
 #: Capabilities whose key is also what you would type at a package manager.
 PROGRAMS = frozenset({"adb", "scrcpy", "ffmpeg", "gcc", "curl", "pactl", "bluez"})
 
@@ -251,6 +260,19 @@ def _split(capabilities: "tuple[str, ...] | list[str]",
     return named, unnamed
 
 
+def _repositories(capabilities, manager: Manager | None) -> list[str]:
+    if manager is None:
+        return []
+    found = (REPOSITORIES.get(c, {}).get(manager.key) for c in dict.fromkeys(capabilities))
+    return [command for command in found if command]
+
+
+def _with_repositories(capabilities, manager: Manager, named: list[str]) -> str:
+    """The install line, with any repository setup before it."""
+    steps = [f"sudo {command}" for command in _repositories(capabilities, manager)]
+    return " && ".join([*steps, manager.command(named)])
+
+
 def names_for(capabilities: "tuple[str, ...] | list[str]",
               manager: Manager | None = None) -> list[str]:
     """Package names for *capabilities* that this manager is known to have."""
@@ -263,7 +285,7 @@ def install_command(*capabilities: str) -> str:
     named, _ = _split(capabilities, manager)
     if not named or manager is None:
         return ""
-    return manager.command(named)
+    return _with_repositories(capabilities, manager, named)
 
 
 def install_argv(*capabilities: str) -> list[str]:
@@ -272,7 +294,11 @@ def install_argv(*capabilities: str) -> list[str]:
     named, _ = _split(capabilities, manager)
     if manager is None or not named:
         return []
-    return manager.argv(named)
+    repositories = _repositories(capabilities, manager)
+    if not repositories:
+        return manager.argv(named)
+    install = " ".join(manager._words(named, interactive=False)[0])
+    return ["pkexec", "sh", "-c", " && ".join([*repositories, install])]
 
 
 def advice(*capabilities: str) -> str:
@@ -282,7 +308,7 @@ def advice(*capabilities: str) -> str:
 
     parts = []
     if named and manager is not None:
-        parts.append(f"Install it with: {manager.command(named)}")
+        parts.append(f"Install it with: {_with_repositories(capabilities, manager, named)}")
     elif named:
         parts.append("Install " + _join(named) + " with your package manager.")
     if unnamed:

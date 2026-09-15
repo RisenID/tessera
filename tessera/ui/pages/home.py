@@ -269,10 +269,10 @@ class HomePage(QWidget):
     def thumbnail(self, item: dict) -> QPixmap:
         return self._thumbs.get(item.get("id", ""), QPixmap())
 
-    def fetch_full(self, item: dict, on_data, on_error=None) -> None:
+    def fetch_full(self, item: dict, on_data, on_error=None, display: bool = False) -> None:
         from .photos import fetch_full
 
-        fetch_full(self.hub, self._full, item, on_data, on_error)
+        fetch_full(self.hub, self._full, item, on_data, on_error, display)
 
     def save(self, item: dict) -> None:
         from .photos import save_media
