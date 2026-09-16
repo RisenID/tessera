@@ -5,10 +5,10 @@
     android:viewportHeight="108">
     <!-- ic_launcher_foreground in one colour, for themed icons. -->
     <group
-        android:scaleX="1.15"
-        android:scaleY="1.15"
-        android:translateX="17.2"
-        android:translateY="17.2">
+        android:scaleX="0.86"
+        android:scaleY="0.86"
+        android:translateX="26.5"
+        android:translateY="26.5">
         <path android:fillColor="#FFFFFF"
             android:pathData="M11,6h12a5,5 0,0 1,5 5v12a5,5 0,0 1,-5 5h-12a5,5 0,0 1,-5 -5v-12a5,5 0,0 1,5 -5z" />
         <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
