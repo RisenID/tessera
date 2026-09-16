@@ -48,6 +48,8 @@ MAX_BACKLOG_MS = 400
 #: How many samples to look at when measuring the level. Every eighth is
 #: plenty for a meter and keeps the arithmetic off the hot path.
 LEVEL_STRIDE = 8
+#: Frames between meter updates: five 20 ms frames is ten readings a second.
+LEVEL_EVERY_FRAMES = 5
 
 
 def available() -> bool:
@@ -95,6 +97,11 @@ class PhoneAudio(QObject):
         self._priming = True
         self._dropped = 0
         self._played = 0
+        self._gain_table: tuple[int, list[int]] | None = None
+        #: Peak so far and frames seen since the meter was last told.
+        self._level_peak = 0
+        self._level_frames = 0
+        self._level_sent = 0
 
     # -- state ---------------------------------------------------------------
 
@@ -276,9 +283,16 @@ class PhoneAudio(QObject):
         volume = max(0, min(100, self._config.volume))
         if volume >= 100:
             return chunk
+        if self._gain_table is None or self._gain_table[0] != volume:
+            # A lookup per sample beats a multiply per sample in Python.
+            # Negative samples index from the end, which is where they land.
+            self._gain_table = (volume, [
+                (value if value < 32768 else value - 65536) * volume // 100
+                for value in range(65536)
+            ])
         samples = array("h")
         samples.frombytes(chunk)
-        return array("h", (value * volume // 100 for value in samples)).tobytes()
+        return array("h", map(self._gain_table[1].__getitem__, samples)).tobytes()
 
     def close(self) -> None:
         """Stop playing and let the output go."""
@@ -346,11 +360,15 @@ class PhoneAudio(QObject):
             return
         samples = array("h")
         samples.frombytes(payload[: len(payload) - len(payload) % 2])
-        peak = 0
-        for index in range(0, len(samples), LEVEL_STRIDE):
-            value = samples[index]
-            if value < 0:
-                value = -value
-            if value > peak:
-                peak = value
+        strided = samples[::LEVEL_STRIDE]
+        peak = max(max(strided), -min(strided))
+        # Ten readings a second is plenty for a meter; fifty was a signal storm.
+        # Silence is said at once, so the meter does not hang on a last peak.
+        self._level_peak = max(self._level_peak, peak)
+        self._level_frames += 1
+        if self._level_frames < LEVEL_EVERY_FRAMES and (peak or not self._level_sent):
+            return
+        peak = 0 if not peak else self._level_peak
+        self._level_peak, self._level_frames = 0, 0
+        self._level_sent = peak
         self.levelChanged.emit(peak / 32768)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import logging
 from pathlib import Path
@@ -14,6 +15,7 @@ from ..core.config import state_dir
 log = logging.getLogger(__name__)
 
 
+@functools.lru_cache(maxsize=1)
 def cache_dir() -> Path:
     path = state_dir() / "icons"
     path.mkdir(parents=True, exist_ok=True)

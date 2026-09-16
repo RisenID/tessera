@@ -254,7 +254,9 @@ object PhoneStatus {
                     else -> ""
                 }
             )
-        if (tenths != 0) body.put("temperature", tenths / 10.0)
+        // Rounded, and the current below too: publish() sends a frame whenever
+        // anything differs, and these two differ on every broadcast.
+        if (tenths != 0) body.put("temperature", Math.round(tenths / 5.0) * 0.5)
 
         val manager = context.getSystemService(BatteryManager::class.java)
         if (manager != null) {
@@ -263,7 +265,7 @@ object PhoneStatus {
             runCatching {
                 manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             }.getOrNull()?.takeIf { it != Int.MIN_VALUE && it != 0 }
-                ?.let { body.put("current", it / 1000) }
+                ?.let { body.put("current", Math.round(it / 50_000.0) * 50) }
             runCatching { manager.computeChargeTimeRemaining() }
                 .getOrNull()?.takeIf { it > 0 }?.let { body.put("toFull", it) }
         }

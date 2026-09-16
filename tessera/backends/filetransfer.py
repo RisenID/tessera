@@ -32,6 +32,9 @@ WAITING, RUNNING, FINISHING, DONE, FAILED, CANCELLED = (
 #: sent every byte of.
 CONFIRM_SECONDS = 120
 
+#: Progress bars redraw this often at most; every 256 kB chunk was too often.
+PROGRESS_SECONDS = 0.1
+
 
 def default_directory() -> Path:
     """Where received files go unless the settings say otherwise."""
@@ -208,6 +211,8 @@ class FileTransfers(QObject):
         #: Queued while the link is busy with an earlier file.
         self._queue: list[Path] = []
         self._sending = ""
+        #: When each transfer's progress was last announced.
+        self._progress_at: dict[str, float] = {}
 
         for link in self._links:
             link.fileEvent.connect(lambda message, l=link: self.on_event(message, l))
@@ -216,6 +221,14 @@ class FileTransfers(QObject):
             link.connectedChanged.connect(
                 lambda connected, l=link: self._on_link(connected, l)
             )
+
+    def _progress(self, transfer: Transfer) -> None:
+        """Announce progress, at most a few times a second per file."""
+        now = time.monotonic()
+        if now - self._progress_at.get(transfer.id, 0.0) < PROGRESS_SECONDS:
+            return
+        self._progress_at[transfer.id] = now
+        self.changed.emit(transfer)
 
     def _link(self):
         """The best connection that is up right now, or None."""
@@ -343,7 +356,7 @@ class FileTransfers(QObject):
                 return
             transfer.done += len(chunk)
             budget -= len(chunk)
-            self.changed.emit(transfer)
+            self._progress(transfer)
 
     def _abort_send(self, transfer: Transfer, message: str) -> None:
         transfer.state = FAILED
@@ -463,7 +476,7 @@ class FileTransfers(QObject):
             self.failed.emit(f"{transfer.name}: {problem}")
             return
         transfer.done += len(payload)
-        self.changed.emit(transfer)
+        self._progress(transfer)
 
     def _completed(self, message: dict) -> None:
         """The last chunk has arrived: make the file real."""

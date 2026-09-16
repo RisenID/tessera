@@ -39,6 +39,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /** One connected desktop. */
@@ -75,6 +76,10 @@ class Session(
 
     /** How many chunks may be queued for the writer at once. */
     private val sendWindow = Semaphore(8)
+
+    /** Media frames waiting on the writer. Past the limit, the link is slower than the
+     *  source, and queueing more only adds delay and memory: drop rather than buffer. */
+    private val mediaQueued = AtomicInteger(0)
 
     /** The header whose binary frame has not arrived yet. */
     private var pendingBinary: JSONObject? = null
@@ -726,10 +731,11 @@ class Session(
             fps = message.optInt("fps", 30),
             onConfigured = { header -> send(header) },
             onFrame = { frame, isKey, pts ->
-                sendBinary(
+                // A key frame is kept: the decoder cannot recover without it.
+                sendMedia(
                     JSONObject().put("t", "camera_frame").put("key", isKey).put("pts", pts),
                     frame,
-                    null,
+                    droppable = !isKey,
                 )
             },
             onError = { reason ->
@@ -795,7 +801,7 @@ class Session(
             mutePhone = mute,
             onStarted = { header -> send(header) },
             onFrame = { frame ->
-                sendBinary(JSONObject().put("t", "audio_frame"), frame, null)
+                sendMedia(JSONObject().put("t", "audio_frame"), frame, droppable = true)
             },
             onError = { reason ->
                 fail(null, reason)
@@ -1055,6 +1061,23 @@ class Session(
         }
     }
 
+    /** A camera or audio frame: sent if the writer is keeping up, else dropped. */
+    private fun sendMedia(header: JSONObject, payload: ByteArray, droppable: Boolean) {
+        if (!open.get()) return
+        if (droppable && mediaQueued.get() >= MEDIA_QUEUE_LIMIT) return
+        header.put("binary", true).put("length", payload.size)
+        mediaQueued.incrementAndGet()
+        submitWrite {
+            try {
+                Frames.writeJson(output, header)
+                Frames.writeBinary(output, payload)
+                output.flush()
+            } finally {
+                mediaQueued.decrementAndGet()
+            }
+        }
+    }
+
     private fun reply(id: Int?, body: JSONObject) {
         if (id == null) return
         send(body.put("t", body.optString("t", "reply")).put("rid", id))
@@ -1108,6 +1131,9 @@ class Session(
 
         /** An unauthenticated connection gets this long to finish the handshake. */
         private const val HANDSHAKE_MS = 20_000
+
+        /** Media frames the writer may hold before new ones are dropped. */
+        private const val MEDIA_QUEUE_LIMIT = 6
 
         /** Originals sent in one frame; leaves room under Frames.MAX_FRAME. */
         private const val MEDIA_LIMIT = Frames.MAX_FRAME - 64 * 1024

@@ -178,6 +178,7 @@ class Hub(QObject):
         #: A Cloud Files mount kept through a dropped link, remounted on reconnect.
         self._storage_stale = False
         self._notifications: dict[str, Notification] = {}
+        self._sorted: list[Notification] | None = None
         self._otp_seen: set[str] = set()
         self._serial = ""
         #: Not before this, so a phone that is simply off does not cost a
@@ -399,7 +400,22 @@ class Hub(QObject):
         """Whether the phone is on a cable rather than the network."""
         return bool(self._serial) and ":" not in self._serial
 
+    @property
+    def _adb_wanted(self) -> bool:
+        """Whether any switched-on feature could use adb at all."""
+        features = self.config.features
+        return adb.available() and any((
+            features.screen, features.apps, features.dnd_sync, features.clipboard,
+            features.webcam and not platform.IS_WINDOWS,
+        ))
+
     def refresh_adb(self) -> None:
+        # Nothing to resolve for: no adb, or nothing that would use it.
+        if not self._adb_wanted:
+            if self._serial:
+                self._set_serial(("", ""))
+            return
+
         def resolve() -> tuple[str, str]:
             try:
                 return adb.resolve_serial(self.config.adb_serial), ""
@@ -1382,7 +1398,17 @@ class Hub(QObject):
 
     @property
     def notifications(self) -> list[Notification]:
-        return sorted(self._notifications.values(), key=lambda n: n.when, reverse=True)
+        # Sorted once per change, not once per reader: the panel, the page,
+        # the popups and the passcode strip all ask on every change.
+        if self._sorted is None:
+            self._sorted = sorted(
+                self._notifications.values(), key=lambda n: n.when, reverse=True
+            )
+        return list(self._sorted)
+
+    def _notifications_changed(self) -> None:
+        self._sorted = None
+        self.notificationsChanged.emit()
 
     def refresh_notifications(self) -> None:
         if self.companion.connected:
@@ -1402,8 +1428,9 @@ class Hub(QObject):
         for item in items:
             note = Notification.from_companion(item) if raw else item
             self._notifications[note.id] = note
+            self._sorted = None                 # before _check_otp reads the list
             self._check_otp(note)
-        self.notificationsChanged.emit()
+        self._notifications_changed()
 
     def _on_companion_notification(self, message: dict) -> None:
         self._add(Notification.from_companion(message))
@@ -1419,8 +1446,9 @@ class Hub(QObject):
         previous = self._notifications.get(note.id)
         fresh = previous is None or note.when > previous.when
         self._notifications[note.id] = note
+        self._sorted = None
         self._check_otp(note)
-        self.notificationsChanged.emit()
+        self._notifications_changed()
         # Only a new one, or one re-posted with a later time, is worth a popup.
         # The phone sends everything it holds on connect; old ones are not news.
         if fresh and not note.ongoing and now() - note.when < self.POPUP_MAX_AGE_SECONDS:
@@ -1434,11 +1462,11 @@ class Hub(QObject):
 
     def remove_notification(self, notification_id: str) -> None:
         if self._notifications.pop(notification_id, None) is not None:
-            self.notificationsChanged.emit()
+            self._notifications_changed()
 
     def clear_notifications(self) -> None:
         self._notifications.clear()
-        self.notificationsChanged.emit()
+        self._notifications_changed()
 
     def dismiss(self, notification_id: str) -> None:
         if self.companion.connected:

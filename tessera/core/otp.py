@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass
 
@@ -73,18 +74,26 @@ def _looks_like_year(token: str) -> bool:
     return bool(_ORDINAL_DATE.fullmatch(token))
 
 
-def _score(token: str, text: str, start: int, end: int, app: str) -> int:
-    before = text[max(0, start - 32) : start]
-    after = text[end : end + 32]
-    lowered = text.lower()
+def _text_score(text: str, app: str) -> int:
+    """The part of the score every candidate in *text* shares."""
     score = 0
-
     if _KEYWORD.search(text):
         score += 2
     if _PROMO.search(text):
         score -= 5
     if any(marker in app.lower() for marker in _CODE_APPS):
         score += 3
+    # "Do not share" is a strong signal the number really is a secret.
+    lowered = text.lower()
+    if "not share" in lowered or "never share" in lowered or "do not give" in lowered:
+        score += 2
+    return score
+
+
+def _score(token: str, text: str, start: int, end: int, base: int) -> int:
+    before = text[max(0, start - 32) : start]
+    after = text[end : end + 32]
+    score = base
 
     if _STRONG_BEFORE.search(before):
         score += 4
@@ -111,29 +120,29 @@ def _score(token: str, text: str, start: int, end: int, app: str) -> int:
         score -= 4
     if end < len(text) and (text[end].isdigit() or text[end] == "."):
         score -= 4
-    # "Do not share" is a strong signal the number really is a secret.
-    if "not share" in lowered or "never share" in lowered or "do not give" in lowered:
-        score += 2
     return score
 
 
-def find_codes(text: str, app: str = "") -> list[OtpMatch]:
+@functools.lru_cache(maxsize=256)
+def find_codes(text: str, app: str = "") -> tuple[OtpMatch, ...]:
     """Every plausible passcode in *text*, best first."""
     if not text:
-        return []
+        return ()
     matches: list[OtpMatch] = []
     seen: set[str] = set()
+    base = _text_score(text, app)
     for match in _CANDIDATE.finditer(text):
         token = match.group(1)
         if token in seen:
             continue
         seen.add(token)
-        score = _score(token, text, match.start(1), match.end(1), app)
+        score = _score(token, text, match.start(1), match.end(1), base)
         if score >= THRESHOLD:
             context = text[max(0, match.start(1) - 40) : match.end(1) + 40].strip()
             matches.append(OtpMatch(token, score, app, context))
     matches.sort(key=lambda m: m.score, reverse=True)
-    return matches
+    # A tuple, so the cached result cannot be changed by a caller.
+    return tuple(matches)
 
 
 def find_code(text: str, app: str = "") -> OtpMatch | None:

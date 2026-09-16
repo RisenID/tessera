@@ -139,12 +139,16 @@ class Complication(QWidget):
         self._icon.setFixedSize(icon_px, icon_px)
         names, text, tooltip, tone = self._last
         if names or text:
+            self._last = ((), "", "", "")       # a new size needs a redraw
             self.set(*names, text=text, tooltip=tooltip, tone=tone)
 
     def set(self, *icon_names: str, text: str = "", tooltip: str = "",
             tone: str = "") -> None:
         """Show a reading, or hide the whole thing when there is nothing."""
-        self._last = (icon_names, text, tooltip, tone)
+        wanted = (icon_names, text, tooltip, tone)
+        if wanted == self._last and self.isHidden() == (not (icon_names or text)):
+            return
+        self._last = wanted
         if not icon_names and not text:
             self.setVisible(False)
             return
@@ -223,6 +227,7 @@ class FeedRow(QFrame):
                  parent: QWidget | None = None):
         super().__init__(parent)
         self.note = note
+        self.avatar_size = avatar
         self.setObjectName("FeedRow")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -245,9 +250,9 @@ class FeedRow(QFrame):
         app = QLabel(note.app or note.package or "Notification")
         app.setStyleSheet("font-weight: 600; font-size: 11px;")
         top.addWidget(app, 1)
-        when = QLabel(note.time_text)
-        when.setStyleSheet(f"color: {palette.muted}; font-size: 10px;")
-        top.addWidget(when)
+        self.when_label = QLabel(note.time_text)
+        self.when_label.setStyleSheet(f"color: {palette.muted}; font-size: 10px;")
+        top.addWidget(self.when_label)
         text.addLayout(top)
 
         self.body = QLabel()
@@ -319,6 +324,10 @@ class DevicePanel(QWidget):
         self._media_busy = False
         self._scale = 1.0
         self._rows: list[FeedRow] = []
+        self._battery_tone = ""
+        self._feed_stale = True
+        #: The wallpaper as loaded, so a repaint does not read the file again.
+        self._wallpaper_pixmap: tuple[str, QPixmap | None] = ("", None)
 
         self.setObjectName("Sidebar")
         # Bounds, not a fixed width: the rail lives in a splitter now and the
@@ -386,6 +395,8 @@ class DevicePanel(QWidget):
         super().showEvent(event)
         self._media_timer.start(8000)
         self.refresh_media()
+        if self._feed_stale:
+            self.refresh_feed()
 
     def hideEvent(self, event) -> None:  # noqa: N802 - Qt naming
         super().hideEvent(event)
@@ -529,8 +540,12 @@ class DevicePanel(QWidget):
         path = self._wallpaper_file
         if not path:
             return None
-        picture = QPixmap(path)
-        return None if picture.isNull() else picture
+        cached_path, picture = self._wallpaper_pixmap
+        if cached_path != path:
+            picture = QPixmap(path)
+            picture = None if picture.isNull() else picture
+            self._wallpaper_pixmap = (path, picture)
+        return picture
 
     @staticmethod
     def _paint_default_wallpaper(
@@ -552,6 +567,7 @@ class DevicePanel(QWidget):
 
     def _on_wallpaper(self, path: str, _colour: str) -> None:
         self._wallpaper_file = path
+        self._wallpaper_pixmap = ("", None)     # same path, new picture
         self._paint_phone_tile()
 
     def _build_complications(self) -> QWidget:
@@ -1166,11 +1182,13 @@ class DevicePanel(QWidget):
         )
         self.battery_row.setVisible(True)
         self.battery_bar.setValue(max(0, min(100, level)))
-        self.battery_bar.setStyleSheet(
-            f"QProgressBar {{ background: {p.surface_hover};"
-            f" border: none; border-radius: 3px; }}"
-            f"QProgressBar::chunk {{ background: {tone}; border-radius: 3px; }}"
-        )
+        if tone != self._battery_tone:
+            self._battery_tone = tone
+            self.battery_bar.setStyleSheet(
+                f"QProgressBar {{ background: {p.surface_hover};"
+                f" border: none; border-radius: 3px; }}"
+                f"QProgressBar::chunk {{ background: {tone}; border-radius: 3px; }}"
+            )
         self.comp_battery.set(
             _stepped("battery", level / 100, "-charging" if charging else ""),
             _stepped("battery", level / 100),
@@ -1203,6 +1221,13 @@ class DevicePanel(QWidget):
             self.album_label.setText(f"{detail}{state}")
             return
 
+        # The companion reports its own media; the D-Bus route is for a phone
+        # that is only on Bluetooth, so do not run busctl every eight seconds.
+        if self.hub.companion.connected and self.hub.companion.supports("media_control"):
+            self._media_service = ""
+            self.track_label.setText("Nothing playing")
+            self.album_label.setText("")
+            return
         # busctl and D-Bus calls, off the interface thread.
         if self._media_busy:
             return
@@ -1227,35 +1252,48 @@ class DevicePanel(QWidget):
         submit(look, on_done=show, on_error=failed)
 
     def refresh_feed(self) -> None:
+        # Hidden to the tray: one rebuild when shown again, not one per burst.
+        if not self.isVisible():
+            self._feed_stale = True
+            return
+        self._feed_stale = False
         notifications = self.hub.notifications
-        while self.feed_layout.count() > 1:
-            item = self.feed_layout.takeAt(0)
-            widget = item.widget() if item else None
-            if widget is not None:
-                # Unparent as well as delete: deleteLater leaves the row on
-                # screen until the event loop gets round to it, and rebuilding
-                # on a resize drew the old rows behind the new ones. Hide first:
-                # a row not yet shown has a queued show that would make it a window.
-                widget.hide()
-                widget.setParent(None)
-                widget.deleteLater()
-
-        self._rows = []
+        avatar = self._px(24)
+        # Rows are keyed by what they show, so a burst that changes nothing
+        # (connecting resends every notification) rebuilds nothing.
+        keep: dict[tuple, FeedRow] = {}
+        for row in self._rows:
+            note = row.note
+            keep[(note.id, note.when, note.text, row.avatar_size)] = row
         want_codes = self.hub.config.features.otp
+        rows: list[FeedRow] = []
         for note in notifications[:FEED_LIMIT]:
-            match = otp.find_code(
-                f"{note.title} {note.text}".strip(), note.app
-            ) if want_codes else None
-            row = FeedRow(note, self.palette_tokens, self.hub.icons,
-                          avatar=self._px(24),
-                          code=match.code if match else "")
-            row.opened.connect(lambda: self.pageRequested.emit("Notifications"))
-            row.dismissed.connect(self.hub.dismiss)
-            row.codeCopied.connect(
-                lambda code: self.statusMessage.emit(f"Copied {code}")
-            )
-            self._rows.append(row)
-            self.feed_layout.insertWidget(self.feed_layout.count() - 1, row)
+            row = keep.pop((note.id, note.when, note.text, avatar), None)
+            if row is not None:
+                row.when_label.setText(note.time_text)      # "just now" ages
+            else:
+                match = otp.find_code(note.body, note.app) if want_codes else None
+                row = FeedRow(note, self.palette_tokens, self.hub.icons,
+                              avatar=avatar, code=match.code if match else "")
+                row.opened.connect(lambda: self.pageRequested.emit("Notifications"))
+                row.dismissed.connect(self.hub.dismiss)
+                row.codeCopied.connect(
+                    lambda code: self.statusMessage.emit(f"Copied {code}")
+                )
+            rows.append(row)
+        for row in keep.values():
+            # Unparent as well as delete: deleteLater leaves the row on screen
+            # until the event loop gets round to it. Hide first: a row not yet
+            # shown has a queued show that would make it a window.
+            self.feed_layout.removeWidget(row)
+            row.hide()
+            row.setParent(None)
+            row.deleteLater()
+        for position, row in enumerate(rows):
+            if self.feed_layout.indexOf(row) != position:
+                self.feed_layout.removeWidget(row)
+                self.feed_layout.insertWidget(position, row)
+        self._rows = rows
 
         count = len(notifications)
         self.feed_count.setVisible(bool(count))

@@ -27,8 +27,23 @@ from . import glyphs
 from .theme import RADIUS, SPACE, Palette
 
 
+#: Theme lookups and tints, by name: both are asked for on every status frame.
+_THEMED: dict[tuple[str, ...], QIcon] = {}
+_TINTED: dict[tuple[int, str, int], QIcon] = {}
+_TINTABLE: dict[tuple[int, int], bool] = {}
+
+
 def themed_icon(*names: str) -> QIcon:
     """The first of *names* this system can draw, symbolic for choice."""
+    cached = _THEMED.get(names)
+    if cached is not None:
+        return cached
+    icon = _themed_icon(names)
+    _THEMED[names] = icon
+    return icon
+
+
+def _themed_icon(names: tuple[str, ...]) -> QIcon:
     for name in names:
         for candidate in (f"{name}-symbolic", name):
             icon = QIcon.fromTheme(candidate)
@@ -86,8 +101,22 @@ def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
     """Recolour a single-colour icon to *colour*, or leave a picture alone."""
     if icon.isNull():
         return icon
+    key = (icon.cacheKey(), colour, size)
+    cached = _TINTED.get(key)
+    if cached is not None:
+        return cached
+    tinted = _tinted_icon(icon, colour, size)
+    _TINTED[key] = tinted
+    return tinted
+
+
+def _tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
     pixmap = icon.pixmap(size, size)
-    if not _tintable(pixmap):
+    shape = (icon.cacheKey(), size)
+    tintable = _TINTABLE.get(shape)
+    if tintable is None:
+        tintable = _TINTABLE[shape] = _tintable(pixmap)
+    if not tintable:
         return icon
     painter = QPainter(pixmap)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)

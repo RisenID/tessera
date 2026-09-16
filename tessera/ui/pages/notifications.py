@@ -65,10 +65,10 @@ class NotificationCard(Card):
         app.setStyleSheet("font-weight: 650;")
         header.addWidget(app)
         header.addStretch(1)
-        when = QLabel(note.time_text)
-        when.setObjectName("Muted")
-        when.setStyleSheet(f"color: {palette.muted}; font-size: 12px;")
-        header.addWidget(when)
+        self.when_label = QLabel(note.time_text)
+        self.when_label.setObjectName("Muted")
+        self.when_label.setStyleSheet(f"color: {palette.muted}; font-size: 12px;")
+        header.addWidget(self.when_label)
         body.addLayout(header)
 
         if note.title:
@@ -190,6 +190,8 @@ class NotificationsPage(QWidget):
         self.toast = Toast(self)
 
         self._cards: dict[str, NotificationCard] = {}
+        self._stale = True
+        self._otp_shown: list[tuple[str, str]] = []
         # One rebuild per burst: connecting sends every notification at once.
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -202,18 +204,43 @@ class NotificationsPage(QWidget):
 
     # -- rendering -----------------------------------------------------------
 
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if self._stale:
+            self.refresh()
+
     def refresh(self) -> None:
+        # A hidden page is rebuilt once when it is next shown, not per burst.
+        if not self.isVisible():
+            self._stale = True
+            return
+        self._stale = False
         notifications = self.hub.notifications
         self.count_pill.set_state(str(len(notifications)), "accent" if notifications else "muted")
 
-        self._clear(self.list_layout, keep_stretch=True)
-        self._cards.clear()
-        for note in notifications:
-            card = NotificationCard(note, self.palette_tokens, self.hub.icons)
-            card.dismissed.connect(self.hub.dismiss)
-            card.replied.connect(self._reply)
-            self._cards[note.id] = card
-            self.list_layout.insertWidget(self.list_layout.count() - 1, card)
+        # Keep the cards that are unchanged: connecting resends every one.
+        wanted = {note.id: note for note in notifications}
+        for note_id, card in list(self._cards.items()):
+            note = wanted.get(note_id)
+            if note is not None and note.when == card.note.when and note.text == card.note.text:
+                card.when_label.setText(note.time_text)     # "just now" ages
+                continue
+            self.list_layout.removeWidget(card)
+            card.hide()
+            card.deleteLater()
+            del self._cards[note_id]
+        for position, note in enumerate(notifications):
+            card = self._cards.get(note.id)
+            if card is None:
+                card = NotificationCard(note, self.palette_tokens, self.hub.icons)
+                card.dismissed.connect(self.hub.dismiss)
+                card.replied.connect(self._reply)
+                self._cards[note.id] = card
+            elif self.list_layout.indexOf(card) == position:
+                continue
+            else:
+                self.list_layout.removeWidget(card)
+            self.list_layout.insertWidget(position, card)
 
         has_any = bool(notifications)
         self.scroll.setVisible(has_any)
@@ -227,8 +254,12 @@ class NotificationsPage(QWidget):
         self._refresh_otp()
 
     def _refresh_otp(self) -> None:
-        self._clear(self.otp_container)
         codes = self.hub.recent_codes(limit=3)
+        shown = [(match.code, note.id) for match, note in codes]
+        if shown == self._otp_shown:
+            return
+        self._otp_shown = shown
+        self._clear(self.otp_container)
         for match, note in codes:
             card = OtpCard(match.code, f"{note.app} · {note.time_text}", self.palette_tokens)
             card.copied.connect(self._on_copied)

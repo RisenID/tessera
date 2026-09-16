@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import threading
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -33,6 +34,9 @@ _BASE_ENV = {
 #: A windowed build has no console of its own, so every short helper would
 #: flash one. Zero everywhere but Windows.
 _NO_WINDOW = platform.no_window_flags()
+
+#: How much of a child's output to keep for error messages.
+LOG_LINES = 400
 
 
 @dataclass(frozen=True)
@@ -200,7 +204,8 @@ class ManagedProcess(QObject):
         super().__init__(parent)
         self._proc: QProcess | None = None
         self._buffer = ""
-        self._log: list[str] = []
+        # Bounded: ffmpeg and scrcpy talk for as long as they run.
+        self._log: deque[str] = deque(maxlen=LOG_LINES)
         self._stopping = False
 
     # -- state ---------------------------------------------------------------
@@ -210,7 +215,7 @@ class ManagedProcess(QObject):
         return self._proc is not None and self._proc.state() != QProcess.NotRunning
 
     def log_tail(self, lines: int = 200) -> str:
-        return "\n".join(self._log[-lines:])
+        return "\n".join(list(self._log)[-lines:])
 
     # -- control -------------------------------------------------------------
 
@@ -226,7 +231,7 @@ class ManagedProcess(QObject):
         log.info("spawn: %s", " ".join(argv))
 
         self._buffer = ""
-        self._log = [f"$ {' '.join(argv)}"]
+        self._log = deque([f"$ {' '.join(argv)}"], maxlen=LOG_LINES)
         self._stopping = False
 
         proc = QProcess(self)

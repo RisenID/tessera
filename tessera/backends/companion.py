@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import json
 import logging
 import re
@@ -61,20 +62,24 @@ class Decoder:
     def feed(self, chunk: bytes) -> Iterator[tuple[int, bytes]]:
         """Add bytes and yield every complete frame they produced."""
         self._buffer += chunk
-        while True:
-            if len(self._buffer) < _HEADER.size:
-                return
-            length, kind = _HEADER.unpack_from(self._buffer, 0)
-            if length < 1:
-                raise ProtocolError("frame with no type byte")
-            if length > MAX_FRAME:
-                raise ProtocolError(f"frame of {length} bytes exceeds the limit")
-            total = _HEADER.size + length - 1
-            if len(self._buffer) < total:
-                return
-            payload = bytes(self._buffer[_HEADER.size : total])
-            del self._buffer[:total]
-            yield kind, payload
+        buffer, offset, header = self._buffer, 0, _HEADER.size
+        # Consumed frames are cut off once per feed, not once per frame.
+        try:
+            while len(buffer) - offset >= header:
+                length, kind = _HEADER.unpack_from(buffer, offset)
+                if length < 1:
+                    raise ProtocolError("frame with no type byte")
+                if length > MAX_FRAME:
+                    raise ProtocolError(f"frame of {length} bytes exceeds the limit")
+                end = offset + header + length - 1
+                if len(buffer) < end:
+                    break
+                payload = bytes(memoryview(buffer)[offset + header : end])
+                offset = end
+                yield kind, payload
+        finally:
+            if offset:
+                del buffer[:offset]
 
 
 def decode_json(payload: bytes) -> dict[str, Any]:
@@ -393,6 +398,12 @@ class CompanionClient(QObject):
         self._connect_timer.setSingleShot(True)
         self._connect_timer.timeout.connect(self._on_connect_timeout)
 
+        #: Message type -> handler, built once rather than by getattr per frame.
+        self._handlers: dict[str, Callable[[dict[str, Any]], None]] = {
+            name[len("_recv_"):]: getattr(self, name)
+            for name in dir(type(self)) if name.startswith("_recv_")
+        }
+
     # -- state ---------------------------------------------------------------
 
     @property
@@ -657,7 +668,7 @@ class CompanionClient(QObject):
             self._pending_binary = message
             return
 
-        handler = getattr(self, f"_recv_{kind}", None)
+        handler = self._handlers.get(kind)
         if handler is not None:
             handler(message)
             return
@@ -872,8 +883,15 @@ class CompanionClient(QObject):
         if socket is None or socket.state() != QAbstractSocket.SocketState.ConnectedState:
             raise ProtocolError("not connected to the phone")
         message = {**header, "binary": True, "length": len(payload)}
-        # One write, so the header and payload stay adjacent.
-        socket.write(QByteArray(encode_json(message) + encode_binary(payload)))
+        # Back to back on one thread, so the header and payload stay adjacent
+        # without copying the payload into a joined buffer first. Kept in step
+        # with encode_binary.
+        if len(payload) + 1 > MAX_FRAME:
+            raise ProtocolError("frame too large to send")
+        socket.write(QByteArray(
+            encode_json(message) + _HEADER.pack(len(payload) + 1, TYPE_BINARY)
+        ))
+        socket.write(QByteArray(payload))
 
     @property
     def pending_bytes(self) -> int:
@@ -960,6 +978,7 @@ def _fingerprint(certificate: QSslCertificate) -> str:
     return bytes(digest).hex()
 
 
+@functools.lru_cache(maxsize=1)
 def computer_name() -> str:
     """This computer's name, for the phone's list of paired computers."""
     try:
