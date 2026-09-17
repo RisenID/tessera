@@ -16,7 +16,7 @@ from sandbox import isolate                                          # noqa: E40
 
 isolate()
 
-from PySide6.QtCore import QEventLoop, QTimer                      # noqa: E402
+from PySide6.QtCore import QEventLoop, QObject, QTimer, Signal     # noqa: E402
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon        # noqa: E402
 
 from tessera.backends import notify                                # noqa: E402
@@ -27,6 +27,46 @@ from tessera.ui import popups as popups_module                     # noqa: E402
 from tessera.ui.popups import Popups                               # noqa: E402
 
 FAILURES: list[str] = []
+
+#: The real server is only used when asked: otherwise every run of this check
+#: put "Dinner at 8?" on the desktop of whoever ran it.
+LIVE = os.environ.get("TESSERA_CHECK_LIVE") == "1"
+
+
+class FakeNotifier(QObject):
+    """A notification server that shows nothing: ids, replacement and closing
+    behave as the real one's do, answering on the event loop as a worker would."""
+
+    replied = Signal(int, str)
+    activated = Signal(int, str)
+    closed = Signal(int)
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.sent: list[tuple[int, str, str]] = []
+        self._next = 100
+
+    available = True
+    can_reply = True
+    can_act = True
+    capabilities = ["actions", "inline-reply", "body"]
+
+    def send(self, summary: str, body: str, *, replace: int = 0, **_options) -> int:
+        # Replacing keeps the id, as the server does.
+        given = replace or self._next
+        if not replace:
+            self._next += 1
+        self.sent.append((given, summary, body))
+        return given
+
+    def send_async(self, summary: str, body: str, on_done=None, **options) -> None:
+        given = self.send(summary, body, **options)
+        if on_done is not None:
+            QTimer.singleShot(0, lambda: on_done(given))
+
+    def close(self, notification_id: int) -> None:
+        if notification_id:
+            QTimer.singleShot(0, lambda: self.closed.emit(notification_id))
 
 
 def check(label: str, ok: bool, detail: str = "") -> None:
@@ -76,8 +116,28 @@ def gvariant() -> None:
     same("nothing in, nothing out", notify._first_id(""), 0)
 
 
+def refusals() -> None:
+    """How the server's answers are read, with no server involved."""
+    from tessera.core.proc import Result
+
+    notifier = notify.Notifier()
+    notifier._capabilities = ["actions"]                              # as if a server were there
+    notifier._can_send = True
+    refused = Result(("gdbus",), 1, "", "GDBus.Error:org.freedesktop.Notifications.Error."
+                     "ExcessNotificationGeneration: Created too many similar notifications")
+    notifier._gdbus = lambda *_a: refused                             # type: ignore[method-assign]
+    same("a refused repeat is reported as such", notifier.send("x", "y"), notify.REPEATED)
+    notifier._gdbus = lambda *_a: Result(("gdbus",), 1, "", "something else")  # type: ignore[method-assign]
+    same("any other failure is a failure", notifier.send("x", "y"), 0)
+    notifier._gdbus = lambda *_a: Result(("gdbus",), 0, "(uint32 7,)", "")  # type: ignore[method-assign]
+    same("an accepted one gives its id", notifier.send("x", "y"), 7)
+
+
 def server() -> None:
-    """The desktop's own notification server, for real."""
+    """The desktop's own notification server, for real. TESSERA_CHECK_LIVE=1 only."""
+    if not LIVE:
+        print("  (not touching the real server; TESSERA_CHECK_LIVE=1 to raise one)")
+        return
     notifier = notify.Notifier()
     if not notifier.available:
         print("  (no notification server here; the tray is used instead)")
@@ -109,26 +169,18 @@ def server() -> None:
         notifier.can_reply or "inline-reply" not in notifier.capabilities,
     )
 
-    # Plasma refuses a repeat of a popup it still shows. That is not a failure.
-    from tessera.core.proc import Result
-
-    refused = Result(("gdbus",), 1, "", "GDBus.Error:org.freedesktop.Notifications.Error."
-                     "ExcessNotificationGeneration: Created too many similar notifications")
-    notifier._gdbus = lambda *_a: refused                             # type: ignore[method-assign]
-    same("a refused repeat is reported as such", notifier.send("x", "y"), notify.REPEATED)
-    notifier._gdbus = lambda *_a: Result(("gdbus",), 1, "", "something else")  # type: ignore[method-assign]
-    same("any other failure is a failure", notifier.send("x", "y"), 0)
-
 
 def popups() -> None:
-    """What the app does with an arriving notification."""
+    """What the app does with an arriving notification, against a fake server."""
     hub = Hub(Config())
     tray = QSystemTrayIcon()
-    popup = Popups(hub, tray)
-
-    if not popup.notifier.available:
-        print("  (no server; skipping the popup checks)")
-        return
+    real = notify.Notifier
+    notify.Notifier = FakeNotifier                                    # type: ignore[misc]
+    try:
+        popup = Popups(hub, tray)
+    finally:
+        notify.Notifier = real                                        # type: ignore[misc]
+    check("the popups took the fake server", isinstance(popup.notifier, FakeNotifier))
 
     note = Notification(
         id="n1", app="WhatsApp", package="com.whatsapp",
@@ -242,6 +294,8 @@ def main() -> int:
 
     print("-- the text gdbus reads")
     gvariant()
+    print("\n-- the server's answers")
+    refusals()
     print("\n-- the desktop's notification server")
     server()
     print("\n-- the app's popups")
