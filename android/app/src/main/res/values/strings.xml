@@ -118,4 +118,10 @@
         <item quantity="one">%d computer paired</item>
         <item quantity="other">%d computers paired</item>
     </plurals>
+    <!-- About -->
+    <string name="desktop_app">Get the desktop app</string>
+    <string name="privacy_policy">Privacy policy</string>
+    <string name="url_desktop" translatable="false">https://github.com/RisenID/tessera/releases/latest</string>
+    <string name="url_privacy" translatable="false">https://github.com/RisenID/tessera/blob/master/.github/Privacy.md</string>
+    <string name="no_browser">No app on the phone opens links.</string>
 </resources>

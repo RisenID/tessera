@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
         binding.remoteButton.setOnClickListener {
             startActivity(Intent(this, RemoteActivity::class.java))
         }
+        binding.desktopLink.setOnClickListener { openLink(getString(R.string.url_desktop)) }
+        binding.privacyLink.setOnClickListener { openLink(getString(R.string.url_privacy)) }
         binding.swipeRefresh.setOnRefreshListener {
             TesseraService.running_instance?.refreshComputerNames()
             refresh()
@@ -152,6 +154,15 @@ class MainActivity : AppCompatActivity() {
      * its own content. The app bar takes the status bar via fitsSystemWindows;
      * the scrolling content only needs the bottom and the horizontal cutout.
      */
+    /** Opens a link in whatever the phone uses for one. */
+    private fun openLink(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (runCatching { startActivity(intent) }.isFailure) {
+            Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun applyInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.scroll) { view, windowInsets ->
             val bars = windowInsets.getInsets(

@@ -70,7 +70,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8, as Play asks for. proguard-rules.pro keeps what it cannot see:
+            // the adb-launched clipboard helper and SSHD's reflective factories.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfigs.findByName("release")?.let { signingConfig = it }
         }
