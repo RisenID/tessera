@@ -10,6 +10,7 @@ hotspot. Built on Fedora/KDE with a Galaxy S25.
 | `android/` | Companion app (Kotlin) |
 
 Windows support and its gaps are in [docs/WINDOWS.md](docs/WINDOWS.md).
+What the app reads and where it goes: [Privacy Policy](.github/Privacy.md).
 
 ## Features
 
@@ -134,8 +135,8 @@ Linux or Windows; each system also runs checks only it can.
 ## Credits
 
 LDAC Audio for Linux is adapted from [libldacdec](https://github.com/hegdi/libldacdec)
-by hegdi.
+by hegdi.  
 Inspired by and loosely based on [KDE Connect](https://github.com/kde/kdeconnect-kde)
-by the KDE Team.
+by the KDE Team.  
 Phone storage on Windows is adapted from [Sefirah](https://github.com/shrimqy/Sefirah)
 by shrimqy.
