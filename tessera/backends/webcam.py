@@ -148,13 +148,6 @@ def ensure_module(devices: int = 1) -> list[VideoDevice]:
     return created
 
 
-def unload_module() -> None:
-    """Remove the virtual camera. Best-effort; failure is not fatal."""
-    if not module_loaded() or not have("pkexec"):
-        return
-    run(["pkexec", "modprobe", "-r", MODULE], timeout=30.0)
-
-
 # -- camera enumeration ------------------------------------------------------
 
 
@@ -171,20 +164,6 @@ class PhoneCamera:
 
 
 _CAMERA_LINE = re.compile(r"--camera-id=(\d+)\s+\((\w+)(?:,\s*)?([^)]*)\)")
-
-
-def list_cameras(serial: str = "") -> list[PhoneCamera]:
-    """Ask scrcpy which cameras the phone exposes."""
-    if not scrcpy_available():
-        return []
-    argv = ["scrcpy", "--list-cameras"]
-    if serial:
-        argv += ["-s", serial]
-    result = run(argv, timeout=30.0)
-    cameras = []
-    for match in _CAMERA_LINE.finditer(result.text):
-        cameras.append(PhoneCamera(match.group(1), match.group(2), match.group(3).strip()))
-    return cameras
 
 
 # -- the running stream ------------------------------------------------------

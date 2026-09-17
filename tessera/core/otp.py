@@ -71,10 +71,6 @@ class OtpMatch:
     app: str = ""
     context: str = ""
 
-    @property
-    def confident(self) -> bool:
-        return self.score >= THRESHOLD + 3
-
 
 def _looks_like_year(token: str) -> bool:
     return bool(_ORDINAL_DATE.fullmatch(token))

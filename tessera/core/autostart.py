@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 
@@ -163,15 +162,3 @@ def set_enabled(on: bool) -> bool:
     return _win_set(on) if platform.IS_WINDOWS else _xdg_set(on)
 
 
-def open_settings() -> bool:
-    """Show the platform's own startup list, so the user can check us there."""
-    try:
-        if platform.IS_WINDOWS:
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", "ms-settings:startupapps"],
-                creationflags=platform.no_window_flags(),
-            )
-            return True
-    except OSError as exc:
-        log.warning("could not open the startup settings: %s", exc)
-    return False

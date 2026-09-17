@@ -269,9 +269,6 @@ class TesseraService : Service() {
     /** Grants the projection app op, so nothing is ever asked again. */
     fun grantProjection(): String? = ProjectionGrant.grant(this)
 
-    /** Whether audio can start without the phone being touched. */
-    fun projectionSilent(): Boolean = ProjectionGrant.allowed(this)
-
     /** Called by the activity with the user's answer. */
     fun onAudioConsent(resultCode: Int, data: Intent?) {
         getSystemService(NotificationManager::class.java)

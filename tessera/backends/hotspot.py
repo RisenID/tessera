@@ -57,28 +57,6 @@ def _first(pattern: str, text: str) -> str:
     return match.group(1) if match else ""
 
 
-def tethering_state(serial: str) -> bool | None:
-    """True/False if the hotspot state can be read, None when it cannot."""
-    ok, out = adb.try_shell(serial, "cmd wifi is-softap-enabled", timeout=10.0)
-    if ok and out:
-        lowered = out.lower()
-        if "enabled" in lowered or "true" in lowered:
-            return "not" not in lowered and "disabled" not in lowered
-        if "disabled" in lowered or "false" in lowered:
-            return False
-
-    ok, out = adb.try_shell(
-        serial, "dumpsys wifi | grep -i -m3 'ap state\\|softap state'", timeout=15.0
-    )
-    if ok and out:
-        upper = out.upper()
-        if "AP_STATE_ENABLED" in upper or "WIFI_AP_STATE_ENABLED" in upper:
-            return True
-        if "AP_STATE_DISABLED" in upper or "WIFI_AP_STATE_DISABLED" in upper:
-            return False
-    return None
-
-
 def start_phone_hotspot(serial: str, config: HotspotConfig) -> ApConfig:
     """Turn the phone's Wi-Fi hotspot on and report the network to join."""
     band = "-b 5" if config.band == "5" else "-b 2"
@@ -133,24 +111,6 @@ def stop_phone_hotspot(serial: str) -> None:
         if ok and "error" not in out.lower() and "unknown command" not in out.lower():
             return
     raise HotspotError("Could not turn the hotspot off; do it from the phone.")
-
-
-def set_usb_tethering(serial: str, enabled: bool) -> None:
-    """Toggle USB tethering, the fallback when Wi-Fi tethering is blocked."""
-    if not enabled:
-        adb.try_shell(serial, "svc usb setFunctions", timeout=20.0)
-        return
-
-    problems = []
-    for function in ("ncm,adb", "rndis,adb", "ncm", "rndis"):
-        ok, out = adb.try_shell(serial, f"svc usb setFunctions {function}", timeout=25.0)
-        if ok and "error" not in out.lower():
-            log.info("USB tethering enabled via %s", function)
-            return
-        problems.append(f"{function}: {out.strip() or 'no output'}")
-    raise HotspotError(
-        "Could not start USB tethering.\nTried:\n- " + "\n- ".join(problems)
-    )
 
 
 # -- laptop side -------------------------------------------------------------
@@ -243,14 +203,6 @@ def connect_wifi(ssid: str, passphrase: str, scan_timeout: float = 30.0) -> str:
     return f"Connected to {ssid}."
 
 
-def disconnect_wifi(ssid: str) -> None:
-    if platform.IS_WINDOWS:
-        wifi_win.disconnect(ssid)
-        return
-    if ssid and has_saved_connection(ssid):
-        run([NMCLI, "connection", "down", ssid], timeout=30.0)
-
-
 # -- finding the phone again -------------------------------------------------
 
 
@@ -306,36 +258,3 @@ def reachable_address(addresses: "list[str]", port: int, timeout: float = 1.5,
     return ""
 
 
-def usb_tether_interface_up(timeout: float = 25.0) -> str:
-    """Wait for a USB tethering interface to get an address; return its name."""
-    if platform.IS_WINDOWS:
-        # Windows names the RNDIS adapter itself and brings it up without being
-        # asked; there is nothing to wait for beyond an address appearing that
-        # was not there before. (Not a fixed subnet: ROMs choose their own.)
-        before = set(wifi_win.addresses())
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            fresh = [a for a in wifi_win.addresses()
-                     if a not in before and not a.startswith("169.254.")]
-            if fresh:
-                return "USB tethering"
-            time.sleep(1.5)
-        raise HotspotError(
-            "USB tethering was switched on, but Windows did not get an address "
-            "from the phone. Check that the cable carries data."
-        )
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        result = run(
-            [NMCLI, "-t", "-f", "DEVICE,TYPE,STATE", "device", "status"], timeout=15.0
-        )
-        for line in result.stdout.splitlines():
-            parts = line.split(":")
-            if len(parts) >= 3 and parts[1] == "ethernet" and parts[2] == "connected":
-                if parts[0].startswith(("enp", "usb", "ncm", "rndis", "enx")):
-                    return parts[0]
-        time.sleep(1.5)
-    raise HotspotError(
-        "USB tethering was switched on, but no network interface came up. "
-        "Check that the USB cable supports data, and that tethering is allowed."
-    )

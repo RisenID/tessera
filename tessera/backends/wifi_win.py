@@ -71,17 +71,6 @@ def active_ssid() -> str:
     return ""
 
 
-def radio_on() -> bool:
-    """Whether any wireless adapter is up."""
-    result = _wlan("show", "interfaces")
-    if not result.ok:
-        return False
-    lowered = result.stdout.lower()
-    if "radio status" in lowered and "off" in lowered.split("radio status", 1)[1][:40]:
-        return False
-    return "state" in lowered
-
-
 def profiles() -> list[str]:
     """Every saved network profile, by name."""
     result = _wlan("show", "profiles")

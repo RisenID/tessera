@@ -7,7 +7,6 @@ import functools
 import json
 import logging
 import re
-import secrets
 import struct
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -1096,10 +1095,6 @@ def readable_name(hostname: str, os_id: str, os_name: str, user: str) -> str:
         return short
     owner = f"{user[:1].upper()}{user[1:]}'s " if user else ""
     return f"{owner}{os_name or 'computer'}"
-
-
-def generate_token() -> str:
-    return secrets.token_hex(32)
 
 
 def b64decode(value: str) -> bytes:

@@ -34,12 +34,6 @@ object Frames {
         return Frame(type, payload)
     }
 
-    fun readJson(input: DataInputStream): JSONObject {
-        val frame = read(input)
-        if (frame.type != TYPE_JSON) throw ProtocolException("expected a JSON frame")
-        return JSONObject(String(frame.payload, Charsets.UTF_8))
-    }
-
     /**
      * Writes one frame. Callers must hold the socket's write lock: a JSON
      * header and its binary payload have to stay adjacent on the wire.

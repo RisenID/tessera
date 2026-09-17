@@ -215,13 +215,6 @@ class KdeConnect(QObject):
             self.deviceStateChanged.emit()
         self.deviceListChanged.emit()
 
-    def start_discovery(self) -> None:
-        """Nudge the daemon to re-announce itself on the network."""
-        try:
-            self._call(DAEMON_PATH, DAEMON_IFACE, "forceOnNetworkChange")
-        except KdeConnectError as exc:
-            log.debug("discovery nudge failed: %s", exc)
-
     # -- devices -------------------------------------------------------------
 
     def devices(self, only_reachable: bool = False, only_paired: bool = True) -> list[Device]:
@@ -331,14 +324,6 @@ class KdeConnect(QObject):
         path = f"{device_path(self._device_id)}/notifications/{notification_id}"
         self._call(path, NOTIFICATION_IFACE, "reply", message)
 
-    def dismiss_all(self) -> None:
-        for note in self.active_notifications():
-            if note.dismissable:
-                try:
-                    self.dismiss(note.id)
-                except KdeConnectError as exc:
-                    log.debug("could not dismiss %s: %s", note.id, exc)
-
     @Slot(str)
     def _onNotificationPosted(self, notification_id: str) -> None:
         note = self.notification(notification_id)
@@ -368,14 +353,6 @@ class KdeConnect(QObject):
     def _onBatteryRefreshed(self, is_charging: bool, charge: int) -> None:
         self.batteryChanged.emit(int(charge), bool(is_charging))
 
-    def plugins(self) -> list[str]:
-        if not self._device_id:
-            return []
-        try:
-            return list(self._call(device_path(self._device_id), DEVICE_IFACE, "loadedPlugins") or [])
-        except KdeConnectError:
-            return []
-
     def has_plugin(self, name: str) -> bool:
         """True when *name* (e.g. 'notifications') is loaded for this device."""
         if not self._device_id:
@@ -386,14 +363,6 @@ class KdeConnect(QObject):
         except KdeConnectError:
             return False
 
-    def supported_plugins(self) -> list[str]:
-        """Plugins the paired phone advertises, readable even while offline."""
-        if not self._device_id:
-            return []
-        return list(
-            self._prop(device_path(self._device_id), DEVICE_IFACE, "supportedPlugins", []) or []
-        )
-
     def ring(self) -> None:
         self._call(
             device_path(self._device_id), f"{DEVICE_IFACE}.findmyphone", "ring"
@@ -402,43 +371,5 @@ class KdeConnect(QObject):
     def ping(self) -> None:
         self._call(device_path(self._device_id), f"{DEVICE_IFACE}.ping", "sendPing")
 
-    def send_file(self, url: str) -> None:
-        self._call(device_path(self._device_id), f"{DEVICE_IFACE}.share", "shareUrl", url)
-
     # -- SMS -----------------------------------------------------------------
 
-    def sms_available(self) -> bool:
-        return self.has_plugin("sms")
-
-    def send_sms(self, address: str, body: str) -> None:
-        """Send an SMS through KDE Connect's Android app."""
-        if not self._device_id:
-            raise KdeConnectError("No phone selected.")
-
-        base = device_path(self._device_id)
-        iface = f"{DEVICE_IFACE}.sms"
-        attempts = (
-            # Current: addresses as a list, plus attachments and a SIM id.
-            (f"{base}/sms", [[address], body, [], -1]),
-            (f"{base}/sms", [[address], body, []]),
-            # Older builds took a bare number.
-            (f"{base}/sms", [address, body]),
-            (base, [[address], body, [], -1]),
-            (base, [address, body]),
-        )
-
-        problems = []
-        for path, args in attempts:
-            try:
-                self._call(path, iface, "sendSms", *args, quiet=True)
-            except KdeConnectError as exc:
-                problems.append(f"{path} {len(args)} args: {exc}")
-                continue
-            return
-        raise KdeConnectError(
-            "KDE Connect would not send the message. Tried:\n- " + "\n- ".join(problems)
-        )
-
-    def launch_sms_app(self) -> None:
-        """Open KDE Connect's own SMS window, if it is installed."""
-        self._call(f"{device_path(self._device_id)}/sms", f"{DEVICE_IFACE}.sms", "launchApp")

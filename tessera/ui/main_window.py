@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -421,10 +421,6 @@ class MainWindow(QMainWindow):
         name = self.tabs.tabData(index) if index >= 0 else None
         if name:
             self.stack.setCurrentWidget(self._page(name))
-
-    @property
-    def current_page_name(self) -> str:
-        return self.tabs.tabData(self.tabs.currentIndex()) or ""
 
     def _raise_window(self) -> None:
         """Bring the window forward, from wherever it was asked for."""

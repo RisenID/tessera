@@ -50,17 +50,6 @@ class MediaItem:
         return self.remote_path.rsplit("/", 1)[-1]
 
     @property
-    def date_text(self) -> str:
-        return self.taken.strftime("%d %b %Y, %H:%M") if self.taken else "Unknown date"
-
-    @property
-    def size_text(self) -> str:
-        megabytes = self.size / (1024 * 1024)
-        if megabytes >= 1:
-            return f"{megabytes:.1f} MB"
-        return f"{max(self.size // 1024, 1)} KB"
-
-    @property
     def cache_key(self) -> str:
         """Filesystem-safe name that is stable across listings."""
         stem = re.sub(r"[^A-Za-z0-9_.-]", "_", self.filename)
@@ -94,51 +83,6 @@ def _to_datetime(row: dict[str, str]) -> datetime | None:
         except (OverflowError, OSError, ValueError):
             pass
     return None
-
-
-def list_media(serial: str, limit: int = 300, include_videos: bool = True) -> list[MediaItem]:
-    """Most recent items first. Blocking; run in a worker."""
-    items: list[MediaItem] = []
-    sources = [(IMAGES_URI, False)]
-    if include_videos:
-        sources.append((VIDEOS_URI, True))
-
-    for uri, is_video in sources:
-        try:
-            rows = adb.content_query(
-                serial, uri, PROJECTION, sort="date_added DESC", limit=limit, timeout=45.0
-            )
-        except adb.AdbError as exc:
-            log.warning("could not list %s: %s", uri, exc)
-            continue
-        for row in rows:
-            path = row.get("_data", "")
-            if not path:
-                continue
-            try:
-                size = int(row.get("_size", "0") or 0)
-            except ValueError:
-                size = 0
-            items.append(
-                MediaItem(
-                    id=row.get("_id", path),
-                    remote_path=path,
-                    taken=_to_datetime(row),
-                    size=size,
-                    mime=row.get("mime_type", ""),
-                    album=row.get("bucket_display_name", ""),
-                    is_video=is_video,
-                )
-            )
-
-    # MediaStore's own sort is per-query; re-sort once the sources are merged.
-    items.sort(key=lambda i: i.taken or datetime.min, reverse=True)
-    return items[:limit]
-
-
-def albums(items: list[MediaItem]) -> list[str]:
-    names = {item.album for item in items if item.album}
-    return sorted(names, key=str.lower)
 
 
 def fetch(serial: str, item: MediaItem, timeout: float = 120.0) -> Path:
@@ -198,13 +142,3 @@ def save_to(item: MediaItem, destination: Path) -> Path:
     return target
 
 
-def cache_size() -> int:
-    total = 0
-    for path in cache_root().rglob("*"):
-        if path.is_file():
-            total += path.stat().st_size
-    return total
-
-
-def clear_cache() -> None:
-    shutil.rmtree(cache_root(), ignore_errors=True)

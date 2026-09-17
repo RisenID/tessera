@@ -139,10 +139,6 @@ class DndSync(QObject):
     # -- state ---------------------------------------------------------------
 
     @property
-    def phone_state(self) -> ZenMode | None:
-        return self._phone
-
-    @property
     def desktop_state(self) -> bool | None:
         return self._desktop
 
@@ -233,9 +229,6 @@ class DndSync(QObject):
             return "this desktop's notification server"
         found = self.silencer
         return found.desktop if found else ""
-
-    def desktop_supported(self) -> bool:
-        return bool(self.desktop_mechanism())
 
     def _read_desktop(self) -> bool:
         """Whether desktop notifications are currently silenced."""

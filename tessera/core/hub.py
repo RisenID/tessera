@@ -695,10 +695,6 @@ class Hub(QObject):
                 "paired with this phone."
             )
 
-    def stop_ringing(self) -> None:
-        if self.connected and "ring" in self.companion.capabilities:
-            self.companion.send({"t": "ring_stop"})
-
     # -- the phone's audio, over the link --------------------------------------
 
     @property
@@ -1630,16 +1626,6 @@ class Hub(QObject):
                       "security": network.security}, answered, needs="wifi_add")
 
         submit(look, on_done=found, on_error=lambda message: say(False, message))
-
-    def notify_phone(self, title: str, text: str,
-                     on_done: Callable[[bool, str], None] | None = None) -> None:
-        """Show a notification on the phone."""
-        def answered(reply: dict) -> None:
-            ok = reply.get("t") != "error"
-            if on_done is not None:
-                on_done(ok, "Shown on the phone." if ok else str(reply.get("message") or ""))
-
-        self.ask({"t": "notify", "title": title, "text": text}, answered, needs="notify")
 
     # -- media -----------------------------------------------------------------
 

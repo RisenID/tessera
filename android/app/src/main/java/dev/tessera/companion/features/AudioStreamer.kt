@@ -30,9 +30,6 @@ class AudioStreamer(
     private val running = AtomicBoolean(false)
     private var reader: Thread? = null
 
-    /** Silence seen back to back, in frames, for the notification's sake. */
-    private var quietFrames = 0
-
     fun start() {
         if (!supported()) {
             onError(UNSUPPORTED)
@@ -138,19 +135,9 @@ class AudioStreamer(
                 }
                 filled += read
             }
-            if (filled == FRAME_BYTES && running.get()) {
-                if (isQuiet(frame)) quietFrames++ else quietFrames = 0
-                onFrame(frame)
-            }
+            if (filled == FRAME_BYTES && running.get()) onFrame(frame)
         }
     }
-
-    /** Whether nothing is playing: capture returns zeros, not nothing. */
-    private fun isQuiet(frame: ByteArray): Boolean = frame.all { it == 0.toByte() }
-
-    /** Seconds of continuous silence, for the desktop's "nothing playing" hint. */
-    val quietSeconds: Int
-        get() = quietFrames * FRAME_MS / 1000
 
     /** Mute or unmute the phone without interrupting the stream. */
     fun setMuted(on: Boolean): Boolean {

@@ -179,21 +179,6 @@ def getprop(serial: str, name: str) -> str:
         return ""
 
 
-def device_summary(serial: str) -> str:
-    """Human-readable phone description, e.g. 'Galaxy S25 - Android 16'."""
-    model = getprop(serial, "ro.product.model") or serial
-    release = getprop(serial, "ro.build.version.release")
-    return f"{model} - Android {release}" if release else model
-
-
-def android_sdk(serial: str) -> int:
-    """API level, or 0 when it cannot be read."""
-    try:
-        return int(getprop(serial, "ro.build.version.sdk") or 0)
-    except ValueError:
-        return 0
-
-
 # -- wireless adb ------------------------------------------------------------
 
 

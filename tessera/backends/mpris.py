@@ -95,9 +95,6 @@ class MprisPlayer(QObject):
             )
         self._proxy.start(["mpris-proxy"])
 
-    def stop_proxy(self) -> None:
-        self._proxy.stop()
-
     # -- discovery -----------------------------------------------------------
 
     def _services(self) -> list[str]:

@@ -87,10 +87,6 @@ class Store(context: Context) {
             .apply()
     }
 
-    fun revokeAll() {
-        prefs.edit().remove(KEY_TOKENS).apply()
-    }
-
     val pairedCount: Int
         get() = tokens().size
 

@@ -273,12 +273,6 @@ def _with_repositories(capabilities, manager: Manager, named: list[str]) -> str:
     return " && ".join([*steps, manager.command(named)])
 
 
-def names_for(capabilities: "tuple[str, ...] | list[str]",
-              manager: Manager | None = None) -> list[str]:
-    """Package names for *capabilities* that this manager is known to have."""
-    return _split(capabilities, manager or detect())[0]
-
-
 def install_command(*capabilities: str) -> str:
     """A command the user can run, or "" when nothing can be named."""
     manager = detect()
