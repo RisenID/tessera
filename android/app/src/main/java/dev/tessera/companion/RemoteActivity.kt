@@ -20,7 +20,6 @@ class RemoteActivity : AppCompatActivity() {
     private lateinit var binding: ActivityRemoteBinding
     private lateinit var store: Store
 
-
     /** The token of the computer being driven. */
     private var target = ""
 
@@ -79,12 +78,10 @@ class RemoteActivity : AppCompatActivity() {
         // The keyboard's own edits, as they happen; the box only mirrors them.
         binding.typeBox.onText = { text -> send("text", "text" to text) }
         binding.typeBox.onBackspace = { count -> repeat(count) { key("backspace") } }
-        binding.typeBox.onEnter = { key("enter") }
         binding.typeBox.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_SEND || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
                 key("enter")
-                binding.typeBox.setText("")
-                binding.typeBox.reset()
+                binding.typeBox.clear()
                 true
             } else false
         }
