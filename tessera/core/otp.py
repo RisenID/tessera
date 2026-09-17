@@ -13,7 +13,7 @@ KEYWORDS = (
     "verification", "verification code", "verify", "confirmation code",
     "security code", "auth code", "authentication", "2fa", "two-factor",
     "login code", "log in code", "sign-in code", "sign in code",
-    "access code", "pin", "code",
+    "access code", "pin", "code", "tap to copy", "copy code",
     # Auth context without the word "code" -- "Enter 8842 to continue signing in".
     "signing in", "sign in", "sign-in", "logging in", "log in", "authenticate",
 )
@@ -31,8 +31,9 @@ _STRONG_BEFORE = re.compile(
     r"(?:code|otp|pin|passcode|password)\W{0,4}(?:is|:|=)?\W{0,4}$",
     re.IGNORECASE,
 )
+#: Up to two words may sit between: "is your Instagram code", "is the OTP".
 _STRONG_AFTER = re.compile(
-    r"^\W{0,4}(?:is\s+your|as\s+your)?\W{0,4}(?:is\s+the\s+)?"
+    r"^\W{0,4}(?:is\s+your|as\s+your|is\s+the)?\W{0,4}(?:[A-Za-z][\w&']*\s+){0,2}"
     r"(?:code|otp|pin|passcode|verification)",
     re.IGNORECASE,
 )
@@ -41,11 +42,12 @@ _STRONG_AFTER = re.compile(
 #: as in "Use 12345 to verify your account".
 _ENTER_BEFORE = re.compile(r"\b(?:use|enter|type|input|submit)\s+$", re.IGNORECASE)
 
-#: A run of digits, or an alphanumeric block that contains at least one digit.
-_CANDIDATE = re.compile(r"\b(?=[A-Z0-9-]*\d)([0-9]{4,8}|[A-Z0-9]{5,8}|\d{3}-\d{3})\b")
+#: A run of digits, an alphanumeric block that contains at least one digit, or
+#: two groups of three ("123-456", "123 456").
+_CANDIDATE = re.compile(r"\b(?=[A-Z0-9-]*\d)([0-9]{4,8}|[A-Z0-9]{5,8}|\d{3}[ -]\d{3})\b")
 
 #: Contexts that mean a number is definitely not a passcode.
-_MONEY = re.compile(r"[$£€¥₹]\s*$")
+_MONEY = re.compile(r"(?:[$£€¥₹]|\b(?:rs|inr|usd|eur|gbp|aud|cad))\.?\s*$", re.IGNORECASE)
 _TIME = re.compile(r"\d:\d")
 _ORDINAL_DATE = re.compile(r"\b(?:19|20)\d{2}\b")
 
@@ -115,10 +117,18 @@ def _score(token: str, text: str, start: int, end: int, base: int) -> int:
         score -= 5
     if _TIME.search(text[max(0, start - 2) : end + 2]):
         score -= 4
-    # Part of a longer number, e.g. an order id or phone number.
-    if start > 0 and (text[start - 1].isdigit() or text[start - 1] in "+."):
+    # Part of a longer number, e.g. an order id, phone number or decimal. A
+    # full stop only counts with a digit on its other side: "is 123456." is
+    # the end of a sentence, not a fraction.
+    if start > 0 and (
+        text[start - 1].isdigit() or text[start - 1] == "+"
+        or (text[start - 1] == "." and start > 1 and text[start - 2].isdigit())
+    ):
         score -= 4
-    if end < len(text) and (text[end].isdigit() or text[end] == "."):
+    if end < len(text) and (
+        text[end].isdigit()
+        or (text[end] == "." and end + 1 < len(text) and text[end + 1].isdigit())
+    ):
         score -= 4
     return score
 
@@ -139,7 +149,9 @@ def find_codes(text: str, app: str = "") -> tuple[OtpMatch, ...]:
         score = _score(token, text, match.start(1), match.end(1), base)
         if score >= THRESHOLD:
             context = text[max(0, match.start(1) - 40) : match.end(1) + 40].strip()
-            matches.append(OtpMatch(token, score, app, context))
+            # "123 456" is typed as 123456.
+            code = token.replace(" ", "").replace("-", "")
+            matches.append(OtpMatch(code, score, app, context))
     matches.sort(key=lambda m: m.score, reverse=True)
     # A tuple, so the cached result cannot be changed by a caller.
     return tuple(matches)

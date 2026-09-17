@@ -208,7 +208,9 @@ class Hub(QObject):
         self._storage_stale = False
         self._notifications: dict[str, Notification] = {}
         self._sorted: list[Notification] | None = None
-        self._otp_seen: set[str] = set()
+        #: The code last surfaced for each notification key: a second passcode
+        #: from the same sender updates the same notification, and must show.
+        self._otp_seen: dict[str, str] = {}
         self._serial = ""
         #: Not before this, so a phone that is simply off does not cost a
         #: round of connection attempts every fifteen seconds.
@@ -1866,12 +1868,12 @@ class Hub(QObject):
 
     def _check_otp(self, note: Notification) -> None:
         """Surface a passcode as soon as its notification arrives."""
-        if not self.codes_wanted(note) or note.id in self._otp_seen:
+        if not self.codes_wanted(note):
             return
         match = otp.find_code(note.body, note.app)
-        if match is None:
+        if match is None or self._otp_seen.get(note.id) == match.code:
             return
-        self._otp_seen.add(note.id)
+        self._otp_seen[note.id] = match.code
         self.otpArrived.emit(match, note)
 
     def recent_codes(self, limit: int = 12) -> list[tuple[Any, Notification]]:
