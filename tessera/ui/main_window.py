@@ -526,6 +526,24 @@ class MainWindow(QMainWindow):
         clipboard_action = QAction("Copy phone clipboard", self)
         clipboard_action.triggered.connect(lambda: self.hub.clipboard.pull(force=True))
         menu.addAction(clipboard_action)
+
+        link_action = QAction("Open clipboard link on phone", self)
+        link_action.triggered.connect(self._open_clipboard_link)
+        menu.addAction(link_action)
+
+        send_action = QAction("Send files to the phone...", self)
+        send_action.triggered.connect(self._send_from_tray)
+        menu.addAction(send_action)
+
+        photo_action = QAction("Take a photo with the phone", self)
+        photo_action.triggered.connect(lambda: self.hub.take_photo(on_done=self._photo_taken))
+        menu.addAction(photo_action)
+
+        ring_action = QAction("Ring the phone", self)
+        ring_action.triggered.connect(lambda: self.hub.ring_phone(self._set_status))
+        menu.addAction(ring_action)
+        self.hub.phoneStatusChanged.connect(lambda _s: self._refresh_tray_tip())
+        self.hub.connectionChanged.connect(lambda _c: self._refresh_tray_tip())
         self.hub.clipboard.pulled.connect(
             lambda _text, source: self._set_status(
                 f"Copied the clipboard from {'the phone' if source == 'phone' else source}"
@@ -554,6 +572,51 @@ class MainWindow(QMainWindow):
     def _mirror_from_tray(self) -> None:
         self.show_page("Screen")
         self._restore()
+
+    def _open_clipboard_link(self) -> None:
+        from ..core.commands import looks_like_url
+
+        text = QApplication.clipboard().text().strip()
+        if not looks_like_url(text):
+            self._set_status("The clipboard does not hold a link.")
+            return
+        self.hub.open_on_phone(text, lambda _ok, message: self._set_status(message))
+
+    def _send_from_tray(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        paths, _filter = QFileDialog.getOpenFileNames(None, "Send to the phone")
+        if paths:
+            self.hub.send_files(paths)
+
+    def _photo_taken(self, ok: bool, message: str, path: str = "") -> None:
+        self._set_status(message)
+        if ok and path:
+            from ..backends.filetransfer import open_path
+            from pathlib import Path
+
+            open_path(Path(path))
+
+    def _refresh_tray_tip(self) -> None:
+        """The phone's readings on the tray icon, where a glance is enough."""
+        hub = self.hub
+        if not hub.connected:
+            self.tray.setToolTip("Tessera — no phone connected")
+            return
+        parts = [hub.phone_name]
+        status = hub.phone_status
+        battery = status.get("battery") or {}
+        if isinstance(battery.get("level"), int) and battery["level"] >= 0:
+            parts.append(f"{battery['level']}%" + (" charging" if battery.get("charging") else ""))
+        wifi = status.get("wifi") or {}
+        if wifi.get("connected") and isinstance(wifi.get("level"), int):
+            parts.append(f"Wi-Fi {wifi['level']}/{wifi.get('max', 4)}")
+        cell = status.get("cell") or {}
+        if isinstance(cell.get("level"), int):
+            parts.append(f"{cell.get('type') or 'cell'} {cell['level']}/{cell.get('max', 4)}")
+        if hub.ringer:
+            parts.append(hub.ringer)
+        self.tray.setToolTip(" · ".join(parts))
 
     def _quit(self) -> None:
         self._quitting = True

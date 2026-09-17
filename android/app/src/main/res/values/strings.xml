@@ -28,6 +28,9 @@
 
     <string name="channel_status">Connection status</string>
     <string name="channel_status_description">Shows whether your computer is connected.</string>
+    <string name="channel_computer">From your computer</string>
+    <string name="channel_computer_description">Notifications a connected computer asks the phone to show.</string>
+    <string name="computer_fallback">Your computer</string>
     <string name="channel_consent">Permission requests</string>
     <string name="channel_consent_description">Asks you to allow something your computer has requested.</string>
     <string name="audio_consent_title">Send this phone\'s audio?</string>
@@ -79,7 +82,7 @@
     <string name="perm_projection">Audio without asking</string>
     <string name="perm_projection_why">Let your computer start the audio on its own, instead of Android asking on this phone every time. Needs Shizuku; granted once, and reversible.</string>
     <string name="perm_audio">Microphone</string>
-    <string name="perm_audio_why">Play this phone\'s audio on your computer. The microphone itself is never opened — Android requires the permission to capture what is playing.</string>
+    <string name="perm_audio_why">Play this phone\'s audio on your computer, and use this phone as the computer\'s microphone when you ask for that. Android requires the permission for playback capture either way.</string>
 
     <!-- Hotspot -->
     <string name="hotspot_title">One‑click hotspot</string>

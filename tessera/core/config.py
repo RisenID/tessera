@@ -213,6 +213,26 @@ class ClipboardConfig:
 
 
 @dataclass
+class CaptureConfig:
+    """Photos taken with the phone from here."""
+
+    facing: str = "back"           # back | front
+    #: Empty means Pictures/Tessera.
+    folder: str = ""
+    #: Also put each photo on the clipboard.
+    clipboard: bool = False
+
+
+@dataclass
+class HandoffConfig:
+    """Links moving between the two screens."""
+
+    #: A link shared from the phone opens in the browser here, as well as
+    #: landing on the clipboard.
+    open_links: bool = True
+
+
+@dataclass
 class MirrorConfig:
     max_size: int = 1600
     fps: int = 60
@@ -262,6 +282,13 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     hotspot: HotspotConfig = field(default_factory=HotspotConfig)
     panel: PanelConfig = field(default_factory=PanelConfig)
+    handoff: HandoffConfig = field(default_factory=HandoffConfig)
+    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    #: The phone as this computer's microphone: volume, buffer and, on
+    #: Windows, which output (a virtual cable) it is played into.
+    mic: PhoneAudioConfig = field(
+        default_factory=lambda: PhoneAudioConfig(route="link", mute_phone=False)
+    )
 
     # -- persistence ---------------------------------------------------------
 

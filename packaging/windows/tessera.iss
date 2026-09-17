@@ -51,6 +51,8 @@ Source: "..\..\dist\Tessera\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 ; The app id matches the one the app sets, so notifications are named Tessera.
 Name: "{group}\{#AppName}"; Filename: "{app}\Tessera.exe"; AppUserModelID: "{#AppUserModelID}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Tessera.exe"; AppUserModelID: "{#AppUserModelID}"; Tasks: desktopicon
+; Right-click a file, Send to, Phone.
+Name: "{usersendto}\Phone (Tessera)"; Filename: "{app}\Tessera.exe"; Parameters: "send"; IconFilename: "{app}\Tessera.exe"
 
 [Registry]
 ; The app manages this value from Settings; uninstalling removes it.

@@ -20,6 +20,8 @@
     <!-- Playback capture. RECORD_AUDIO is required by AudioRecord; the mic is never opened. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The phone as the computer's microphone. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -119,7 +121,7 @@
         <service
             android:name=".TesseraService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|camera|mediaProjection" />
+            android:foregroundServiceType="connectedDevice|camera|mediaProjection|microphone" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

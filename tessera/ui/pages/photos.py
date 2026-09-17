@@ -7,6 +7,7 @@ from datetime import datetime
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QImageReader, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QGridLayout,
@@ -360,6 +361,17 @@ class PhotosPage(QWidget):
 
         header = QHBoxLayout()
         header.addWidget(heading("Photos", "Everything in your phone's gallery"), 1)
+        self.shutter = QPushButton("Take a photo")
+        self.shutter.setObjectName("Primary")
+        self.shutter.setToolTip("Take a photo with the phone's camera and save it here")
+        self.shutter.clicked.connect(self._take_photo)
+        header.addWidget(self.shutter, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.facing = QComboBox()
+        self.facing.addItem("Back camera", "back")
+        self.facing.addItem("Front camera", "front")
+        self.facing.setCurrentIndex(max(0, self.facing.findData(hub.config.capture.facing)))
+        self.facing.currentIndexChanged.connect(self._facing_changed)
+        header.addWidget(self.facing, 0, Qt.AlignmentFlag.AlignVCenter)
         refresh = QPushButton("Refresh")
         refresh.setObjectName("Ghost")
         refresh.clicked.connect(self.load)
@@ -389,6 +401,24 @@ class PhotosPage(QWidget):
         self.toast = Toast(self)
         hub.connectionChanged.connect(lambda _c: self.load())
         self.load()
+
+    def _facing_changed(self, _index: int) -> None:
+        self.hub.config.capture.facing = self.facing.currentData() or "back"
+        self.hub.config.save()
+
+    def _take_photo(self) -> None:
+        self.shutter.setEnabled(False)
+
+        def done(ok: bool, message: str, path: str = "") -> None:
+            self.shutter.setEnabled(True)
+            self.toast.show_message(message[:140], self.palette_tokens, "success" if ok else "danger")
+            if ok and path:
+                from ...backends.filetransfer import open_path
+                from pathlib import Path
+
+                open_path(Path(path))
+
+        self.hub.take_photo(facing=self.facing.currentData() or "back", on_done=done)
 
     def load(self) -> None:
         if not self.hub.companion.connected:

@@ -21,6 +21,7 @@ from ..backends import storage
 from ..backends.filetransfer import FileTransfers
 from ..backends.kdeconnect import KdeConnect
 from ..backends.phone_audio import PhoneAudio
+from ..backends.phone_mic import PhoneMic
 from ..backends.webcam import CompanionCamera, Webcam, WebcamError
 from ..ui.icons import IconStore
 from . import otp
@@ -85,6 +86,11 @@ class Hub(QObject):
     alert = Signal(str, str)
     #: Text arrived from the phone's share sheet.
     textShared = Signal(str)
+    #: A photo taken from here was saved; the argument is its path.
+    photoTaken = Signal(str)
+    #: The phone's microphone started or stopped being a microphone here.
+    phoneMicChanged = Signal(bool)
+    phoneMicLevel = Signal(float)
 
     #: How many shared texts to keep for the Share page.
     SHARED_TEXTS = 50
@@ -133,6 +139,8 @@ class Hub(QObject):
         else:
             self.companion_camera = CompanionCamera(config.webcam, self)
         self.phone_audio = PhoneAudio(config.phone_audio, self)
+        self.phone_mic = PhoneMic(config.mic, self)
+        self._phone_mic_pending = False
         #: Files both ways.
         self.files = FileTransfers(self.files_link, config, self, fallback=self.companion)
         self.mirrors = mirror.MirrorManager(self)
@@ -215,6 +223,7 @@ class Hub(QObject):
         self._wire_dnd()
         self._wire_camera()
         self._wire_phone_audio()
+        self._wire_phone_mic()
         self._wire_media_player()
         self._wire_files()
         self._wire_wallpaper()
@@ -374,6 +383,7 @@ class Hub(QObject):
     def stop(self) -> None:
         self.mirrors.close_all()
         self.stop_camera()
+        self.stop_phone_mic()
         self.dnd.stop()
         self.clipboard_adb.stop()
         self.companion.disconnect_from_phone()
@@ -735,6 +745,78 @@ class Hub(QObject):
         # An error from the phone while we are waiting on consent is the end of
         # that attempt, whatever it was: stop claiming to be starting.
         self.companion.errorOccurred.connect(self._on_phone_error_for_audio)
+
+    # -- the phone's microphone, as one of ours --------------------------------
+
+    @property
+    def phone_mic_active(self) -> bool:
+        return self.phone_mic.running
+
+    def start_phone_mic(self, on_done: Callable[[bool, str], None] | None = None) -> None:
+        """Ask the phone for its microphone; it appears here as an input device."""
+        from ..backends import phone_mic as mic_backend
+
+        def say(ok: bool, message: str) -> None:
+            if not ok:
+                self.errorOccurred.emit(message)
+            if on_done is not None:
+                on_done(ok, message)
+
+        if self.phone_mic.running:
+            say(True, "The phone's microphone is already on.")
+            return
+        if not mic_backend.available():
+            say(False, "This computer cannot make a virtual microphone: pactl and pw-cat "
+                       "(or pacat) are needed.")
+            return
+        self._phone_mic_pending = True
+        self.phoneMicChanged.emit(False)
+
+        def answered(reply: dict) -> None:
+            if reply.get("t") == "error":
+                self._phone_mic_pending = False
+                self.phoneMicChanged.emit(False)
+                say(False, str(reply.get("message") or "The phone refused."))
+            else:
+                say(True, "The phone's microphone is on." if platform.IS_LINUX else
+                    "The phone's microphone is playing into the chosen output.")
+
+        self.ask({"t": "mic_start"}, answered, needs="mic")
+
+    def stop_phone_mic(self) -> None:
+        self._phone_mic_pending = False
+        if self.companion.connected:
+            self.companion.send({"t": "mic_stop"})
+        self.phone_mic.close()
+
+    def toggle_phone_mic(self) -> None:
+        if self.phone_mic.running or self._phone_mic_pending:
+            self.stop_phone_mic()
+        else:
+            self.start_phone_mic()
+
+    def _wire_phone_mic(self) -> None:
+        self.companion.micStarted.connect(self._on_phone_mic_started)
+        self.companion.micFrame.connect(self.phone_mic.feed)
+        self.companion.micStopped.connect(self.phone_mic.close)
+        self.phone_mic.failed.connect(self._on_phone_mic_failed)
+        self.phone_mic.started.connect(lambda: self.phoneMicChanged.emit(True))
+        self.phone_mic.stopped.connect(lambda: self.phoneMicChanged.emit(False))
+        self.phone_mic.levelChanged.connect(self.phoneMicLevel)
+        self.companion.connectedChanged.connect(
+            lambda connected: None if connected else self.phone_mic.close()
+        )
+
+    def _on_phone_mic_started(self, header: dict) -> None:
+        self._phone_mic_pending = False
+        self.phone_mic.open(header)
+
+    def _on_phone_mic_failed(self, reason: str) -> None:
+        self._phone_mic_pending = False
+        self.phone_mic.close()
+        if self.companion.connected:
+            self.companion.send({"t": "mic_stop"})
+        self.errorOccurred.emit(reason)
 
     # -- the phone's own look --------------------------------------------------
 
@@ -1366,6 +1448,103 @@ class Hub(QObject):
         self.shared_texts.insert(0, (now(), text))
         del self.shared_texts[self.SHARED_TEXTS:]
         self.textShared.emit(text)
+        # A link shared from the phone is meant to be read here: open it.
+        from .commands import looks_like_url, open_here
+
+        if self.config.handoff.open_links and looks_like_url(text) and open_here(text):
+            self.statusChanged.emit("Opened a link from the phone")
+
+    # -- asking the phone ------------------------------------------------------
+
+    def ask(self, message: dict, on_done: Callable[[dict], None] | None = None,
+            needs: str = "") -> None:
+        """Send a request; answers with an error dict when it cannot be sent."""
+        if not self.companion.connected:
+            answer = {"t": "error", "message": "The companion app is not connected."}
+        elif needs and not self.companion.supports(needs):
+            answer = {"t": "error", "message":
+                      "The phone's companion app is older than this feature; update it."}
+        else:
+            self.companion.request(message, on_done or (lambda _reply: None))
+            return
+        if on_done is not None:
+            on_done(answer)
+
+    def open_on_phone(self, url: str, on_done: Callable[[bool, str], None] | None = None) -> None:
+        """Open a link in the phone's browser."""
+        def answered(reply: dict) -> None:
+            ok = reply.get("t") != "error"
+            message = "Opened on the phone." if ok else str(reply.get("message") or "The phone refused.")
+            if not ok:
+                self.errorOccurred.emit(message)
+            if on_done is not None:
+                on_done(ok, message)
+
+        self.ask({"t": "open_url", "url": url.strip()}, answered, needs="open_url")
+
+    # -- a photo, taken from here ----------------------------------------------
+
+    def photos_folder(self) -> Path:
+        """Where photos taken from here land."""
+        chosen = (self.config.capture.folder or "").strip()
+        if chosen:
+            return Path(chosen).expanduser()
+        from PySide6.QtCore import QStandardPaths
+
+        base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        return Path(base or Path.home()) / "Tessera"
+
+    def take_photo(self, facing: str = "", path: str = "", to_clipboard: bool | None = None,
+                   on_done: Callable[..., None] | None = None) -> None:
+        """Have the phone take a photo; it is saved here and the path handed back."""
+        facing = facing or self.config.capture.facing
+        if to_clipboard is None:
+            to_clipboard = self.config.capture.clipboard
+
+        def say(ok: bool, message: str, saved: str = "") -> None:
+            if not ok:
+                self.errorOccurred.emit(message)
+            if on_done is not None:
+                on_done(ok, message, saved)
+
+        def arrived(reply: dict) -> None:
+            data = reply.get("data")
+            if reply.get("t") == "error" or not isinstance(data, (bytes, bytearray)):
+                say(False, str(reply.get("message") or "The phone sent no photo."))
+                return
+            from datetime import datetime
+
+            target = Path(path) if path else self.photos_folder() / datetime.now().strftime(
+                "Phone %Y-%m-%d %H.%M.%S.jpg")
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(bytes(data))
+            except OSError as exc:
+                say(False, f"Could not save the photo: {exc}")
+                return
+            if to_clipboard:
+                from PySide6.QtGui import QGuiApplication, QImage
+
+                image = QImage.fromData(bytes(data))
+                if not image.isNull():
+                    QGuiApplication.clipboard().setImage(image)
+            self.photoTaken.emit(str(target))
+            say(True, f"Saved {target.name}", str(target))
+
+        self.statusChanged.emit("Taking a photo on the phone...")
+        self.ask({"t": "capture", "facing": facing,
+                  "cameraId": self.config.webcam.camera_id if facing == self.config.webcam.facing else ""},
+                 arrived, needs="capture")
+
+    def notify_phone(self, title: str, text: str,
+                     on_done: Callable[[bool, str], None] | None = None) -> None:
+        """Show a notification on the phone."""
+        def answered(reply: dict) -> None:
+            ok = reply.get("t") != "error"
+            if on_done is not None:
+                on_done(ok, "Shown on the phone." if ok else str(reply.get("message") or ""))
+
+        self.ask({"t": "notify", "title": title, "text": text}, answered, needs="notify")
 
     # -- media -----------------------------------------------------------------
 

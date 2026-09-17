@@ -344,6 +344,10 @@ class CompanionClient(QObject):
     #: Android asks the user on the phone before capturing playback, and only
     #: an activity can ask -- so the phone says "I have put a notification up".
     phoneAudioConsent = Signal(str)
+    #: The phone's microphone, as a microphone here.
+    micStarted = Signal(dict)
+    micFrame = Signal(bytes)
+    micStopped = Signal()
 
     #: Backoff schedule for reconnection, in seconds.
     RETRY_DELAYS = (2, 5, 10, 20, 30, 60)
@@ -734,6 +738,9 @@ class CompanionClient(QObject):
         if header.get("t") == "audio_frame":
             self.phoneAudioFrame.emit(payload)
             return
+        if header.get("t") == "mic_frame":
+            self.micFrame.emit(payload)
+            return
         if header.get("t") == "file_chunk":
             self.fileChunk.emit(header, payload)
             return
@@ -896,6 +903,12 @@ class CompanionClient(QObject):
 
     def _recv_audio_consent(self, message: dict[str, Any]) -> None:
         self.phoneAudioConsent.emit(message.get("message", ""))
+
+    def _recv_mic_started(self, message: dict[str, Any]) -> None:
+        self.micStarted.emit(message)
+
+    def _recv_mic_stopped(self, _message: dict[str, Any]) -> None:
+        self.micStopped.emit()
 
     # File transfer.
     def _recv_file_offer(self, message: dict[str, Any]) -> None:

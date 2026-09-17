@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Open on phone
+Comment=Open a link on your phone through Tessera
+Exec=tessera open %u
+Icon=dev.tessera.Tessera
+Terminal=false
+Categories=Network;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;text/html;
+StartupNotify=false

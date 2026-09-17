@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+MimeType=all/allfiles;
+Actions=sendToPhone;
+X-KDE-Priority=TopLevel
+Icon=dev.tessera.Tessera
+
+[Desktop Action sendToPhone]
+Name=Send to phone
+Icon=dev.tessera.Tessera
+Exec=tessera send %F

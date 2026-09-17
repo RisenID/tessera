@@ -8,9 +8,11 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -265,6 +267,7 @@ class SharePage(QWidget):
 
         self.storage_card = self._build_storage_card(palette)
         outer.addWidget(self.storage_card)
+        outer.addWidget(self._build_handoff_card(palette))
         outer.addWidget(self._build_notes_card(palette))
 
         history = Card(self)
@@ -295,6 +298,74 @@ class SharePage(QWidget):
         self._refresh_notes()
         self._refresh_storage()
         self.rebuild()
+
+    # -- links and typing, to the phone ----------------------------------------
+
+    def _build_handoff_card(self, palette: Palette) -> Card:
+        card = Card(self)
+        title = QLabel("To the phone")
+        title.setObjectName("SectionTitle")
+        card.add(title)
+
+        link_row = QHBoxLayout()
+        self.link_edit = QLineEdit()
+        self.link_edit.setPlaceholderText("A link to open on the phone")
+        self.link_edit.returnPressed.connect(self._open_link)
+        link_row.addWidget(self.link_edit, 1)
+        open_button = QPushButton("Open on phone")
+        open_button.setObjectName("Primary")
+        open_button.clicked.connect(self._open_link)
+        link_row.addWidget(open_button)
+        card.body().addLayout(link_row)
+
+        type_row = QHBoxLayout()
+        self.type_edit = QLineEdit()
+        self.type_edit.setPlaceholderText("Text to type into whatever has focus on the phone")
+        self.type_edit.returnPressed.connect(self._type)
+        type_row.addWidget(self.type_edit, 1)
+        type_button = QPushButton("Type")
+        type_button.clicked.connect(self._type)
+        type_row.addWidget(type_button)
+        self.type_enter = QCheckBox("then Enter")
+        type_row.addWidget(self.type_enter)
+        card.body().addLayout(type_row)
+
+        self.open_links_box = QCheckBox("Open links shared from the phone in the browser here")
+        self.open_links_box.setChecked(self.hub.config.handoff.open_links)
+        self.open_links_box.toggled.connect(self._set_open_links)
+        card.add(self.open_links_box)
+
+        note = QLabel(
+            "The same from a terminal: tessera open <link>, tessera type <text>, "
+            "tessera send <file>, tessera notify <text>."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+        return card
+
+    def _open_link(self) -> None:
+        from ...core.commands import looks_like_url
+
+        url = self.link_edit.text().strip()
+        if not looks_like_url(url):
+            self.toast.show_message("That is not a link the phone can open", self.palette_tokens, "danger")
+            return
+        self.hub.open_on_phone(url, lambda ok, message: self.toast.show_message(
+            message[:140], self.palette_tokens, "success" if ok else "danger"))
+        self.link_edit.clear()
+
+    def _type(self) -> None:
+        text = self.type_edit.text()
+        if not text and not self.type_enter.isChecked():
+            return
+        self.hub.type_on_phone(text, self.type_enter.isChecked(), lambda ok, message: self.toast.show_message(
+            message[:140], self.palette_tokens, "success" if ok else "danger"))
+        self.type_edit.clear()
+
+    def _set_open_links(self, on: bool) -> None:
+        self.hub.config.handoff.open_links = bool(on)
+        self.hub.config.save()
 
     # -- text from the share sheet ---------------------------------------------
 

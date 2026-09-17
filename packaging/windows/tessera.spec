@@ -95,8 +95,26 @@ exe = EXE(
     version=None,
 )
 
+# The same program with a console, for `tessera-cli status` in a terminal: the
+# windowed one has no stdout to print to.
+cli = EXE(
+    pyz,
+    analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="tessera-cli",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    icon=str(icon) if icon.is_file() else None,
+    version=None,
+)
+
 COLLECT(
     exe,
+    cli,
     analysis.binaries,
     analysis.datas,
     strip=False,

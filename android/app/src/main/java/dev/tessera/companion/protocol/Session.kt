@@ -19,10 +19,13 @@ import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.Capabilities
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.ClipboardWatcher
+import dev.tessera.companion.features.DesktopMessages
 import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.FindPhone
+import dev.tessera.companion.features.Handoff
 import dev.tessera.companion.features.Hotspot
 import dev.tessera.companion.features.MediaRepository
+import dev.tessera.companion.features.MicStreamer
 import dev.tessera.companion.features.NetworkAddresses
 import dev.tessera.companion.features.NotificationBridge
 import dev.tessera.companion.features.NowPlaying
@@ -31,6 +34,7 @@ import dev.tessera.companion.features.PrivilegedShell
 import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.features.TetheringController
 import dev.tessera.companion.features.SmsRepository
+import dev.tessera.companion.features.StillCapture
 import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -66,6 +70,7 @@ class Session(
     private var subscriber: Bus.Subscriber? = null
     private var camera: CameraStreamer? = null
     private var audio: AudioStreamer? = null
+    private var mic: MicStreamer? = null
 
     /** Files arriving from the desktop, by transfer id. */
     private val incoming = java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Incoming>()
@@ -234,6 +239,8 @@ class Session(
         if (SmsRepository.canSend(context)) add("sms_send")
         if (MediaRepository.canRead(context)) add("media")
         add("camera")
+        // A single photo, taken from the computer.
+        add("capture")
         // Ringing needs nothing granted: it plays the phone's own ringtone.
         add("ring")
         // Playback capture: what the phone is playing, sent to the desktop.
@@ -246,6 +253,8 @@ class Session(
         // Whether the phone can be kept quiet while the desktop plays the
         // copy, so the same track is not coming out of both at once.
         if (AudioStreamer.supported()) add("phone_audio_mute")
+        // The phone's microphone as one of the desktop's.
+        if (MicStreamer.canRecord(context)) add("mic")
         add("apps")
         add("media_control")
         if (ClipboardBridge.available()) add("clipboard")
@@ -279,6 +288,9 @@ class Session(
         // The desktop can wait for a hotspot switched on by hand, because the
         // phone can tell it has come up without any privilege at all.
         add("hotspot_wait")
+        // Notifications from the computer, and links opened here.
+        add("notify")
+        add("open_url")
     }
 
     // -- commands ------------------------------------------------------------
@@ -389,6 +401,7 @@ class Session(
 
             "camera_start" -> startCamera(message, id)
             "camera_stop" -> stopCamera()
+            "capture" -> takePhoto(message, id)
 
             // Finding the phone. On the alarm stream, so a silenced phone
             // still answers -- which is the phone that usually needs finding.
@@ -469,6 +482,9 @@ class Session(
 
             "audio_start" -> startAudio(id, message.optBoolean("mute", false))
             "audio_stop" -> stopAudio(notify = true)
+
+            "mic_start" -> startMic(id)
+            "mic_stop" -> stopMic(notify = true)
 
             // The desktop's "keep the phone quiet" checkbox, pressed while the
             // music is already playing.
@@ -673,6 +689,18 @@ class Session(
 
             "ping" -> reply(id, JSONObject().put("pong", true))
 
+            // A notification from the computer: "the build finished".
+            "notify" -> {
+                val shown = DesktopMessages.post(
+                    context, message.optString("title"), message.optString("text"), computerName,
+                )
+                if (shown) reply(id, JSONObject().put("posted", true))
+                else fail(id, "The phone is not allowing Tessera to show notifications.")
+            }
+
+            "open_url" -> Handoff.open(context, message.optString("url"))?.let { fail(id, it) }
+                ?: reply(id, JSONObject().put("opened", true))
+
             else -> Log.d(TAG, "ignoring unknown command $kind")
         }
     }
@@ -774,6 +802,28 @@ class Session(
         TesseraService.running_instance?.setCameraActive(false)
     }
 
+    /** One photo for the computer, sent back as a JPEG. */
+    private fun takePhoto(message: JSONObject, id: Int?) {
+        if (camera != null) return fail(id, "The camera is busy streaming; stop the webcam first.")
+        val service = TesseraService.running_instance
+        if (service == null || !service.setCameraActive(true)) {
+            return fail(
+                id,
+                "The phone will not allow camera access to a background service. " +
+                    "Open Tessera on the phone once, then try again."
+            )
+        }
+        StillCapture(
+            context = context,
+            facing = message.optString("facing", "back"),
+            cameraId = message.optString("cameraId", ""),
+        ) { bytes, problem ->
+            if (camera == null) service.setCameraActive(false)
+            if (bytes == null) fail(id, problem ?: "The photo could not be taken.")
+            else sendBinary(JSONObject().put("t", "photo").put("format", "jpeg"), bytes, id)
+        }.start()
+    }
+
     // -- the phone's audio ---------------------------------------------------
 
     /** Starts sending what the phone is playing. */
@@ -830,6 +880,44 @@ class Session(
         )
         audio = streamer
         streamer.start()
+    }
+
+    // -- the phone's microphone ----------------------------------------------
+
+    private fun startMic(id: Int?) {
+        if (!MicStreamer.canRecord(context)) return fail(id, MicStreamer.NO_PERMISSION)
+        val service = TesseraService.running_instance
+            ?: return fail(id, "The companion service is not running on the phone.")
+        stopMic()
+        if (!service.setMicActive(true)) {
+            return fail(
+                id,
+                "The phone will not allow microphone access to a background service. " +
+                    "Open Tessera on the phone once, then try again."
+            )
+        }
+        val streamer = MicStreamer(
+            context = context,
+            onStarted = { header ->
+                send(header)
+                reply(id, JSONObject().put("started", true))
+            },
+            onFrame = { frame -> sendMedia(JSONObject().put("t", "mic_frame"), frame, droppable = true) },
+            onError = { reason ->
+                fail(id, reason)
+                stopMic(notify = true)
+            },
+        )
+        mic = streamer
+        streamer.start()
+    }
+
+    private fun stopMic(notify: Boolean = false) {
+        val streamer = mic ?: return
+        mic = null
+        streamer.stop()
+        TesseraService.running_instance?.setMicActive(false)
+        if (notify) send(JSONObject().put("t", "mic_stopped"))
     }
 
     // -- files ---------------------------------------------------------------
@@ -1147,6 +1235,7 @@ class Session(
         subscriber = null
         stopCamera()
         stopAudio()
+        stopMic()
         writer.shutdownNow()
         runCatching { socket.close() }
         Log.i(TAG, "session closed")

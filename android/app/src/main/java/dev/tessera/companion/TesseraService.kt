@@ -114,24 +114,32 @@ class TesseraService : Service() {
         }
     }
 
-    /** Adds or drops the camera foreground-service type. */
-    fun setCameraActive(active: Boolean): Boolean {
-        val types = if (active) {
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        } else {
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        }
+    /** Service types in use beyond connectedDevice: camera, microphone, mediaProjection. */
+    private val extraTypes = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+
+    /** Adds or drops one foreground-service type, keeping the others. */
+    private fun setTypeActive(type: Int, active: Boolean, what: String): Boolean {
+        if (active) extraTypes.add(type) else extraTypes.remove(type)
+        val types = extraTypes.fold(ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE) { acc, t -> acc or t }
         return runCatching {
             startForeground(NOTIFICATION_ID, buildNotification(statusText()), types)
             true
         }.onFailure {
             // Expected when the service was started from the background: such a service is barred
-            // from camera access for its whole lifetime, and only a start made while the app was in
-            // the foreground is eligible.
-            Log.w(TAG, "could not raise the camera service type", it)
+            // from the camera and microphone for its whole lifetime, and only a start made while
+            // the app was in the foreground is eligible.
+            if (active) extraTypes.remove(type)
+            Log.w(TAG, "could not change the $what service type", it)
         }.getOrDefault(false)
     }
+
+    /** Adds or drops the camera foreground-service type. */
+    fun setCameraActive(active: Boolean): Boolean =
+        setTypeActive(ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA, active, "camera")
+
+    /** Adds or drops the microphone foreground-service type. */
+    fun setMicActive(active: Boolean): Boolean =
+        setTypeActive(ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE, active, "microphone")
 
     // -- the phone's audio ---------------------------------------------------
 
@@ -253,20 +261,8 @@ class TesseraService : Service() {
     }
 
     /** Adds or drops the mediaProjection foreground-service type. */
-    fun setAudioActive(active: Boolean): Boolean {
-        val types = if (active) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-        } else {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        }
-        return runCatching {
-            startForeground(NOTIFICATION_ID, buildNotification(statusText()), types)
-            true
-        }.onFailure {
-            Log.w(TAG, "could not change the mediaProjection service type", it)
-        }.getOrDefault(false)
-    }
+    fun setAudioActive(active: Boolean): Boolean =
+        setTypeActive(ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION, active, "mediaProjection")
 
     private fun ensureConsentChannel() {
         val manager = getSystemService(NotificationManager::class.java) ?: return

@@ -217,6 +217,7 @@ class AudioPage(QWidget):
         self.media_card = media
 
         outer.addWidget(link_card)
+        outer.addWidget(self._build_mic_card(palette))
 
         #: The Bluetooth half of the page, shown only while Bluetooth audio is
         #: switched on.
@@ -230,6 +231,81 @@ class AudioPage(QWidget):
         self._timer.timeout.connect(self.refresh)
         self.hub.mediaChanged.connect(lambda _m: self._refresh_media(self._device))
         self.refresh()
+
+    # -- the phone as a microphone --------------------------------------------
+
+    def _build_mic_card(self, palette: Palette) -> QWidget:
+        card = Card(self)
+        row = QHBoxLayout()
+        title = QLabel("Phone as microphone")
+        title.setObjectName("SectionTitle")
+        row.addWidget(title)
+        row.addStretch(1)
+        self.mic_pill = Pill("Off", "muted")
+        self.mic_pill.apply(palette)
+        row.addWidget(self.mic_pill)
+        card.body().addLayout(row)
+
+        note = QLabel(
+            "The phone's microphone appears here as an input called "
+            "“Phone microphone (Tessera)”, for calls and recordings. "
+            "It uses the phone's own echo cancelling."
+            if platform.IS_LINUX else
+            "Windows has no virtual microphone without a driver: the phone's "
+            "microphone is played into the output chosen below. Pick a virtual "
+            "cable (VB-CABLE) there and its input is the microphone."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        controls = QHBoxLayout()
+        self.mic_button = QPushButton("Use the phone's microphone")
+        self.mic_button.setObjectName("Primary")
+        self.mic_button.clicked.connect(self.hub.toggle_phone_mic)
+        controls.addWidget(self.mic_button)
+        if platform.IS_WINDOWS:
+            from PySide6.QtWidgets import QComboBox
+
+            self.mic_output = QComboBox()
+            self.mic_output.addItem("Default output", "")
+            try:
+                from PySide6.QtMultimedia import QMediaDevices
+
+                for device in QMediaDevices.audioOutputs():
+                    self.mic_output.addItem(device.description(), device.description())
+            except ImportError:
+                pass
+            self.mic_output.setCurrentIndex(
+                max(0, self.mic_output.findData(self.hub.config.mic.device)))
+            self.mic_output.currentIndexChanged.connect(self._mic_output_changed)
+            controls.addWidget(self.mic_output, 1)
+        controls.addStretch(1)
+        card.body().addLayout(controls)
+
+        self.mic_meter = QProgressBar()
+        self.mic_meter.setRange(0, 100)
+        self.mic_meter.setTextVisible(False)
+        self.mic_meter.setFixedHeight(6)
+        card.add(self.mic_meter)
+
+        self.hub.phoneMicChanged.connect(lambda _on: self._apply_mic_state())
+        self.hub.phoneMicLevel.connect(lambda peak: self.mic_meter.setValue(int(peak * 100)))
+        self.hub.companion.capabilitiesChanged.connect(lambda _c: self._apply_mic_state())
+        self._apply_mic_state()
+        return card
+
+    def _mic_output_changed(self, _index: int) -> None:
+        self.hub.config.mic.device = self.mic_output.currentData() or ""
+        self.hub.config.save()
+
+    def _apply_mic_state(self) -> None:
+        on = self.hub.phone_mic_active
+        self.mic_pill.set_state("On" if on else "Off", "success" if on else "muted")
+        self.mic_button.setText("Stop" if on else "Use the phone's microphone")
+        self.mic_button.setEnabled(on or self.hub.companion.supports("mic"))
+        if not on:
+            self.mic_meter.setValue(0)
 
     # -- the link route ------------------------------------------------------
 

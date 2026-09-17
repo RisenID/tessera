@@ -61,21 +61,32 @@ def available() -> bool:
     return QMediaDevices.defaultAudioOutput() is not None
 
 
-def player_argv(rate: int, channels: int, latency_ms: int) -> list[str]:
-    """pw-cat or pacat reading raw PCM on stdin, or [] when neither is installed."""
+def player_argv(rate: int, channels: int, latency_ms: int, target: str = "",
+                name: str = "Phone audio") -> list[str]:
+    """pw-cat or pacat reading raw PCM on stdin, or [] when neither is installed.
+
+    *target* names a sink to play into instead of the default output.
+    """
     latency = max(20, latency_ms)
     if have("pw-cat"):
-        return [tool_path("pw-cat"), "--playback", "--raw", "--format=s16",
-                f"--rate={rate}", f"--channels={channels}", f"--latency={latency}ms", "-"]
+        argv = [tool_path("pw-cat"), "--playback", "--raw", "--format=s16",
+                f"--rate={rate}", f"--channels={channels}", f"--latency={latency}ms",
+                f"--properties=media.name={name}"]
+        if target:
+            argv.append(f"--target={target}")
+        return argv + ["-"]
     if have("pacat"):
-        return [tool_path("pacat"), "--playback", "--raw", "--format=s16le",
+        argv = [tool_path("pacat"), "--playback", "--raw", "--format=s16le",
                 f"--rate={rate}", f"--channels={channels}", f"--latency-msec={latency}",
-                "--client-name=Tessera", "--stream-name=Phone audio"]
+                "--client-name=Tessera", f"--stream-name={name}"]
+        if target:
+            argv.append(f"--device={target}")
+        return argv
     return []
 
 
-def _bytes_for(milliseconds: int) -> int:
-    return int(RATE * BYTES_PER_FRAME * milliseconds / 1000)
+def _bytes_for(milliseconds: int, rate: int = RATE, channels: int = CHANNELS) -> int:
+    return int(rate * 2 * channels * milliseconds / 1000)
 
 
 class PhoneAudio(QObject):
@@ -102,6 +113,22 @@ class PhoneAudio(QObject):
         self._level_peak = 0
         self._level_frames = 0
         self._level_sent = 0
+        self._rate = RATE
+        self._channels = CHANNELS
+
+    def _bytes_for(self, milliseconds: int) -> int:
+        return _bytes_for(milliseconds, self._rate, self._channels)
+
+    @property
+    def _bytes_per_frame(self) -> int:
+        return 2 * self._channels
+
+    def target(self) -> str:
+        """The sink to play into; empty for the default output."""
+        return ""
+
+    def stream_name(self) -> str:
+        return "Phone audio"
 
     # -- state ---------------------------------------------------------------
 
@@ -141,6 +168,7 @@ class PhoneAudio(QObject):
             return
 
         self.close()
+        self._rate, self._channels = rate, channels
 
         if USE_PROCESS:
             self._open_process(codec, rate, channels)
@@ -166,7 +194,7 @@ class PhoneAudio(QObject):
         sink = QAudioSink(output, audio_format, self)
         # Two jitter buffers deep, so the sink has something to chew on even
         # when a frame is late.
-        sink.setBufferSize(max(_bytes_for(self._config.buffer_ms) * 2, _bytes_for(80)))
+        sink.setBufferSize(max(self._bytes_for(self._config.buffer_ms) * 2, self._bytes_for(80)))
         sink.setVolume(max(0, min(100, self._config.volume)) / 100)
         sink.stateChanged.connect(self._on_state)
 
@@ -188,7 +216,7 @@ class PhoneAudio(QObject):
         self.started.emit()
 
     def _open_process(self, codec: str, rate: int, channels: int) -> None:
-        argv = player_argv(rate, channels, self._config.buffer_ms)
+        argv = player_argv(rate, channels, self._config.buffer_ms, self.target(), self.stream_name())
         if not argv:
             self.failed.emit(
                 "No audio player found. " + packages.advice("pipewire-tools")
@@ -239,7 +267,7 @@ class PhoneAudio(QObject):
 
         # Fill the buffer before playing anything, once.
         if self._priming:
-            if len(self._pending) < _bytes_for(self._config.buffer_ms):
+            if len(self._pending) < self._bytes_for(self._config.buffer_ms):
                 return
             self._priming = False
 
@@ -249,8 +277,8 @@ class PhoneAudio(QObject):
     def _write(self, chunk: bytes) -> int:
         """Hand *chunk* to the output; how many bytes it took."""
         if self._process is not None:
-            free = _bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
-            free -= free % BYTES_PER_FRAME
+            free = self._bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
+            free -= free % self._bytes_per_frame
             if free < len(chunk):
                 return 0
             self._process.write(self._scaled(chunk))
@@ -269,8 +297,8 @@ class PhoneAudio(QObject):
     def _drain(self) -> None:
         """Hand the sink as much as it will take."""
         if self._process is not None:
-            free = _bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
-            free -= free % BYTES_PER_FRAME
+            free = self._bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
+            free -= free % self._bytes_per_frame
             if free <= 0 or not self._pending:
                 return
             chunk = bytes(self._pending[:free])
@@ -293,12 +321,12 @@ class PhoneAudio(QObject):
 
     def _trim(self) -> None:
         """Drop the oldest audio when the backlog has grown too far."""
-        cap = _bytes_for(MAX_BACKLOG_MS)
+        cap = self._bytes_for(MAX_BACKLOG_MS)
         if len(self._pending) <= cap:
             return
         excess = len(self._pending) - cap
         # Cut on a whole frame so the two channels do not swap over.
-        excess -= excess % BYTES_PER_FRAME
+        excess -= excess % self._bytes_per_frame
         if excess <= 0:
             return
         del self._pending[:excess]

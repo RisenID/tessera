@@ -58,10 +58,22 @@ def _register_with_windows() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv)
+    # `tessera notify ...` and friends talk to the running app and exit.
+    from . import cli
+
+    if cli.is_command(argv):
+        return cli.main(argv[1:])
     verbose = "-v" in argv or "--verbose" in argv
     configure_logging(verbose)
 
     app = QApplication(argv)
+    from .core import ipc
+
+    # One copy: a second launch brings the first one forward.
+    if ipc.running():
+        log.info("Tessera is already running; showing it")
+        ipc.call({"cmd": "show"}, timeout_ms=3_000)
+        return 0
     app.setApplicationName("Tessera")
     app.setApplicationDisplayName("Tessera")
     app.setDesktopFileName("dev.tessera.Tessera")
@@ -99,6 +111,14 @@ def main(argv: list[str] | None = None) -> int:
 
     hub.start()
     hub.dnd.start()
+
+    from .core.commands import Commands
+
+    commands = Commands(hub, window)
+    server = ipc.IpcServer(app)
+    commands.register(server)
+    server.listen()
+    app.aboutToQuit.connect(server.close)
 
     # Let Ctrl+C through: without a timer, Python signal handlers never run
     # while Qt owns the event loop. Only from a terminal: a packaged build has

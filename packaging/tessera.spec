@@ -98,6 +98,12 @@ chmod 0755 %{buildroot}%{_bindir}/tessera
 desktop-file-install \
     --dir=%{buildroot}%{_datadir}/applications \
     packaging/%{appid}.desktop
+# "Open with -> Open on phone" for links, and "Send to phone" in Dolphin.
+desktop-file-install \
+    --dir=%{buildroot}%{_datadir}/applications \
+    packaging/%{appid}.OpenOnPhone.desktop
+install -Dm0644 packaging/tessera-sendto.desktop \
+    %{buildroot}%{_datadir}/kio/servicemenus/tessera-sendto.desktop
 
 install -Dm0644 packaging/%{appid}.metainfo.xml \
     %{buildroot}%{_metainfodir}/%{appid}.metainfo.xml
@@ -145,6 +151,8 @@ print('all modules import')"
 %{python3_sitelib}/tessera/
 %{_bindir}/tessera
 %{_datadir}/applications/%{appid}.desktop
+%{_datadir}/applications/%{appid}.OpenOnPhone.desktop
+%{_datadir}/kio/servicemenus/tessera-sendto.desktop
 %{_metainfodir}/%{appid}.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
 %{_prefix}/lib/modprobe.d/tessera-v4l2loopback.conf
