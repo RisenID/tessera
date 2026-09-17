@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import queue
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +36,45 @@ CONFIRM_SECONDS = 120
 
 #: Progress bars redraw this often at most; every 256 kB chunk was too often.
 PROGRESS_SECONDS = 0.1
+
+#: Chunks waiting for the disk before the receiver is made to wait.
+WRITE_QUEUE = 16
+
+
+class _Writer:
+    """Writes an incoming file on its own thread, in order, off the GUI."""
+
+    def __init__(self, handle) -> None:
+        self._handle = handle
+        #: Bounded: a disk slower than the network stalls the reader rather
+        #: than holding the file in memory.
+        self._queue: queue.Queue = queue.Queue(maxsize=WRITE_QUEUE)
+        self.error = ""
+        self._thread = threading.Thread(target=self._run, name="tessera-file-write", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            payload = self._queue.get()
+            if payload is None:
+                break
+            if not self.error:
+                try:
+                    self._handle.write(payload)
+                except OSError as exc:
+                    self.error = str(exc)
+        try:
+            self._handle.close()
+        except OSError as exc:
+            self.error = self.error or str(exc)
+
+    def write(self, payload: bytes) -> None:
+        self._queue.put(payload)
+
+    def close(self) -> None:
+        """Finish every queued write and close the file. Blocks until done."""
+        self._queue.put(None)
+        self._thread.join()
 
 
 def default_directory() -> Path:
@@ -434,7 +475,7 @@ class FileTransfers(QObject):
             # Not with_suffix: a name ending in a dot, or with no extension at
             # all, needs the same "<whatever it is>.part" either way, and this
             # is the spelling the completion step undoes.
-            handle = partial_path(destination).open("wb")
+            handle = _Writer(partial_path(destination).open("wb"))
         except OSError as exc:
             link.send({
                 "t": "file_reject", "id": transfer_id,
@@ -462,11 +503,10 @@ class FileTransfers(QObject):
         problem = ""
         if transfer.size > 0 and transfer.done + len(payload) > transfer.size:
             problem = "more data arrived than the file's size"
+        elif handle.error:                                  # type: ignore[union-attr]
+            problem = f"writing failed: {handle.error}"     # type: ignore[union-attr]
         else:
-            try:
-                handle.write(payload)                       # type: ignore[union-attr]
-            except OSError as exc:
-                problem = f"writing failed: {exc}"
+            handle.write(payload)                           # type: ignore[union-attr]
         if problem:
             transfer.link.send({"t": "file_cancel", "id": transfer_id, "message": problem})
             transfer.state = FAILED
@@ -490,8 +530,12 @@ class FileTransfers(QObject):
         except OSError:
             pass
 
+        problem = ""
         if transfer.size > 0 and transfer.done != transfer.size:
             problem = f"only {transfer.done} of {transfer.size} bytes arrived"
+        elif handle.error:                                  # type: ignore[union-attr]
+            problem = f"writing failed: {handle.error}"     # type: ignore[union-attr]
+        if problem:
             transfer.link.send({"t": "file_cancel", "id": transfer_id, "message": problem})
             transfer.state = FAILED
             transfer.error = problem

@@ -227,8 +227,15 @@ class PhoneAudio(QObject):
         """Take one frame from the phone."""
         if not self.running or (self._sink is not None and self._device is None):
             return
-        self._pending += payload
         self._emit_level(payload)
+        # The usual case once primed: nothing waiting, so the frame goes to the
+        # output straight from the socket rather than through the backlog.
+        taken = 0
+        if not self._priming and not self._pending:
+            taken = self._write(payload)
+            if taken == len(payload):
+                return
+        self._pending += payload[taken:]
 
         # Fill the buffer before playing anything, once.
         if self._priming:
@@ -238,6 +245,26 @@ class PhoneAudio(QObject):
 
         self._trim()
         self._drain()
+
+    def _write(self, chunk: bytes) -> int:
+        """Hand *chunk* to the output; how many bytes it took."""
+        if self._process is not None:
+            free = _bytes_for(self._config.buffer_ms * 2) - self._process.bytesToWrite()
+            free -= free % BYTES_PER_FRAME
+            if free < len(chunk):
+                return 0
+            self._process.write(self._scaled(chunk))
+            self._played += len(chunk)
+            return len(chunk)
+        device = self._device
+        if device is None or self._sink is None:
+            return 0
+        if self._sink.bytesFree() < len(chunk):
+            return 0
+        written = device.write(chunk)
+        if written > 0:
+            self._played += written
+        return max(0, written)
 
     def _drain(self) -> None:
         """Hand the sink as much as it will take."""

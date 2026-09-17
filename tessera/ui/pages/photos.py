@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
-from PySide6.QtGui import QImageReader, QPixmap
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt, QTimer
+from PySide6.QtGui import QGuiApplication, QImageReader, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -162,6 +162,10 @@ class PhotoViewer(QDialog):
         bar.addWidget(self.previous_button)
         self.caption = QLabel()
         bar.addWidget(self.caption, 1, Qt.AlignmentFlag.AlignCenter)
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setToolTip("Copy the picture to the clipboard (Ctrl+C)")
+        self.copy_button.clicked.connect(self.copy)
+        bar.addWidget(self.copy_button)
         save = QPushButton("Save")
         save.clicked.connect(lambda: page.save(self.items[self.index]))
         bar.addWidget(save)
@@ -192,10 +196,8 @@ class PhotoViewer(QDialog):
 
     def show_item(self) -> None:
         item = self.item
-        kind = "Video" if item.get("video") else "Photo"
-        self.caption.setText(
-            f"{item.get('name') or kind} · {_date(item)} · {self.index + 1} of {len(self.items)}"
-        )
+        self._show_caption()
+        self.copy_button.setVisible(not item.get("video"))
         self.previous_button.setEnabled(self.index > 0)
         self.next_button.setEnabled(self.index < len(self.items) - 1)
         # The thumbnail first, then the full picture once it arrives.
@@ -207,6 +209,13 @@ class PhotoViewer(QDialog):
                 lambda message, key=item.get("id"): self._on_failed(key, message),
             )
 
+    def _show_caption(self) -> None:
+        item = self.item
+        kind = "Video" if item.get("video") else "Photo"
+        self.caption.setText(
+            f"{item.get('name') or kind} · {_date(item)} · {self.index + 1} of {len(self.items)}"
+        )
+
     def _on_failed(self, media_id: str, message: str) -> None:
         if media_id == self.item.get("id"):
             self.caption.setText(message)
@@ -217,6 +226,15 @@ class PhotoViewer(QDialog):
         pixmap = load_pixmap(data)
         if not pixmap.isNull():
             self.set_pixmap(pixmap)
+
+    def copy(self) -> None:
+        """The picture as shown, full size once it has arrived."""
+        if self._pixmap.isNull() or self.item.get("video"):
+            self.caption.setText("Nothing to copy yet")
+            return
+        QGuiApplication.clipboard().setPixmap(self._pixmap)
+        self.caption.setText("Copied to the clipboard")
+        QTimer.singleShot(1500, self._show_caption)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         self._pixmap = pixmap
@@ -246,6 +264,8 @@ class PhotoViewer(QDialog):
             self.step(-1)
         elif key == Qt.Key.Key_Escape:
             self.close()
+        elif event.matches(QKeySequence.StandardKey.Copy):
+            self.copy()
         else:
             super().keyPressEvent(event)
 

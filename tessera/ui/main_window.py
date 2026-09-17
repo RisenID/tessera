@@ -69,6 +69,10 @@ IMPOSSIBLE = frozenset(
 #: The ones that earn a permanent tab: the phone's content.
 PRIMARY = ("Overview", "Calls", "Messages", "Photos", "Apps")
 
+#: Built at startup rather than on first visit: the one that is showing, and
+#: the one whose construction tells the panel whether the hotspot is joined.
+EAGER = ("Overview", "Hotspot")
+
 
 class PageTabs(QTabBar):
     """The tab strip, with the selected tab underlined in the accent colour."""
@@ -131,29 +135,22 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
         content_layout.addWidget(self._build_strip())
 
+        # Pages are built on first visit: each one costs widgets and a round
+        # of requests to the phone, and most are never opened in a session.
         self.stack = QStackedWidget()
-        for name, _icon, _glyph, page_class, feature in PAGES:
+        self._built: set[int] = set()
+        for name, _icon, _glyph, _page_class, feature in PAGES:
             if name in IMPOSSIBLE:
                 # Never built: a page for a feature this platform lacks would
                 # probe for Linux machinery the moment it was constructed.
                 self.stack.addWidget(
                     UnavailablePage(name, platform.reason(feature), palette)
                 )
-                continue
-            page = page_class(hub, palette)
-            self.stack.addWidget(page)
-            if isinstance(page, SettingsPage):
-                self.settings_page = page
-                page.featuresChanged.connect(self._apply_feature_visibility)
-                page.featuresChanged.connect(self.panel.apply_tiles)
-                # Switching Bluetooth audio off takes its button with it.
-                page.featuresChanged.connect(self.panel.refresh_header)
-                page.featuresChanged.connect(self._apply_panel_width)
-            if isinstance(page, AudioPage):
-                self.audio_page = page
-            if isinstance(page, HomePage):
-                # Tiles hand off to their full page rather than duplicating it.
-                page.openPage.connect(self.show_page)
+                self._built.add(self.stack.count() - 1)
+            else:
+                self.stack.addWidget(QWidget())
+        for name in EAGER:
+            self._page(name)
         content_layout.addWidget(self.stack, 1)
 
         # A splitter, so the rail is dragged to whatever width suits rather
@@ -331,6 +328,37 @@ class MainWindow(QMainWindow):
 
     # -- navigation ----------------------------------------------------------
 
+    def _page(self, name: str) -> QWidget:
+        """The page called *name*, built now if it has not been yet."""
+        index = self._page_index(name)
+        if index in self._built:
+            return self.stack.widget(index)
+        self._built.add(index)
+        page_class = next(p for n, _i, _g, p, _f in PAGES if n == name)
+        page = page_class(self.hub, self.palette_tokens)
+        placeholder = self.stack.widget(index)
+        self.stack.removeWidget(placeholder)
+        placeholder.deleteLater()
+        self.stack.insertWidget(index, page)
+        if isinstance(page, SettingsPage):
+            page.featuresChanged.connect(self._apply_feature_visibility)
+            page.featuresChanged.connect(self.panel.apply_tiles)
+            # Switching Bluetooth audio off takes its button with it.
+            page.featuresChanged.connect(self.panel.refresh_header)
+            page.featuresChanged.connect(self._apply_panel_width)
+        if isinstance(page, HomePage):
+            # Tiles hand off to their full page rather than duplicating it.
+            page.openPage.connect(self.show_page)
+        return page
+
+    @property
+    def settings_page(self) -> SettingsPage:
+        return self._page("Settings")
+
+    @property
+    def audio_page(self) -> AudioPage:
+        return self._page("Audio")
+
     def _page_index(self, name: str) -> int:
         return next(
             (i for i, (n, _i, _g, _p, _f) in enumerate(PAGES) if n == name), 0
@@ -379,7 +407,7 @@ class MainWindow(QMainWindow):
     def _change_page(self, index: int) -> None:
         name = self.tabs.tabData(index) if index >= 0 else None
         if name:
-            self.stack.setCurrentIndex(self._page_index(name))
+            self.stack.setCurrentWidget(self._page(name))
 
     @property
     def current_page_name(self) -> str:
@@ -426,8 +454,7 @@ class MainWindow(QMainWindow):
             self._set_status(f"{name} is switched off in Settings.")
             return
         self.show_page(name)
-        page = self.stack.widget(self._page_index(name))
-        toggle = getattr(page, "quick_toggle", None)
+        toggle = getattr(self._page(name), "quick_toggle", None)
         if toggle is not None:
             toggle()
 
@@ -453,8 +480,9 @@ class MainWindow(QMainWindow):
         cfg = self.hub.config.panel
         setattr(cfg, self._display_mode(), self.panel.width())
         # Settings shows the same two numbers; a drag is the other way of
-        # setting them, so keep the boxes honest.
-        self.settings_page.reload_panel_widths()
+        # setting them, so keep the boxes honest -- where they exist yet.
+        if self._page_index("Settings") in self._built:
+            self.settings_page.reload_panel_widths()
         self._width_save.start()
 
     def changeEvent(self, event) -> None:  # noqa: N802 - Qt naming

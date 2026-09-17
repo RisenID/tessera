@@ -115,8 +115,14 @@ class AudioStreamer(
 
     /** Reads the capture and hands each frame on, for as long as we are running. */
     private fun pump(audio: AudioRecord) {
-        val frame = ByteArray(FRAME_BYTES)
+        // A ring of frames rather than a copy per frame: the session drops
+        // media past a queue of six, so a buffer is free again long before
+        // the ring comes back round to it.
+        val ring = Array(RING_FRAMES) { ByteArray(FRAME_BYTES) }
+        var slot = 0
         while (running.get()) {
+            val frame = ring[slot]
+            slot = (slot + 1) % RING_FRAMES
             var filled = 0
             while (filled < FRAME_BYTES && running.get()) {
                 val read = audio.read(frame, filled, FRAME_BYTES - filled)
@@ -134,7 +140,7 @@ class AudioStreamer(
             }
             if (filled == FRAME_BYTES && running.get()) {
                 if (isQuiet(frame)) quietFrames++ else quietFrames = 0
-                onFrame(frame.copyOf())
+                onFrame(frame)
             }
         }
     }
@@ -191,6 +197,9 @@ class AudioStreamer(
 
         /** 20 ms of 48 kHz stereo 16-bit: 48 * 20 * 2 channels * 2 bytes. */
         const val FRAME_BYTES = SAMPLE_RATE / 1000 * FRAME_MS * 2 * 2
+
+        /** Frames in flight at once; more than the session will ever queue. */
+        const val RING_FRAMES = 16
 
         const val UNSUPPORTED =
             "This phone is on Android 9 or older, which has no way for an app " +

@@ -8,6 +8,7 @@ from PySide6.QtGui import (
     QFont,
     QGuiApplication,
     QIcon,
+    QImage,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -65,29 +66,34 @@ _VALUE_SPREAD, _HUE_SPREAD = 0.45, 40
 
 def _tintable(pixmap: QPixmap) -> bool:
     """Whether *pixmap* is line art or a flat shape rather than a picture."""
-    image = pixmap.toImage()
+    image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
     if image.isNull():
         return True
 
+    # Raw BGRA bytes rather than a QColor per pixel: this runs once per icon
+    # but a theme has hundreds of them.
+    width, height, stride = image.width(), image.height(), image.bytesPerLine()
+    raw = bytes(image.constBits())
     opaque = 0
-    lightest, darkest = 0.0, 1.0
+    lightest, darkest = 0, 255
     hues: list[int] = []
-    for y in range(image.height()):
-        for x in range(image.width()):
-            colour = image.pixelColor(x, y)
-            if colour.alpha() < 160:
+    for y in range(height):
+        row = raw[y * stride : y * stride + width * 4]
+        for x in range(0, width * 4, 4):
+            if row[x + 3] < 160:
                 continue
             opaque += 1
-            value = colour.valueF()
-            lightest, darkest = max(lightest, value), min(darkest, value)
-            if colour.saturationF() > 0.25 and colour.hue() >= 0:
-                hues.append(colour.hue())
+            b, g, r = row[x], row[x + 1], row[x + 2]
+            high, low = max(r, g, b), min(r, g, b)
+            lightest, darkest = max(lightest, high), min(darkest, high)
+            if high and (high - low) / high > 0.25:
+                hues.append(_hue(r, g, b, high, low))
 
     if not opaque:
         return True
-    if opaque <= _FILLED_COVERAGE * image.width() * image.height():
+    if opaque <= _FILLED_COVERAGE * width * height:
         return True
-    if lightest - darkest >= _VALUE_SPREAD:
+    if (lightest - darkest) / 255 >= _VALUE_SPREAD:
         return False
     if not hues:
         return True
@@ -95,6 +101,20 @@ def _tintable(pixmap: QPixmap) -> bool:
     hues.sort()
     gaps = [b - a for a, b in zip(hues, hues[1:])] + [360 - hues[-1] + hues[0]]
     return 360 - max(gaps) < _HUE_SPREAD
+
+
+def _hue(r: int, g: int, b: int, high: int, low: int) -> int:
+    """Hue in degrees, as QColor.hue() would give it."""
+    spread = high - low
+    if spread == 0:
+        return 0
+    if high == r:
+        hue = (g - b) / spread % 6
+    elif high == g:
+        hue = (b - r) / spread + 2
+    else:
+        hue = (r - g) / spread + 4
+    return int(hue * 60) % 360
 
 
 def tinted_icon(icon: QIcon, colour: str, size: int) -> QIcon:
