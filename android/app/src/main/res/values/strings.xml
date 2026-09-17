@@ -9,6 +9,9 @@
     <string name="share_one_sent">Sending to your computer</string>
     <string name="share_many_sent">Sending %1$d files to your computer</string>
     <string name="share_text_sent">Copied to your computer\'s clipboard</string>
+    <string name="share_choose_title">Send to which computer?</string>
+    <string name="share_all_computers">All computers</string>
+    <string name="share_sent_to">Sending to %1$s</string>
     <string name="file_received_title">File from your computer</string>
     <string name="channel_files">Files</string>
     <string name="channel_files_description">Files arriving from a connected computer</string>

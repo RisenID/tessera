@@ -109,7 +109,7 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:label="@string/share_label"
-            android:theme="@style/Theme.Tessera.Invisible">
+            android:theme="@style/Theme.Tessera.Transparent">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

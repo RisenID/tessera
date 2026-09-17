@@ -1,24 +1,24 @@
 package dev.tessera.companion
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /** "Share to Tessera" from anywhere on the phone. */
-class ShareActivity : Activity() {
+class ShareActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handle(intent)
-        finish()
     }
 
     private fun handle(intent: Intent?) {
-        if (intent == null) return
+        if (intent == null) return finish()
 
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> listOfNotNull(stream(intent))
@@ -44,16 +44,52 @@ class ShareActivity : Activity() {
         val service = TesseraService.running_instance
         if (service == null) {
             toast(getString(R.string.share_not_running))
-            return
+            return finish()
         }
+        val desktops = service.desktops()
+        when (desktops.size) {
+            0 -> {
+                toast(getString(R.string.share_no_desktop))
+                finish()
+            }
+            1 -> {
+                send(service, uris, text, "")
+                finish()
+            }
+            // Two computers on: ask, rather than opening a link on both.
+            else -> choose(service, uris, text, desktops)
+        }
+    }
 
-        val sent = service.share(uris, text)
-        when {
-            sent == 0 -> toast(getString(R.string.share_no_desktop))
-            uris.isEmpty() -> toast(getString(R.string.share_text_sent))
-            uris.size == 1 -> toast(getString(R.string.share_one_sent))
-            else -> toast(getString(R.string.share_many_sent, uris.size))
-        }
+    private fun choose(
+        service: TesseraService,
+        uris: List<Uri>,
+        text: String,
+        desktops: List<Pair<String, String>>,
+    ) {
+        val names = desktops.map { it.second } + getString(R.string.share_all_computers)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.share_choose_title)
+            .setItems(names.toTypedArray()) { _, which ->
+                val token = desktops.getOrNull(which)?.first.orEmpty()
+                send(service, uris, text, token, desktops.getOrNull(which)?.second)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener { finish() }
+            .show()
+    }
+
+    private fun send(service: TesseraService, uris: List<Uri>, text: String, token: String, name: String? = null) {
+        val sent = service.share(uris, text, token)
+        toast(
+            when {
+                sent == 0 -> getString(R.string.share_no_desktop)
+                name != null -> getString(R.string.share_sent_to, name)
+                uris.isEmpty() -> getString(R.string.share_text_sent)
+                uris.size == 1 -> getString(R.string.share_one_sent)
+                else -> getString(R.string.share_many_sent, uris.size)
+            }
+        )
     }
 
     private fun stream(intent: Intent): Uri? =

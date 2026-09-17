@@ -897,8 +897,11 @@ class CompanionClient(QObject):
     def _recv_camera_started(self, message: dict[str, Any]) -> None:
         self.cameraStarted.emit(message)
 
-    def _recv_camera_stopped(self, _message: dict[str, Any]) -> None:
+    def _recv_camera_stopped(self, message: dict[str, Any]) -> None:
         self.cameraStopped.emit()
+        # "Your laptop took the phone's camera."
+        if message.get("reason"):
+            self.errorOccurred.emit(str(message["reason"]))
 
     def _recv_caps(self, message: dict[str, Any]) -> None:
         """The phone's list changed mid-session."""
@@ -908,8 +911,10 @@ class CompanionClient(QObject):
     def _recv_audio_started(self, message: dict[str, Any]) -> None:
         self.phoneAudioStarted.emit(message)
 
-    def _recv_audio_stopped(self, _message: dict[str, Any]) -> None:
+    def _recv_audio_stopped(self, message: dict[str, Any]) -> None:
         self.phoneAudioStopped.emit()
+        if message.get("reason"):
+            self.errorOccurred.emit(str(message["reason"]))
 
     def _recv_audio_consent(self, message: dict[str, Any]) -> None:
         self.phoneAudioConsent.emit(message.get("message", ""))

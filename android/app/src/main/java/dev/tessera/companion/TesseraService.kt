@@ -43,8 +43,9 @@ class TesseraService : Service() {
     private var audioConsent: Intent? = null
     private var audioConsentCode: Int = 0
 
-    /** What to do once the user has consented, set by the session that asked. */
+    /** What to do once the user has consented, and the session that asked. */
     private var pendingAudio: (() -> Unit)? = null
+    private var pendingOwner: Session? = null
 
     /** Guards the exported consent activity; see [newConsentToken]. */
     @Volatile
@@ -114,13 +115,20 @@ class TesseraService : Service() {
         }
     }
 
-    /** Service types in use beyond connectedDevice: camera, microphone, mediaProjection. */
-    private val extraTypes = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+    /** Holds on each service type beyond connectedDevice (camera, microphone, mediaProjection),
+     *  counted per user: two computers on the microphone must not lose it when one stops. */
+    private val typeHolds = mutableMapOf<Int, Int>()
 
-    /** Adds or drops one foreground-service type, keeping the others. */
+    /** Takes or releases one hold on a foreground-service type. */
+    @Synchronized
     private fun setTypeActive(type: Int, active: Boolean, what: String): Boolean {
-        if (active) extraTypes.add(type) else extraTypes.remove(type)
-        val types = extraTypes.fold(ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE) { acc, t -> acc or t }
+        val before = typeHolds[type] ?: 0
+        val after = if (active) before + 1 else (before - 1).coerceAtLeast(0)
+        typeHolds[type] = after
+        // The platform only needs telling when the type comes or goes.
+        if ((before > 0) == (after > 0)) return true
+        val types = typeHolds.filterValues { it > 0 }.keys
+            .fold(ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE) { acc, t -> acc or t }
         return runCatching {
             startForeground(NOTIFICATION_ID, buildNotification(statusText()), types)
             true
@@ -128,10 +136,34 @@ class TesseraService : Service() {
             // Expected when the service was started from the background: such a service is barred
             // from the camera and microphone for its whole lifetime, and only a start made while
             // the app was in the foreground is eligible.
-            if (active) extraTypes.remove(type)
+            if (active) typeHolds[type] = before
             Log.w(TAG, "could not change the $what service type", it)
         }.getOrDefault(false)
     }
+
+    // -- one phone, several computers -----------------------------------------
+
+    /** The computers connected on a main link, newest first: (token, name). */
+    fun desktops(): List<Pair<String, String>> =
+        sessions.reversed().filter { it.isAuthenticated && it.role.isEmpty() }
+            .distinctBy { it.token }
+            .map { it.token to it.label }
+
+    /** Playback capture is one projection for the whole phone: the newest computer takes it. */
+    fun claimAudio(owner: Session) {
+        sessions.filter { it !== owner && it.isAuthenticated }
+            .forEach { it.audioTakenBy(owner.label) }
+    }
+
+    /** The camera can only be open once: a new webcam stream ends the old one. */
+    fun claimCamera(owner: Session) {
+        sessions.filter { it !== owner && it.isAuthenticated }
+            .forEach { it.cameraTakenBy(owner.label) }
+    }
+
+    /** Which other computer is streaming the camera, if any. */
+    fun cameraHolder(except: Session): String? =
+        sessions.firstOrNull { it !== except && it.isAuthenticated && it.usesCamera }?.label
 
     /** Adds or drops the camera foreground-service type. */
     fun setCameraActive(active: Boolean): Boolean =
@@ -144,10 +176,10 @@ class TesseraService : Service() {
     // -- the phone's audio ---------------------------------------------------
 
     /**
-     * A MediaProjection to capture playback with, or null when the user has not
-     * consented yet.
+     * A MediaProjection for [owner] to capture playback with, or null when the
+     * user has not consented yet.
      */
-    fun audioProjection(): MediaProjection? {
+    fun audioProjection(owner: Session): MediaProjection? {
         val data = audioConsent ?: return null
         if (!setAudioActive(true)) {
             Log.w(TAG, "could not raise the mediaProjection service type")
@@ -166,19 +198,21 @@ class TesseraService : Service() {
             return null
         }
         // Android 14 insists on a callback before capture begins, and it is
-        // how we hear about the user revoking consent from the status bar.
+        // how we hear about the user revoking consent from the status bar --
+        // or about another computer's projection replacing this one.
         projection.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                Log.i(TAG, "the user stopped the projection")
-                sessions.forEach(Session::stopAudioFromSystem)
+                Log.i(TAG, "the projection stopped")
+                owner.stopAudioFromSystem()
             }
         }, Handler(Looper.getMainLooper()))
         return projection
     }
 
     /** Asks the user to allow playback capture, and runs [after] if they do. */
-    fun askForAudioConsent(after: () -> Unit): Boolean {
+    fun askForAudioConsent(owner: Session, after: () -> Unit): Boolean {
         pendingAudio = after
+        pendingOwner = owner
 
         // The quiet path: with the projection app op granted, Android approves without
         // drawing anything, so the request can be made and answered without the phone being
@@ -244,18 +278,22 @@ class TesseraService : Service() {
             ?.cancel(CONSENT_NOTIFICATION_ID)
         if (data == null) {
             pendingAudio = null
+            pendingOwner = null
             return
         }
         audioConsent = data
         audioConsentCode = resultCode
         val next = pendingAudio
         pendingAudio = null
+        pendingOwner = null
         next?.invoke()
     }
 
-    /** Forget a request whose session has gone away. */
-    fun clearPendingAudio() {
+    /** Forget [owner]'s request; another computer's stays. */
+    fun clearPendingAudio(owner: Session) {
+        if (pendingOwner !== owner) return
         pendingAudio = null
+        pendingOwner = null
         getSystemService(NotificationManager::class.java)
             ?.cancel(CONSENT_NOTIFICATION_ID)
     }
@@ -277,11 +315,12 @@ class TesseraService : Service() {
         )
     }
 
-    /** Hand shared files (and text) to every connected desktop. */
-    fun share(uris: List<android.net.Uri>, text: String = ""): Int {
+    /** Hand shared files (and text) to the computer with [token], or to every one. */
+    fun share(uris: List<android.net.Uri>, text: String = "", token: String = ""): Int {
         // One target per desktop, not per connection: a desktop holds two, and files go down its
         // file connection where it has one, so a large transfer never sits in front of its audio.
-        val desktops = sessions.filter { it.isAuthenticated }.groupBy { it.token }.values
+        val desktops = sessions.filter { it.isAuthenticated && (token.isEmpty() || it.token == token) }
+            .groupBy { it.token }.values
         if (desktops.isEmpty()) return 0
         for (connections in desktops) {
             val main = connections.firstOrNull { it.role.isEmpty() } ?: connections.first()
@@ -294,16 +333,11 @@ class TesseraService : Service() {
         return desktops.size
     }
 
-    /** Sends a JSON event to every connected computer's main link. */
-    fun broadcast(event: org.json.JSONObject) {
-        sessions.filter { it.isAuthenticated && it.role.isEmpty() }
-            .distinctBy { it.token }
-            .forEach { it.sendInput(event) }
+    /** Sends a remote-screen event to one computer's main link. */
+    fun sendInput(token: String, event: org.json.JSONObject) {
+        sessions.lastOrNull { it.isAuthenticated && it.role.isEmpty() && it.token == token }
+            ?.sendInput(event)
     }
-
-    /** Whether any computer is connected to receive input. */
-    val hasDesktop: Boolean
-        get() = sessions.any { it.isAuthenticated && it.role.isEmpty() }
 
     /** A computer that reconnects replaces its old connection, which may be dead. */
     fun onAuthenticated(session: Session) {

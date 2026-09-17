@@ -25,6 +25,15 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
+    <!-- Nothing of its own on screen, but a Material dialog can be shown from it:
+         the share sheet asking which computer. -->
+    <style name="Theme.Tessera.Transparent" parent="Theme.Tessera">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- Circular icon chip. Defined here rather than relying on a library
          style name, which differs between Material releases. -->
     <style name="ShapeAppearance.Tessera.Circle" parent="">

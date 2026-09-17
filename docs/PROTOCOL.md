@@ -210,6 +210,16 @@ then `{"t":"camera_frame","pts","key","binary":true}` + Annex-B data per frame,
 piped into ffmpeg → v4l2loopback. `{"t":"camera_stopped"}` when the phone's
 camera stops by itself, so the desktop stops its decoder.
 
+## More than one computer
+
+Every computer gets every event, and requests are answered to whoever asked.
+What the phone has only one of goes to the newest request, and the computer
+that loses it is told why: `audio_stopped` and `camera_stopped` carry
+`reason` ("Laptop took the phone's audio."). A photo is refused while another
+computer streams the webcam. The microphone, storage, beacon and media
+watchers are shared. The share sheet and the remote screen ask which computer
+when more than one is connected; the remote remembers the choice.
+
 ## Clipboard
 
 | Message | Direction | Meaning |

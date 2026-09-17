@@ -29,6 +29,24 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         android:text="@string/remote_hint" />
 
+    <!-- Which computer, when more than one is connected -->
+    <HorizontalScrollView
+        android:id="@+id/targetsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="12dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/targets"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:selectionRequired="true"
+            app:singleLine="true"
+            app:singleSelection="true" />
+    </HorizontalScrollView>
+
     <!-- Media keys -->
     <LinearLayout
         android:layout_width="match_parent"

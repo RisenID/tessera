@@ -121,6 +121,16 @@ class Session(
     var computerName: String = ""
         private set
 
+    /** The name, as told to the other computers. */
+    val label: String
+        get() = computerName.ifBlank { "Another computer" }
+
+    /** Whether this computer holds the camera, streaming or taking a photo. */
+    @Volatile
+    private var still = false
+    val usesCamera: Boolean
+        get() = camera != null || still
+
     /** Tags events this session caused, so they are not echoed back to it. */
     private val key = Store.randomHex(8)
 
@@ -836,6 +846,8 @@ class Session(
             send(JSONObject().put("t", "camera_stopped"))
             return
         }
+        // Opening the camera again would evict the other computer anyway; tell it why.
+        service.claimCamera(this)
         val streamer = CameraStreamer(
             context = context,
             facing = message.optString("facing", "back"),
@@ -855,36 +867,52 @@ class Session(
             onError = { reason ->
                 fail(id, reason)
                 // The desktop stops its decoder on this.
-                send(JSONObject().put("t", "camera_stopped"))
+                stopCamera(reason)
             },
         )
         camera = streamer
         streamer.start()
     }
 
-    private fun stopCamera() {
-        camera?.stop()
+    /** Stops the stream; with [reason], tells the desktop it has stopped and why. */
+    private fun stopCamera(reason: String? = null) {
+        val streamer = camera ?: return
         camera = null
+        streamer.stop()
         TesseraService.running_instance?.setCameraActive(false)
+        if (reason != null) send(JSONObject().put("t", "camera_stopped").put("reason", reason))
+    }
+
+    /** Another computer opened the camera. */
+    fun cameraTakenBy(who: String) {
+        if (camera == null) return
+        stopCamera("$who took the phone's camera.")
     }
 
     /** One photo for the computer, sent back as a JPEG. */
     private fun takePhoto(message: JSONObject, id: Int?) {
         if (camera != null) return fail(id, "The camera is busy streaming; stop the webcam first.")
         val service = TesseraService.running_instance
-        if (service == null || !service.setCameraActive(true)) {
+            ?: return fail(id, "The companion service is not running on the phone.")
+        // A photo must not end another computer's video call.
+        service.cameraHolder(except = this)?.let {
+            return fail(id, "$it is using the phone's camera as a webcam.")
+        }
+        if (!service.setCameraActive(true)) {
             return fail(
                 id,
                 "The phone will not allow camera access to a background service. " +
                     "Open Tessera on the phone once, then try again."
             )
         }
+        still = true
         StillCapture(
             context = context,
             facing = message.optString("facing", "back"),
             cameraId = message.optString("cameraId", ""),
         ) { bytes, problem ->
-            if (camera == null) service.setCameraActive(false)
+            still = false
+            service.setCameraActive(false)
             if (bytes == null) fail(id, problem ?: "The photo could not be taken.")
             else sendBinary(JSONObject().put("t", "photo").put("format", "jpeg"), bytes, id)
         }.start()
@@ -901,9 +929,9 @@ class Session(
             ?: return fail(id, "The companion service is not running on the phone.")
 
         stopAudio()
-        val projection = service.audioProjection()
+        val projection = service.audioProjection(this)
         if (projection == null) {
-            val quiet = service.askForAudioConsent { if (open.get()) beginAudio(service, mute = mute) }
+            val quiet = service.askForAudioConsent(this) { if (open.get()) beginAudio(service, mute = mute) }
             send(
                 JSONObject()
                     .put("t", "audio_consent")
@@ -927,10 +955,13 @@ class Session(
         ready: android.media.projection.MediaProjection? = null,
         mute: Boolean = false,
     ) {
-        val projection = ready ?: service.audioProjection() ?: run {
+        val projection = ready ?: service.audioProjection(this) ?: run {
             fail(null, "The phone would not allow its audio to be captured.")
             return
         }
+        // Android runs one projection at a time, so the other computer's stream is ending
+        // regardless; stopping it first also unmutes the phone before this stream mutes it.
+        service.claimAudio(this)
         val streamer = AudioStreamer(
             context = context,
             projection = projection,
@@ -1185,25 +1216,37 @@ class Session(
         startNextOutgoing()
     }
 
-    /** Stops the stream and tells the desktop, whoever asked. */
-    private fun stopAudio(notify: Boolean = false) {
+    /** Stops the stream and tells the desktop, whoever asked, and why if [reason] is given. */
+    private fun stopAudio(notify: Boolean = false, reason: String? = null) {
+        val service = TesseraService.running_instance
         val streamer = audio ?: run {
-            TesseraService.running_instance?.clearPendingAudio()
+            service?.clearPendingAudio(this)
             return
         }
         audio = null
         streamer.stop()
-        TesseraService.running_instance?.let {
-            it.clearPendingAudio()
+        service?.let {
+            it.clearPendingAudio(this)
             it.setAudioActive(false)
         }
-        if (notify) send(JSONObject().put("t", "audio_stopped"))
+        if (notify) {
+            val message = JSONObject().put("t", "audio_stopped")
+            if (reason != null) message.put("reason", reason)
+            send(message)
+        }
     }
 
-    /** The user revoked the projection from the status bar. */
+    /** The user revoked the projection from the status bar, or it was replaced. */
     fun stopAudioFromSystem() {
         if (audio == null) return
         stopAudio(notify = true)
+    }
+
+    /** Another computer started the phone's audio; it goes there now. */
+    fun audioTakenBy(who: String) {
+        TesseraService.running_instance?.clearPendingAudio(this)
+        if (audio == null) return
+        stopAudio(notify = true, reason = "$who took the phone's audio.")
     }
 
     // -- writing -------------------------------------------------------------

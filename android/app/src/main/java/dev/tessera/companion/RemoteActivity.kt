@@ -4,28 +4,35 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.KeyEvent
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import com.google.android.material.chip.Chip
 import com.google.android.material.color.DynamicColors
 import dev.tessera.companion.databinding.ActivityRemoteBinding
 import org.json.JSONObject
 
-/** The phone as a trackpad, keyboard and media remote for the computer. */
+/** The phone as a trackpad, keyboard and media remote for one computer. */
 class RemoteActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityRemoteBinding
+    private lateinit var store: Store
 
     /** What the text box held last, so only what was added is sent. */
     private var lastText = ""
+
+    /** The token of the computer being driven. */
+    private var target = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         DynamicColors.applyToActivityIfAvailable(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        store = Store(this)
         binding = ActivityRemoteBinding.inflate(layoutInflater)
         setContentView(binding.root)
         setSupportActionBar(binding.toolbar)
@@ -34,6 +41,12 @@ class RemoteActivity : AppCompatActivity() {
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             view.updatePadding(left = bars.left, right = bars.right, bottom = bars.bottom)
             insets
+        }
+
+        binding.targets.setOnCheckedStateChangeListener { group, checked ->
+            val chip = checked.firstOrNull()?.let { group.findViewById<Chip>(it) } ?: return@setOnCheckedStateChangeListener
+            target = chip.tag as String
+            store.remoteTarget = target
         }
 
         binding.trackpad.listener = object : TrackpadView.Listener {
@@ -97,19 +110,49 @@ class RemoteActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onResume() {
-        super.onResume()
-        binding.remoteState.setText(
-            if (TesseraService.running_instance?.hasDesktop == true) R.string.remote_hint
-            else R.string.remote_no_desktop
-        )
+    override fun onStart() {
+        super.onStart()
+        TesseraService.onSessionsChanged = { runOnUiThread { renderTargets() } }
+        renderTargets()
+    }
+
+    override fun onStop() {
+        TesseraService.onSessionsChanged = null
+        super.onStop()
+    }
+
+    /** One chip per connected computer; hidden when there is only one to drive. */
+    private fun renderTargets() {
+        val desktops = TesseraService.running_instance?.desktops().orEmpty()
+        val group = binding.targets
+        group.removeAllViews()
+        if (desktops.isEmpty()) {
+            target = ""
+            binding.remoteState.setText(R.string.remote_no_desktop)
+            binding.targetsScroll.visibility = View.GONE
+            return
+        }
+        binding.remoteState.setText(R.string.remote_hint)
+        // Keep the current choice, else the remembered one, else the newest connection.
+        val tokens = desktops.map { it.first }
+        target = listOf(target, store.remoteTarget).firstOrNull { it in tokens } ?: tokens.first()
+        binding.targetsScroll.visibility = if (desktops.size > 1) View.VISIBLE else View.GONE
+        for ((token, name) in desktops) {
+            val chip = layoutInflater.inflate(R.layout.view_target_chip, group, false) as Chip
+            chip.id = View.generateViewId()
+            chip.text = name
+            chip.tag = token
+            group.addView(chip)
+            if (token == target) group.check(chip.id)
+        }
     }
 
     private fun key(name: String) = send("key", "name" to name)
 
     private fun send(kind: String, vararg fields: Pair<String, Any>) {
+        if (target.isEmpty()) return
         val event = JSONObject().put("t", "input").put("k", kind)
         for ((name, value) in fields) event.put(name, value)
-        TesseraService.running_instance?.broadcast(event)
+        TesseraService.running_instance?.sendInput(target, event)
     }
 }

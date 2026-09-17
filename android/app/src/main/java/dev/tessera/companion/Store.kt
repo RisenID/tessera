@@ -45,6 +45,11 @@ class Store(context: Context) {
             ?: android.os.Build.MODEL
     }
 
+    /** The computer the remote screen drove last. */
+    var remoteTarget: String
+        get() = prefs.getString(KEY_REMOTE_TARGET, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_REMOTE_TARGET, value).apply()
+
     fun tokens(): Set<String> = prefs.getStringSet(KEY_TOKENS, emptySet()) ?: emptySet()
 
     fun isKnown(token: String): Boolean = token.isNotEmpty() && tokens().contains(token)
@@ -97,6 +102,7 @@ class Store(context: Context) {
         private const val KEY_TOKENS = "tokens"
         private const val KEY_COMPUTER_NAME = "computer_name_"
         private const val KEY_COMPUTER_SEEN = "computer_seen_"
+        private const val KEY_REMOTE_TARGET = "remote_target"
 
         private val random = SecureRandom()
 
