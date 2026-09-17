@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Clipboard sharing without Shizuku. Asks for the text of tapped buttons and
-     toasts only, never window content; see ClipboardAccessibility. -->
+<!-- Clipboard sharing and typing without Shizuku. Listens for taps on Copy and
+     for toasts; window content is read only to find the focused text field
+     when the computer types into it. See ClipboardAccessibility. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeViewClicked|typeNotificationStateChanged|typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_clipboard_description"
     android:notificationTimeout="100"
     android:isAccessibilityTool="false" />

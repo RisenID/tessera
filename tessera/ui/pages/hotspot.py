@@ -96,6 +96,8 @@ class HotspotPage(QWidget):
         card.add(self.status)
         outer.addWidget(card)
 
+        outer.addWidget(self._build_wifi_card(palette))
+
         explain = Card(self)
         explain.add(self._explainer())
         outer.addWidget(explain)
@@ -134,6 +136,76 @@ class HotspotPage(QWidget):
         )
         self.band.setCurrentIndex(index)
         self.band.blockSignals(False)
+
+    # -- this computer's networks, to the phone ------------------------------
+
+    def _build_wifi_card(self, palette: Palette) -> Card:
+        from ...backends import wifi_share
+
+        card = Card(self)
+        title = QLabel("Send a Wi-Fi network to the phone")
+        title.setObjectName("SectionTitle")
+        card.add(title)
+        note = QLabel(
+            "One of this computer's saved networks, password included, offered "
+            "to the phone to save. The phone asks before keeping it."
+            if wifi_share.available() else
+            "This computer's saved networks cannot be read here."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        row = QHBoxLayout()
+        self.wifi_choice = QComboBox()
+        self.wifi_choice.setMinimumWidth(220)
+        row.addWidget(self.wifi_choice, 1)
+        refresh = QPushButton("Refresh")
+        refresh.setObjectName("Ghost")
+        refresh.clicked.connect(self._list_networks)
+        row.addWidget(refresh)
+        self.wifi_send = QPushButton("Send to phone")
+        self.wifi_send.setObjectName("Primary")
+        self.wifi_send.clicked.connect(self._send_network)
+        row.addWidget(self.wifi_send)
+        card.body().addLayout(row)
+        self.wifi_note = QLabel("")
+        self.wifi_note.setObjectName("Muted")
+        self.wifi_note.setWordWrap(True)
+        card.add(self.wifi_note)
+        card.setVisible(wifi_share.available())
+        self._list_networks()
+        return card
+
+    def _list_networks(self) -> None:
+        from ...backends import wifi_share
+
+        if not wifi_share.available():
+            return
+
+        def show(found: object) -> None:
+            self.wifi_choice.clear()
+            for network in found or []:
+                self.wifi_choice.addItem(
+                    f"{network.name}{' (in use)' if network.active else ''}", network.name)
+            self.wifi_send.setEnabled(self.wifi_choice.count() > 0)
+
+        submit(wifi_share.networks, on_done=show,
+               on_error=lambda message: self.wifi_note.setText(message))
+
+    def _send_network(self) -> None:
+        name = self.wifi_choice.currentData()
+        if not name:
+            return
+        self.wifi_send.setEnabled(False)
+        self.wifi_note.setText(f"Reading {name}...")
+
+        def done(ok: bool, message: str) -> None:
+            self.wifi_send.setEnabled(True)
+            self.wifi_note.setText(message)
+            self.toast.show_message(message[:140], self.palette_tokens, "success" if ok else "danger")
+
+        self.hub.share_wifi(name, done)
 
     def _explainer(self) -> QLabel:
         label = QLabel(

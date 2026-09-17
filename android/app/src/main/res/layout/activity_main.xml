@@ -207,6 +207,14 @@
                         android:layout_marginTop="8dp"
                         android:text="@string/clipboard_pull" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/remoteButton"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/remote_open" />
+
                     <com.google.android.material.divider.MaterialDivider
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -264,6 +272,7 @@
                     <include android:id="@+id/rowMessages" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowCalls" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowContacts" layout="@layout/view_setup_row" />
+                    <include android:id="@+id/rowCalendar" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowPhotos" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowCamera" layout="@layout/view_setup_row" />
                     <include android:id="@+id/rowAudio" layout="@layout/view_setup_row" />

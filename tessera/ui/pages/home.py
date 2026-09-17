@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTime, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
+    QSpinBox,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -101,6 +104,10 @@ class HomePage(QWidget):
         self.photos_tile.actionClicked.connect(lambda: self.openPage.emit("Photos"))
         grid.addWidget(self.photos_tile, 1, 0, 1, 2)
 
+        self.agenda_tile = Tile("Up next", palette=palette)
+        grid.addWidget(self.agenda_tile, 2, 0)
+        grid.addWidget(self._build_clock_tile(palette), 2, 1)
+
         outer.addLayout(grid)
         outer.addStretch(1)
 
@@ -134,6 +141,119 @@ class HomePage(QWidget):
         self.refresh_calls()
         self.refresh_messages()
         self.refresh_photos()
+        self.refresh_agenda()
+
+    # -- the calendar and the clock -------------------------------------------
+
+    def _build_clock_tile(self, palette: Palette) -> Tile:
+        tile = Tile("Timer and alarm", palette=palette)
+
+        timer_row = QHBoxLayout()
+        self.timer_minutes = QSpinBox()
+        self.timer_minutes.setRange(1, 24 * 60)
+        self.timer_minutes.setValue(5)
+        self.timer_minutes.setSuffix(" min")
+        timer_row.addWidget(self.timer_minutes)
+        start = QPushButton("Start timer")
+        start.clicked.connect(self._start_timer)
+        timer_row.addWidget(start)
+        timer_row.addStretch(1)
+        tile.content.addLayout(timer_row)
+
+        alarm_row = QHBoxLayout()
+        self.alarm_time = QTimeEdit(QTime(7, 30))
+        self.alarm_time.setDisplayFormat("HH:mm")
+        alarm_row.addWidget(self.alarm_time)
+        set_alarm = QPushButton("Set alarm")
+        set_alarm.clicked.connect(self._set_alarm)
+        alarm_row.addWidget(set_alarm)
+        alarm_row.addStretch(1)
+        tile.content.addLayout(alarm_row)
+
+        self.clock_note = QLabel("")
+        self.clock_note.setStyleSheet(f"color: {palette.muted}; font-size: 12px;")
+        self.clock_note.setWordWrap(True)
+        tile.content.addWidget(self.clock_note)
+        return tile
+
+    def _clock_reply(self, done: str):
+        def replied(reply: dict) -> None:
+            if reply.get("t") == "error":
+                self.toast.show_message(str(reply.get("message") or "The phone refused.")[:140],
+                                        self.palette_tokens, "danger")
+            else:
+                self.toast.show_message(done, self.palette_tokens, "success")
+                QTimer.singleShot(1500, self.refresh_agenda)
+        return replied
+
+    def _start_timer(self) -> None:
+        minutes = self.timer_minutes.value()
+        self.hub.ask({"t": "timer_set", "seconds": minutes * 60, "label": ""},
+                     self._clock_reply(f"Timer for {minutes} min started on the phone"), needs="alarms")
+
+    def _set_alarm(self) -> None:
+        when = self.alarm_time.time()
+        self.hub.ask({"t": "alarm_set", "hour": when.hour(), "minute": when.minute(), "label": ""},
+                     self._clock_reply(f"Alarm set for {when.toString('HH:mm')}"), needs="alarms")
+
+    def refresh_agenda(self) -> None:
+        tile = self.agenda_tile
+        caps = self.hub.companion.capabilities
+        if not self.hub.companion.connected:
+            tile.clear()
+            tile.add_placeholder("Connect your phone to see what is coming up.", self.palette_tokens)
+            self.clock_note.setText("")
+            return
+        self._agenda = {"alarm": None, "events": None}
+        if "alarms" in caps:
+            self.hub.companion.request({"t": "alarm_next"}, lambda r: self._agenda_part("alarm", r))
+        else:
+            self._agenda["alarm"] = {}
+        if "calendar" in caps:
+            self.hub.companion.request({"t": "calendar_events", "days": 2},
+                                       lambda r: self._agenda_part("events", r))
+        else:
+            self._agenda["events"] = {}
+        self._render_agenda()
+
+    def _agenda_part(self, key: str, reply: dict) -> None:
+        if not hasattr(self, "_agenda"):
+            return
+        self._agenda[key] = reply
+        self._render_agenda()
+
+    def _render_agenda(self) -> None:
+        tile = self.agenda_tile
+        alarm, events = self._agenda.get("alarm"), self._agenda.get("events")
+        if alarm is None or events is None:
+            return
+        tile.clear()
+        caps = self.hub.companion.capabilities
+        shown = 0
+        when = int(alarm.get("time") or 0)
+        if when:
+            moment = datetime.fromtimestamp(when / 1000)
+            day = "today" if moment.date() == datetime.now().date() else moment.strftime("%a")
+            tile.add_row(line_row("Alarm", f"{moment.strftime('%H:%M')} {day}", self.palette_tokens))
+            shown += 1
+        for event in (events.get("items") or [])[:5]:
+            begin = datetime.fromtimestamp(int(event.get("begin") or 0) / 1000)
+            if event.get("allDay"):
+                detail = begin.strftime("%a") + " · all day"
+            else:
+                detail = begin.strftime("%a %H:%M")
+            if event.get("location"):
+                detail += f" · {event['location']}"
+            tile.add_row(line_row(event.get("title") or "(untitled)", detail, self.palette_tokens))
+            shown += 1
+        if not shown:
+            tile.add_placeholder(
+                "Nothing in the next two days." if "calendar" in caps
+                else "Nothing in the next two days. Grant Calendar in the phone app to see events.",
+                self.palette_tokens,
+            )
+        self.clock_note.setText("Set through the phone's clock app." if "alarms" in caps else
+                                "The phone's companion app is older than this feature.")
 
     def refresh_light(self) -> None:
         """Times move on even when nothing changes."""

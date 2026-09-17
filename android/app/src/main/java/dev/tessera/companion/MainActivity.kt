@@ -21,6 +21,7 @@ import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.tessera.companion.databinding.ViewComputerRowBinding
 import dev.tessera.companion.databinding.ViewSetupRowBinding
+import dev.tessera.companion.features.Agenda
 import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.ClipboardWatcher
@@ -72,6 +73,9 @@ class MainActivity : AppCompatActivity() {
 
         binding.pairButton.setOnClickListener { showPairingCode() }
         binding.clipboardPull.setOnClickListener { pullClipboard() }
+        binding.remoteButton.setOnClickListener {
+            startActivity(Intent(this, RemoteActivity::class.java))
+        }
         binding.swipeRefresh.setOnRefreshListener {
             TesseraService.running_instance?.refreshComputerNames()
             refresh()
@@ -200,6 +204,14 @@ class MainActivity : AppCompatActivity() {
                 grant = { requestRuntimePermissions() },
             ),
             Row(
+                binding.rowCalendar,
+                R.string.perm_calendar,
+                R.string.perm_calendar_why,
+                R.drawable.ic_phone_link,
+                granted = { Agenda.canReadCalendar(this) },
+                grant = { requestRuntimePermissions() },
+            ),
+            Row(
                 binding.rowPhotos,
                 R.string.perm_photos,
                 R.string.perm_photos_why,
@@ -277,6 +289,7 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.READ_SMS)
             add(Manifest.permission.SEND_SMS)
             add(Manifest.permission.READ_CONTACTS)
+            add(Manifest.permission.READ_CALENDAR)
             add(Manifest.permission.READ_CALL_LOG)
             add(Manifest.permission.READ_PHONE_STATE)
             add(Manifest.permission.ANSWER_PHONE_CALLS)

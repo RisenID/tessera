@@ -229,6 +229,15 @@ class Hub(QObject):
         self._wire_wallpaper()
         self._wire_storage()
         self._apply_codec_preference()
+        #: New photos copied here as they are taken, when switched on.
+        from .backup import PhotoBackup
+
+        self.backup = PhotoBackup(self, config.backup, self)
+        #: The phone as a trackpad and keyboard for this computer.
+        from .remote_input import RemoteInput
+
+        self.remote_input = RemoteInput(self, self)
+        self.remote_input.message.connect(self.statusChanged)
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
         self._serial_timer = QTimer(self)
@@ -346,6 +355,8 @@ class Hub(QObject):
             topics.append("dnd")
         if features.clipboard:
             topics.append("clipboard")
+        if self.config.backup.enabled:
+            topics.append("media")
         self.companion.wanted_topics = topics
         self.companion.resubscribe()
 
@@ -384,6 +395,7 @@ class Hub(QObject):
         self.mirrors.close_all()
         self.stop_camera()
         self.stop_phone_mic()
+        self.remote_input.stop()
         self.dnd.stop()
         self.clipboard_adb.stop()
         self.companion.disconnect_from_phone()
@@ -1536,6 +1548,76 @@ class Hub(QObject):
                   "cameraId": self.config.webcam.camera_id if facing == self.config.webcam.facing else ""},
                  arrived, needs="capture")
 
+    def type_on_phone(self, text: str, enter: bool = False,
+                      on_done: Callable[[bool, str], None] | None = None) -> None:
+        """Type into whatever has focus on the phone."""
+        def answered(reply: dict) -> None:
+            ok = reply.get("t") != "error"
+            message = "Typed on the phone." if ok else str(reply.get("message") or "The phone refused.")
+            if not ok:
+                self.errorOccurred.emit(message)
+            if on_done is not None:
+                on_done(ok, message)
+
+        if self.companion.connected and not self.companion.supports("type") and self._serial:
+            # No Shizuku and no accessibility switch on the phone: adb can still type.
+            def over_adb() -> None:
+                if text:
+                    adb.shell(self._serial, f"input text {_shell_quote(text.replace(' ', '%s'))}")
+                if enter:
+                    adb.shell(self._serial, "input keyevent 66")
+
+            submit(over_adb, on_done=lambda _r: answered({}),
+                   on_error=lambda message: answered({"t": "error", "message": message}))
+            return
+        self.ask({"t": "type", "text": text, "enter": bool(enter)}, answered, needs="type")
+
+    def share_wifi(self, name: str = "",
+                   on_done: Callable[[bool, str], None] | None = None) -> None:
+        """Hand one of this computer's saved Wi-Fi networks to the phone."""
+        from ..backends import wifi_share
+
+        def say(ok: bool, message: str) -> None:
+            if not ok:
+                self.errorOccurred.emit(message)
+            if on_done is not None:
+                on_done(ok, message)
+
+        if not self.companion.connected:
+            say(False, "The companion app is not connected.")
+            return
+        if not wifi_share.available():
+            say(False, "No way to read this computer's Wi-Fi networks was found.")
+            return
+
+        def look() -> wifi_share.Network:
+            chosen = name.strip()
+            if not chosen:
+                active = [n for n in wifi_share.networks() if n.active]
+                if not active:
+                    raise RuntimeError("This computer is not on a Wi-Fi network; name one.")
+                chosen = active[0].name
+            network = wifi_share.credentials(chosen)
+            if not network.shareable:
+                raise RuntimeError(
+                    f"{network.name} is an {network.security} network, which the phone cannot take."
+                )
+            return network
+
+        def found(network: object) -> None:
+            assert isinstance(network, wifi_share.Network)
+
+            def answered(reply: dict) -> None:
+                if reply.get("t") == "error":
+                    say(False, str(reply.get("message") or "The phone refused."))
+                else:
+                    say(True, f"Offered {network.ssid} to the phone; confirm it there.")
+
+            self.ask({"t": "wifi_add", "ssid": network.ssid, "password": network.password,
+                      "security": network.security}, answered, needs="wifi_add")
+
+        submit(look, on_done=found, on_error=lambda message: say(False, message))
+
     def notify_phone(self, title: str, text: str,
                      on_done: Callable[[bool, str], None] | None = None) -> None:
         """Show a notification on the phone."""
@@ -1837,6 +1919,10 @@ class Hub(QObject):
             self.errorOccurred.emit(
                 "Do Not Disturb needs the companion app, or a phone attached over adb."
             )
+
+
+def _shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
 
 
 def _zen_from_name(mode: str) -> ZenMode:

@@ -294,6 +294,17 @@ class TesseraService : Service() {
         return desktops.size
     }
 
+    /** Sends a JSON event to every connected computer's main link. */
+    fun broadcast(event: org.json.JSONObject) {
+        sessions.filter { it.isAuthenticated && it.role.isEmpty() }
+            .distinctBy { it.token }
+            .forEach { it.sendInput(event) }
+    }
+
+    /** Whether any computer is connected to receive input. */
+    val hasDesktop: Boolean
+        get() = sessions.any { it.isAuthenticated && it.role.isEmpty() }
+
     /** A computer that reconnects replaces its old connection, which may be dead. */
     fun onAuthenticated(session: Session) {
         sessions.filter {

@@ -336,10 +336,11 @@ class SharePage(QWidget):
         card.add(self.open_links_box)
 
         note = QLabel(
-            "The same from a terminal: tessera open <link>, tessera type <text>, "
-            "tessera send <file>, tessera notify <text>."
+            "The same from a terminal: tessera open LINK, tessera type TEXT, "
+            "tessera send FILE, tessera notify TEXT."
         )
         note.setObjectName("Muted")
+        note.setTextFormat(Qt.TextFormat.PlainText)
         note.setWordWrap(True)
         card.add(note)
         return card

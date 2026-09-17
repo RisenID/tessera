@@ -48,6 +48,44 @@ object MediaRepository {
         }
     }
 
+    // -- telling the desktop when the library changes --------------------------
+
+    private var watchers = 0
+    private var observer: android.database.ContentObserver? = null
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val announce = Runnable { dev.tessera.companion.Bus.publish(JSONObject().put("t", "media_changed")) }
+
+    /** Publishes media_changed a moment after photos or videos are added or removed. */
+    @Synchronized
+    fun addWatcher(context: Context) {
+        watchers++
+        if (watchers > 1) return
+        val watcher = object : android.database.ContentObserver(main) {
+            override fun onChange(selfChange: Boolean) {
+                // A burst from the camera is one change, a few seconds later.
+                main.removeCallbacks(announce)
+                main.postDelayed(announce, CHANGE_SETTLE_MS)
+            }
+        }
+        observer = watcher
+        val resolver = context.applicationContext.contentResolver
+        runCatching {
+            resolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, watcher)
+            resolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, watcher)
+        }.onFailure { Log.w(TAG, "could not watch the media library", it) }
+    }
+
+    @Synchronized
+    fun removeWatcher(context: Context) {
+        watchers = (watchers - 1).coerceAtLeast(0)
+        if (watchers > 0) return
+        observer?.let { runCatching { context.applicationContext.contentResolver.unregisterContentObserver(it) } }
+        observer = null
+        main.removeCallbacks(announce)
+    }
+
+    private const val CHANGE_SETTLE_MS = 4_000L
+
     /** Newest first, images and videos merged. */
     fun list(context: Context, limit: Int = 300, offset: Int = 0): JSONArray {
         val items = mutableListOf<JSONObject>()

@@ -61,6 +61,16 @@
     <string name="clipboard_pull_offline">Tessera isn\'t running</string>
     <string name="fingerprint_label">Certificate fingerprint</string>
 
+    <!-- The phone as a trackpad and keyboard -->
+    <string name="remote_title">Control the computer</string>
+    <string name="remote_open">Control the computer</string>
+    <string name="remote_hint">One finger moves, a tap clicks, two fingers scroll, a two-finger tap right-clicks, a double tap held down drags.</string>
+    <string name="remote_no_desktop">No computer is connected.</string>
+    <string name="remote_type_hint">Type here to type on the computer</string>
+    <string name="remote_left">Left</string>
+    <string name="remote_middle">Middle</string>
+    <string name="remote_right">Right</string>
+
     <!-- Setup checklist -->
     <string name="setup_title">Setup</string>
     <string name="setup_body">Each permission unlocks one feature on your computer. Nothing is sent anywhere else.</string>
@@ -75,6 +85,8 @@
     <string name="perm_calls_why">See recent calls, and answer and place calls from your computer.</string>
     <string name="perm_contacts">Contacts</string>
     <string name="perm_contacts_why">Search your contacts and call them from your computer, and see names on calls and texts.</string>
+    <string name="perm_calendar">Calendar</string>
+    <string name="perm_calendar_why">Show what is coming up on your computer\'s overview.</string>
     <string name="perm_photos">Photos</string>
     <string name="perm_photos_why">Browse your gallery and save photos across.</string>
     <string name="perm_camera">Camera</string>

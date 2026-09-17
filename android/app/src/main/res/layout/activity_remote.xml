@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/colorSurface">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:title="@string/remote_title" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <TextView
+        android:id="@+id/remoteState"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:text="@string/remote_hint" />
+
+    <!-- Media keys -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/mediaPrevious" style="@style/Widget.Tessera.Key" android:text="⏮" />
+        <Button android:id="@+id/mediaPlay" style="@style/Widget.Tessera.Key" android:text="⏯" />
+        <Button android:id="@+id/mediaNext" style="@style/Widget.Tessera.Key" android:text="⏭" />
+        <Button android:id="@+id/mediaVolumeDown" style="@style/Widget.Tessera.Key" android:text="🔉" />
+        <Button android:id="@+id/mediaMute" style="@style/Widget.Tessera.Key" android:text="🔇" />
+        <Button android:id="@+id/mediaVolumeUp" style="@style/Widget.Tessera.Key" android:text="🔊" />
+    </LinearLayout>
+
+    <dev.tessera.companion.TrackpadView
+        android:id="@+id/trackpad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_trackpad" />
+
+    <!-- Mouse buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/keyLeftClick" style="@style/Widget.Tessera.Key" android:text="@string/remote_left" />
+        <Button android:id="@+id/keyMiddleClick" style="@style/Widget.Tessera.Key" android:text="@string/remote_middle" />
+        <Button android:id="@+id/keyRightClick" style="@style/Widget.Tessera.Key" android:text="@string/remote_right" />
+    </LinearLayout>
+
+    <!-- Keys -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/keyEscape" style="@style/Widget.Tessera.Key" android:text="Esc" />
+        <Button android:id="@+id/keyTab" style="@style/Widget.Tessera.Key" android:text="Tab" />
+        <Button android:id="@+id/keyBackspace" style="@style/Widget.Tessera.Key" android:text="⌫" />
+        <Button android:id="@+id/keyEnter" style="@style/Widget.Tessera.Key" android:text="⏎" />
+        <Button android:id="@+id/keyF5" style="@style/Widget.Tessera.Key" android:text="F5" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp">
+        <Button android:id="@+id/keyLeft" style="@style/Widget.Tessera.Key" android:text="←" />
+        <Button android:id="@+id/keyUp" style="@style/Widget.Tessera.Key" android:text="↑" />
+        <Button android:id="@+id/keyDown" style="@style/Widget.Tessera.Key" android:text="↓" />
+        <Button android:id="@+id/keyRight" style="@style/Widget.Tessera.Key" android:text="→" />
+        <Button android:id="@+id/keyPageUp" style="@style/Widget.Tessera.Key" android:text="PgUp" />
+        <Button android:id="@+id/keyPageDown" style="@style/Widget.Tessera.Key" android:text="PgDn" />
+    </LinearLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginBottom="12dp"
+        android:hint="@string/remote_type_hint">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/typeBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:imeOptions="actionSend"
+            android:inputType="text|textNoSuggestions"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

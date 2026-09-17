@@ -324,6 +324,10 @@ class CompanionClient(QObject):
     clipboardQueried = Signal(int)
     callChanged = Signal(dict)
     mediaChanged = Signal(dict)
+    #: Photos or videos were added to or removed from the phone.
+    mediaLibraryChanged = Signal()
+    #: A pointer or key event from the phone's remote screen.
+    inputEvent = Signal(dict)
     batteryChanged = Signal(int, bool)
     phoneStatusChanged = Signal(dict)       # battery, wifi, cell, ringer
 
@@ -865,6 +869,12 @@ class CompanionClient(QObject):
 
     def _recv_media(self, message: dict[str, Any]) -> None:
         self.mediaChanged.emit(message)
+
+    def _recv_media_changed(self, _message: dict[str, Any]) -> None:
+        self.mediaLibraryChanged.emit()
+
+    def _recv_input(self, message: dict[str, Any]) -> None:
+        self.inputEvent.emit(message)
 
     def _recv_call(self, message: dict[str, Any]) -> None:
         self.callChanged.emit(message)

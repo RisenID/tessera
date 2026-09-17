@@ -38,6 +38,9 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Upcoming events on the desktop's overview; timers and alarms set from it. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -76,6 +79,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The phone as a trackpad and keyboard for the computer. -->
+        <activity
+            android:name=".RemoteActivity"
+            android:exported="false"
+            android:label="@string/remote_title"
+            android:parentActivityName=".MainActivity" />
 
         <!-- Invisible; holds the projection request. Exported so the shell can start it,
              but it ignores intents without the service's single-use token. -->

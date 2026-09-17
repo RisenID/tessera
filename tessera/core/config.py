@@ -98,6 +98,10 @@ class FeatureConfig:
     file_transfer: bool = True
     #: The phone's storage as a folder in the file manager, over SFTP.
     storage: bool = True
+    #: The phone as a trackpad, keyboard and media remote for this computer.
+    remote_input: bool = True
+    #: Lock this computer when the phone goes out of Bluetooth range.
+    presence: bool = False
 
 
 @dataclass
@@ -224,6 +228,27 @@ class CaptureConfig:
 
 
 @dataclass
+class RemoteInputConfig:
+    """The phone as a trackpad and keyboard."""
+
+    #: The portal's token for the permission given once, on Linux.
+    restore_token: str = ""
+
+
+@dataclass
+class BackupConfig:
+    """New photos copied here as they are taken."""
+
+    enabled: bool = False
+    #: Empty means Pictures/Tessera/Backup.
+    folder: str = ""
+    videos: bool = True
+    #: Only items taken after this, in epoch milliseconds. Set when the
+    #: backup is switched on, so the phone's whole history is not pulled.
+    since: int = 0
+
+
+@dataclass
 class HandoffConfig:
     """Links moving between the two screens."""
 
@@ -284,6 +309,8 @@ class Config:
     panel: PanelConfig = field(default_factory=PanelConfig)
     handoff: HandoffConfig = field(default_factory=HandoffConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
+    backup: BackupConfig = field(default_factory=BackupConfig)
+    remote_input: RemoteInputConfig = field(default_factory=RemoteInputConfig)
     #: The phone as this computer's microphone: volume, buffer and, on
     #: Windows, which output (a virtual cable) it is played into.
     mic: PhoneAudioConfig = field(

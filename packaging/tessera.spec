@@ -31,6 +31,8 @@ Requires:       avahi-tools
 Requires:       polkit
 # gdbus, which raises the desktop notifications.
 Requires:       glib2
+# Gio, for the RemoteDesktop portal: the phone as a trackpad and keyboard.
+Requires:       python3-gobject
 
 # Weak dependencies: each unlocks one feature, and several live in RPM Fusion
 # or a COPR, so a missing one must not block installation.

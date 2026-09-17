@@ -53,6 +53,8 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
     ("phone_audio", "Phone audio over the link",
      "The fallback where there is no Bluetooth: a copy of the phone's mix, "
      "which cannot carry a call"),
+    ("remote_input", "Remote control from the phone",
+     "The phone as a trackpad, keyboard and media remote for this computer"),
 )
 
 
@@ -380,6 +382,7 @@ class SettingsPage(QWidget):
         grant_row.addWidget(self.grant_state, 1)
         self.route_card.add(self._bar(grant_row))
         outer.addWidget(self.route_card)
+        outer.addWidget(self._build_backup_card())
 
         # Bluetooth audio and the LDAC decoder are PipeWire and BlueZ
         # machinery, so the whole card belongs to the platforms that have them.
@@ -465,6 +468,77 @@ class SettingsPage(QWidget):
         self._commit_timer.timeout.connect(self._commit)
         self._wire_controls()
         self._loading = False
+
+    # -- photo backup ----------------------------------------------------------
+
+    def _build_backup_card(self) -> Card:
+        card = Card(self)
+        title = QLabel("Photo backup")
+        title.setObjectName("SectionTitle")
+        card.add(title)
+        note = QLabel(
+            "Photos and videos copied here as they are taken, over the link, "
+            "into a folder of their own. Anything too large to send in one "
+            "piece is left out and can be shared from the phone instead."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        backup = self.hub.backup
+        self.backup_box = QCheckBox("Copy new photos and videos to this computer")
+        self.backup_box.setChecked(backup.config.enabled)
+        self.backup_box.toggled.connect(self._toggle_backup)
+        card.add(self.backup_box)
+        self.backup_existing = QCheckBox("Include what is already on the phone when switching on")
+        card.add(self.backup_existing)
+        self.backup_videos = QCheckBox("Videos too")
+        self.backup_videos.setChecked(backup.config.videos)
+        self.backup_videos.toggled.connect(self._backup_videos)
+        card.add(self.backup_videos)
+
+        row = QHBoxLayout()
+        self.backup_folder = QLabel(str(backup.folder()))
+        self.backup_folder.setObjectName("Muted")
+        self.backup_folder.setWordWrap(True)
+        row.addWidget(self.backup_folder, 1)
+        choose = QPushButton("Change folder...")
+        choose.clicked.connect(self._choose_backup_folder)
+        row.addWidget(choose)
+        now = QPushButton("Check now")
+        now.setObjectName("Ghost")
+        now.clicked.connect(backup.sync)
+        row.addWidget(now)
+        card.add(self._bar(row))
+
+        self.backup_state = QLabel(backup.summary())
+        self.backup_state.setObjectName("Muted")
+        self.backup_state.setWordWrap(True)
+        card.add(self.backup_state)
+        backup.changed.connect(lambda: self.backup_state.setText(backup.summary()))
+        return card
+
+    def _toggle_backup(self, on: bool) -> None:
+        if self._loading:
+            return
+        self.hub.backup.enable(bool(on), include_existing=self.backup_existing.isChecked())
+        self.backup_state.setText(self.hub.backup.summary())
+
+    def _backup_videos(self, on: bool) -> None:
+        self.hub.config.backup.videos = bool(on)
+        self.hub.config.save()
+
+    def _choose_backup_folder(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Where should the phone's photos be copied?", str(self.hub.backup.folder()))
+        if not chosen:
+            return
+        self.hub.config.backup.folder = chosen
+        self.hub.config.save()
+        self.backup_folder.setText(chosen)
+        self.backup_state.setText(self.hub.backup.summary())
 
     # -- notifications by app --------------------------------------------------
 

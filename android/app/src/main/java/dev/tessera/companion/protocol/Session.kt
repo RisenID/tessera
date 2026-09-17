@@ -6,6 +6,7 @@ import dev.tessera.companion.Bus
 import dev.tessera.companion.Pairing
 import dev.tessera.companion.TesseraService
 import dev.tessera.companion.Store
+import dev.tessera.companion.features.Agenda
 import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
@@ -13,6 +14,7 @@ import dev.tessera.companion.features.Contacts
 import dev.tessera.companion.features.FileTransfer
 import dev.tessera.companion.features.StorageServer
 import dev.tessera.companion.features.Wallpaper
+import dev.tessera.companion.features.WifiShare
 import dev.tessera.companion.features.CameraStreamer
 import dev.tessera.companion.features.CallMonitor
 import dev.tessera.companion.features.CallsRepository
@@ -35,6 +37,7 @@ import dev.tessera.companion.features.ProjectionGrant
 import dev.tessera.companion.features.TetheringController
 import dev.tessera.companion.features.SmsRepository
 import dev.tessera.companion.features.StillCapture
+import dev.tessera.companion.features.TextInput
 import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -291,6 +294,15 @@ class Session(
         // Notifications from the computer, and links opened here.
         add("notify")
         add("open_url")
+        // Upcoming events; timers and alarms through the clock app.
+        if (Agenda.canReadCalendar(context)) add("calendar")
+        add("alarms")
+        // A Wi-Fi network from the computer, saved here.
+        add("wifi_add")
+        // Typing from the computer into the focused field here.
+        if (TextInput.available()) add("type")
+        // The phone as a trackpad and keyboard for the computer.
+        add("remote_input")
     }
 
     // -- commands ------------------------------------------------------------
@@ -701,6 +713,32 @@ class Session(
             "open_url" -> Handoff.open(context, message.optString("url"))?.let { fail(id, it) }
                 ?: reply(id, JSONObject().put("opened", true))
 
+            // -- calendar, alarms and timers ------------------------------
+            "calendar_events" -> reply(
+                id, JSONObject().put("items", Agenda.events(context, message.optInt("days", 2)))
+            )
+            "alarm_next" -> reply(id, Agenda.nextAlarm(context))
+
+            "type" -> {
+                val text = message.optString("text")
+                val enter = message.optBoolean("enter")
+                // Off the reader: the shell route waits on a process.
+                thread(name = "tessera-type") {
+                    TextInput.type(text, enter)?.let { fail(id, it) }
+                        ?: reply(id, JSONObject().put("typed", true))
+                }
+            }
+
+            "wifi_add" -> WifiShare.add(
+                context, message.optString("ssid"), message.optString("password"),
+                message.optString("security", "wpa2"),
+            )?.let { fail(id, it) } ?: reply(id, JSONObject().put("offered", true))
+            "timer_set" -> Agenda.setTimer(context, message.optInt("seconds"), message.optString("label"))
+                ?.let { fail(id, it) } ?: reply(id, JSONObject().put("set", true))
+            "alarm_set" -> Agenda.setAlarm(
+                context, message.optInt("hour", -1), message.optInt("minute", -1), message.optString("label"),
+            )?.let { fail(id, it) } ?: reply(id, JSONObject().put("set", true))
+
             else -> Log.d(TAG, "ignoring unknown command $kind")
         }
     }
@@ -739,6 +777,7 @@ class Session(
         NowPlaying.activeContext = context
         NowPlaying.addUser(context)
         PhoneStatus.addUser(context)
+        MediaRepository.addWatcher(context)
         // Shizuku may have started since the listener connected.
         dev.tessera.companion.features.SensitiveNotifications.ensure(context)
 
@@ -1011,6 +1050,12 @@ class Session(
         }
     }
 
+    /** A pointer or key event from the phone's remote screen; nothing is awaited. */
+    fun sendInput(event: JSONObject) {
+        if (!open.get() || !authenticated || role.isNotEmpty()) return
+        send(event)
+    }
+
     /** Text shared from the phone, put on the desktop's clipboard. */
     fun offerText(text: String) {
         if (!open.get() || !authenticated || text.isEmpty()) return
@@ -1231,6 +1276,7 @@ class Session(
             CallMonitor.removeUser(context)
             NowPlaying.removeUser()
             PhoneStatus.removeUser(context)
+            MediaRepository.removeWatcher(context)
         }
         subscriber = null
         stopCamera()
@@ -1263,6 +1309,7 @@ class Session(
             "clipboard" to "clipboard",
             "battery" to "battery",
             "status" to "status",
+            "media_changed" to "media",
         )
     }
 }

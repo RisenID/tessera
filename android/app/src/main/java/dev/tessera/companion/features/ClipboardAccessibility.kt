@@ -80,6 +80,34 @@ class ClipboardAccessibility : AccessibilityService() {
         if (id == 0) "" else runCatching { getString(id).lowercase() }.getOrDefault("")
     }
 
+    // -- typing into whatever has focus ---------------------------------------
+
+    /** Appends [text] to the focused text field. False when nothing has focus. */
+    fun typeText(text: String): Boolean {
+        val node = focusedEditable() ?: return false
+        val current = node.text?.toString().orEmpty()
+        val arguments = android.os.Bundle().apply {
+            putCharSequence(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                current + text,
+            )
+        }
+        return node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+    }
+
+    /** The keyboard's Enter, on the focused field. */
+    fun pressEnter(): Boolean {
+        val node = focusedEditable() ?: return false
+        return node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_IME_ENTER)
+    }
+
+    private fun focusedEditable(): android.view.accessibility.AccessibilityNodeInfo? {
+        val root = rootInActiveWindow ?: return null
+        val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return null
+        return if (focused.isEditable) focused else null
+    }
+
     // -- reading and writing through a focused window ------------------------
 
     /** Blocks for at most a second. Never call on the main thread. */
