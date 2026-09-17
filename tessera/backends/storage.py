@@ -373,7 +373,11 @@ def add_place(mounted: Mount) -> None:
     existing = bookmarks.read_text(encoding="utf-8") if bookmarks.exists() else ""
     if existing and not existing.endswith("\n"):
         existing += "\n"
-    bookmarks.write_text(existing + f"{mounted.uri} {mounted.name}\n", encoding="utf-8")
+    # One line per bookmark: the label is the phone's name with newlines and
+    # control characters taken out, so it cannot add a second entry.
+    bookmarks.write_text(
+        existing + f"{mounted.uri} {folder_name(mounted.name)}\n", encoding="utf-8"
+    )
 
     places = _kde_places()
     if places.exists():
@@ -381,7 +385,7 @@ def add_place(mounted: Mount) -> None:
         if "</xbel>" in text:
             entry = (
                 f' <bookmark href="{_xml(mounted.uri)}">\n'
-                f"  <title>{_xml(mounted.name)}</title>\n"
+                f"  <title>{_xml(folder_name(mounted.name))}</title>\n"
                 "  <info>\n"
                 '   <metadata owner="http://freedesktop.org">\n'
                 '    <bookmark:icon name="smartphone"/>\n'

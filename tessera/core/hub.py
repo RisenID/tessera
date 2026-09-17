@@ -94,6 +94,8 @@ class Hub(QObject):
     #: After connecting, keep handing back a media profile that reappears.
     BLUETOOTH_GUARD_SECONDS = 60.0
     BLUETOOTH_GUARD_POLL_MS = 3_000
+    #: After "play on the phone again", how long a returning profile is refused.
+    BLUETOOTH_PARK_GUARD_SECONDS = 20.0
     #: Pause before resuming media that the connection interrupted.
     RESUME_DELAY_MS = 2_000
     #: How long a fetched wallpaper is trusted before it is asked for again.
@@ -1058,8 +1060,10 @@ class Hub(QObject):
             else:
                 bluetooth.connect_quietly(device.address)
                 # The phone may add the media profile a few seconds later.
+                # The card is not switched to the media profile here: doing so
+                # asks BlueZ to connect A2DP, which is what moves the audio.
+                # _set_mode switches it when a stream is actually asked for.
                 bluetooth.keep_audio_on_phone(device.address, settle)
-                bt_audio.ready_to_receive(device.address)
             return device.label
 
         def done(label: object) -> None:
@@ -1150,6 +1154,26 @@ class Hub(QObject):
         self._bluetooth_guard_until = 0.0
         self._resume_after_bluetooth = False
 
+    def park_bluetooth_audio(self, on_done=None, on_error=None) -> None:
+        """Send the audio back to the phone, and keep it there for a while."""
+        address = self.config.bluetooth.address
+        if not address:
+            return
+
+        def done(_released: object) -> None:
+            # Phones re-add the media profile when told no; keep saying no.
+            self._bluetooth_guard_until = monotonic() + self.BLUETOOTH_PARK_GUARD_SECONDS
+            self._watch_bluetooth()
+            if on_done is not None:
+                on_done()
+
+        submit(bluetooth.release_audio, address, on_done=done,
+               on_error=on_error or (lambda m: log.info("park: %s", m)))
+
+    def refresh_bluetooth(self) -> None:
+        """Re-read the link now, rather than at the next scheduled check."""
+        self._watch_bluetooth()
+
     def _schedule_resume(self) -> None:
         if self._resume_after_bluetooth:
             QTimer.singleShot(self.RESUME_DELAY_MS, self._resume_media)
@@ -1200,9 +1224,6 @@ class Hub(QObject):
 
             if not park:
                 return state
-
-            # Keep the card able to accept a stream.
-            bt_audio.ready_to_receive(device.address)
 
             if appeared and transport:
                 bluetooth.release_audio(device.address)

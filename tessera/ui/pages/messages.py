@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from ...core import otp
 from ...core.hub import Hub
 from ..theme import RADIUS, SPACE, Palette
+from ..widgets import EmptyState, Toast, header_row, heading
 
 #: How wide a message may get before it wraps. Long lines are hard to read, and
 #: a bubble spanning the whole window stops looking like a message.
@@ -31,7 +32,6 @@ MAX_BUBBLE_WIDTH = 460
 BUBBLE_PADDING = 52
 #: Width available to a conversation preview once the row's padding is removed.
 PREVIEW_WIDTH = 215
-from ..widgets import EmptyState, Toast, header_row, heading
 
 
 class ThreadRow(QWidget):

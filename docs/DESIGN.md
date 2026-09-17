@@ -78,7 +78,10 @@ No Save button: each control writes the config 350 ms after the last change.
 ## Bluetooth audio
 
 A2DP (music) and HFP (calls) can't run together, so one page covers both.
-Connecting never moves audio; streaming starts only on request. "Best codec"
+Connecting never moves audio; streaming starts only on request. The PipeWire
+card is switched to the A2DP profile only then, because switching it asks BlueZ
+to connect A2DP, and a connected A2DP sink is where the phone sends its music.
+"Play on the phone again" releases the profile and refuses it for 20 s. "Best codec"
 offers one codec plus SBC from the list the phone publishes, because phones
 don't pick the best when offered everything. LDAC: see
 `native/ldac-decoder/README.md`.

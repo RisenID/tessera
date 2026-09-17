@@ -545,19 +545,13 @@ class AudioPage(QWidget):
             audio.unlink_from_sink(self._stream_node)
             self._stream_node = ""
 
-    def _release(self) -> None:
-        """Give playback back to whatever the phone was using before."""
-        if self._device is not None:
-            bluetooth.release_audio(self._device.address)
-
     def _park(self) -> None:
         """Stop moving audio without disconnecting the phone."""
         if self._device is None:
             return
         self._stop_routing()
-        submit(
-            self._release,
-            on_done=lambda _r: (self.hub._watch_bluetooth(), self.refresh()),
+        self.hub.park_bluetooth_audio(
+            on_done=self.refresh,
             on_error=lambda m: self.toast.show_message(m[:120], self.palette_tokens, "danger"),
         )
 
@@ -726,7 +720,7 @@ class AudioPage(QWidget):
             if wait:
                 self._watch_for_stream()
             # Otherwise the sidebar learns of it only at the next 15 s check.
-            self.hub._watch_bluetooth()
+            self.hub.refresh_bluetooth()
             self.refresh()
             self.toast.show_message(str(note)[:130], self.palette_tokens, "success")
             if resume:

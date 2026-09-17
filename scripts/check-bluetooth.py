@@ -405,8 +405,8 @@ def connecting(app: QApplication) -> None:
         ", ".join(radio.calls),
     )
     check(
-        "the card is left able to accept a stream",
-        "ready_to_receive" in radio.calls,
+        "and the card is not switched to the media profile, which would connect it",
+        "ready_to_receive" not in radio.calls,
         ", ".join(radio.calls),
     )
 
@@ -467,6 +467,25 @@ def handback(app: QApplication) -> None:
     settle(app)
     check("a stream the user asked for is left alone",
           "release_audio" not in radio.calls, ", ".join(radio.calls))
+    check("and the watch never switches the card to the media profile",
+          "ready_to_receive" not in radio.calls, ", ".join(radio.calls))
+
+    # "Play on the phone again" hands it back and keeps it there for a while.
+    radio.calls.clear()
+    radio.transport = "active"
+    hub.park_bluetooth_audio()
+    settle(app)
+    check("parking releases the media profile", "release_audio" in radio.calls,
+          ", ".join(radio.calls))
+    check("and guards against it coming straight back",
+          hub._bluetooth_guard_until > hub_module.monotonic())
+    radio.calls.clear()
+    radio.transport = "active"
+    hub._watch_bluetooth()
+    settle(app)
+    check("so a profile that returns is handed back again",
+          "release_audio" in radio.calls, ", ".join(radio.calls))
+    hub.end_bluetooth_guard()
 
     # Music that was playing is resumed once the connection settles.
     radio = Radio(brings_up_audio=True)

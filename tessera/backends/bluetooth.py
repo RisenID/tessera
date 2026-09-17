@@ -260,7 +260,7 @@ def explain(message: str, address: str) -> str:
             "pairing was removed on one side.\n\n"
             "Forget the device here and on the phone, then pair again."
         )
-    if "page-timeout" in lowered or "timeout" in lowered:
+    if "page-timeout" in lowered or "timeout" in lowered or "timed out" in lowered:
         return (
             "The phone did not answer. Check that Bluetooth is on, the phone is "
             "in range, and it is not connected to something else."

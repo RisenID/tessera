@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import threading
 from collections import deque
@@ -71,6 +72,20 @@ class CommandError(RuntimeError):
         )
 
 
+#: Words a secret follows on a command line: nmcli's password, softap's wpa2.
+_SECRET_AFTER = re.compile(r"(?i)\b(password|--password|wpa2|wpa3)(\s+)(\S+)")
+
+
+def _redacted(argv: list[str]) -> list[str]:
+    """*argv* for the log, with passwords masked."""
+    out: list[str] = []
+    hide = False
+    for word in argv:
+        out.append("***" if hide else _SECRET_AFTER.sub(r"\1\2***", word))
+        hide = word.lower() in ("password", "--password")
+    return out
+
+
 def have(program: str) -> bool:
     """True when *program* can be found."""
     return bool(platform.find_tool(program))
@@ -89,7 +104,8 @@ def run(argv: Sequence[str], timeout: float = 15.0, stdin: str | None = None,
     # nor suffixed. Resolve it once, here, so no caller has to.
     if argv and not os.path.isabs(argv[0]):
         argv[0] = tool_path(argv[0])
-    log.debug("run: %s", " ".join(argv))
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug("run: %s", " ".join(_redacted(argv)))
     try:
         proc = subprocess.run(
             argv,

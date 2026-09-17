@@ -151,8 +151,18 @@ def safe_name(name: str) -> str:
     """Reduce a name from the phone to something that cannot escape a folder."""
     name = name.replace("\\", "/").split("/")[-1].strip()
     name = "".join(c for c in name if c.isprintable() and c not in '<>:"|?*')
-    name = name.lstrip(".") or "file"
+    # Windows drops trailing dots and spaces, and "CON.txt" is the console.
+    name = name.strip(". ") or "file"
+    if name.split(".")[0].upper() in _RESERVED_NAMES:
+        name = f"_{name}"
     return name[:180]
+
+
+#: Device names Windows refuses as files, whatever the extension.
+_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{n}" for n in range(1, 10)] + [f"LPT{n}" for n in range(1, 10)]
+)
 
 
 def partial_path(destination) -> Path:

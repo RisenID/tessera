@@ -26,6 +26,15 @@ MODE_LABELS = {
     MODE_TWO_WAY: "Keep both in sync",
 }
 
+#: Set by KeePassXC, Bitwarden, Klipper and friends on a copied secret.
+SECRET_HINTS = ("x-kde-passwordManagerHint", "application/x-kde-passwordManagerHint")
+
+
+def _secret(clipboard: QClipboard) -> bool:
+    """Whether what is on the clipboard was marked as a password."""
+    data = clipboard.mimeData(QClipboard.Mode.Clipboard)
+    return data is not None and any(data.hasFormat(hint) for hint in SECRET_HINTS)
+
 
 class ClipboardSync(QObject):
     """Mirrors clipboard text in whichever direction is configured."""
@@ -107,7 +116,11 @@ class ClipboardSync(QObject):
     def state(self) -> tuple[str, int]:
         """This computer's clipboard text and when it last changed."""
         clipboard = QGuiApplication.clipboard()
-        text = clipboard.text(QClipboard.Mode.Clipboard) if clipboard is not None else ""
+        # Only in a direction the user chose: phone-to-desktop must not let the
+        # phone read this computer's clipboard on request.
+        if clipboard is None or not self._sends or _secret(clipboard):
+            return "", self._changed_at
+        text = clipboard.text(QClipboard.Mode.Clipboard)
         if len(text) > MAX_LENGTH:
             text = ""
         return text, self._changed_at
@@ -124,6 +137,9 @@ class ClipboardSync(QObject):
         if clipboard is None or not route:
             return
 
+        if _secret(clipboard):
+            log.debug("clipboard marked secret by a password manager; not synced")
+            return
         text = clipboard.text(QClipboard.Mode.Clipboard)
         if not text or text == self._applied or text == self._last_sent:
             # Either nothing to do, or this is the echo of a value the phone
