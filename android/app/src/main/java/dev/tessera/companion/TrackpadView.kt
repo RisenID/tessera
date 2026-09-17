@@ -43,6 +43,10 @@ class TrackpadView @JvmOverloads constructor(
     private var lastSent = 0L
     private var lastMoveAt = 0L
 
+    /** One message per frame of this display, read as each touch begins: the
+     *  rate changes with content on an adaptive panel. */
+    private var frameMs = 8L
+
     init {
         isClickable = true
     }
@@ -58,6 +62,8 @@ class TrackpadView @JvmOverloads constructor(
                 lastY = event.y
                 downAt = event.eventTime
                 lastMoveAt = event.eventTime
+                val hz = display?.refreshRate?.takeIf { it > 1f } ?: 60f
+                frameMs = (1000f / hz).toLong().coerceAtLeast(1L)
                 // A second tap straight after the first, held down, drags.
                 if (event.eventTime - lastTapAt < doubleTapTimeout) {
                     dragging = true
@@ -87,8 +93,7 @@ class TrackpadView @JvmOverloads constructor(
                     val speed = hypot(dx, dy) / elapsed
                     val gain = BASE_GAIN + ACCELERATION * minOf(speed, SPEED_CAP)
                     pendingMove = (pendingMove.first + dx * gain) to (pendingMove.second + dy * gain)
-                    // One message per touch frame; the digitizer runs past 120 Hz.
-                    if (event.eventTime - lastSent >= SEND_EVERY_MS) flush()
+                    if (event.eventTime - lastSent >= frameMs) flush()
                 }
                 lastMoveAt = event.eventTime
             }
@@ -134,6 +139,5 @@ class TrackpadView @JvmOverloads constructor(
         const val ACCELERATION = 0.6f
         /** Pixels per millisecond past which gain stops rising (about 2.8x). */
         const val SPEED_CAP = 3f
-        const val SEND_EVERY_MS = 4L
     }
 }
