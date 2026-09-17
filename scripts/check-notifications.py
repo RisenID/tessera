@@ -109,6 +109,16 @@ def server() -> None:
         notifier.can_reply or "inline-reply" not in notifier.capabilities,
     )
 
+    # Plasma refuses a repeat of a popup it still shows. That is not a failure.
+    from tessera.core.proc import Result
+
+    refused = Result(("gdbus",), 1, "", "GDBus.Error:org.freedesktop.Notifications.Error."
+                     "ExcessNotificationGeneration: Created too many similar notifications")
+    notifier._gdbus = lambda *_a: refused                             # type: ignore[method-assign]
+    same("a refused repeat is reported as such", notifier.send("x", "y"), notify.REPEATED)
+    notifier._gdbus = lambda *_a: Result(("gdbus",), 1, "", "something else")  # type: ignore[method-assign]
+    same("any other failure is a failure", notifier.send("x", "y"), 0)
+
 
 def popups() -> None:
     """What the app does with an arriving notification."""
@@ -136,6 +146,23 @@ def popups() -> None:
         len(popup._by_phone) == 1 and popup._by_phone["n1"] == first,
         str(popup._by_phone),
     )
+
+    # The phone re-posts the same notification unchanged (a player on every
+    # pause), and a chat can post twice before the first send returns. Neither
+    # may stack a second popup or fall back to the tray beside the first.
+    shown: list[tuple[str, str]] = []
+    tray.showMessage = lambda title, body, *_a: shown.append((title, body))
+    tray.isVisible = lambda: True
+    popup.show(Notification(**{**note.__dict__, "text": "Or 9?"}))
+    popup.show(Notification(**{**note.__dict__, "text": "Or 9?"}))
+    popup.show(Notification(**{**note.__dict__, "text": "Or 9?"}))
+    settle(2500)
+    check(
+        "a repeat, even mid-send, is still one popup",
+        len(popup._by_phone) == 1 and popup._by_phone["n1"] == first and not popup._sending,
+        f"{popup._by_phone} sending={popup._sending}",
+    )
+    check("and never a tray copy beside it", not shown, str(shown))
 
     sent: list[tuple[str, str]] = []
     hub.reply = lambda i, t: sent.append((i, t))          # type: ignore[method-assign]

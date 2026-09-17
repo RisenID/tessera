@@ -1531,6 +1531,9 @@ class Hub(QObject):
         self._add(Notification.from_companion(message))
 
     def _on_kdeconnect_notification(self, note: Any) -> None:
+        # The companion already sends this one, under its own id.
+        if self.companion.connected:
+            return
         self._add(Notification.from_kdeconnect(note))
 
     def _add(self, note: Notification) -> None:

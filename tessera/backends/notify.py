@@ -7,7 +7,7 @@ import re
 
 from PySide6.QtCore import QObject, SLOT, Signal, Slot
 
-from ..core.proc import have, run, submit
+from ..core.proc import Result, have, run, submit
 from .dbus import HAVE_QTDBUS, QDBusMessage, session
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,11 @@ OPEN = "default"
 
 #: How long a popup stays up, in milliseconds. The server may override it.
 TIMEOUT_MS = 8000
+
+#: What send() returns when the server refused a repeat of a popup it is
+#: still showing (Plasma rate-limits identical notifications). Nothing was
+#: lost: the popup already up says the same.
+REPEATED = -1
 
 
 class Notifier(QObject):
@@ -115,7 +120,7 @@ class Notifier(QObject):
         reply_placeholder: str = "Reply",
         urgent: bool = False,
     ) -> int:
-        """Raise a notification. Returns the server's id, or 0."""
+        """Raise a notification. Returns the server's id, REPEATED, or 0."""
         if not self.available or not self._can_send:
             return 0
 
@@ -146,7 +151,11 @@ class Notifier(QObject):
             _dictionary(hints),
             str(TIMEOUT_MS),
         )
-        return _first_id(result)
+        if result.ok:
+            return _first_id(result.stdout)
+        if "ExcessNotificationGeneration" in result.stderr:
+            return REPEATED
+        return 0
 
     def send_async(self, summary: str, body: str, on_done=None, **options) -> None:
         """send(), on a worker: gdbus is a process per notification."""
@@ -164,7 +173,7 @@ class Notifier(QObject):
 
     # -- plumbing ------------------------------------------------------------
 
-    def _gdbus(self, method: str, *args: str) -> str:
+    def _gdbus(self, method: str, *args: str) -> Result:
         """Call the notification server through gdbus."""
         result = run(
             [
@@ -178,8 +187,7 @@ class Notifier(QObject):
         )
         if not result.ok:
             log.debug("gdbus %s failed: %s", method, result.text.strip()[:200])
-            return ""
-        return result.stdout.strip()
+        return result
 
     def _call(self, method: str, *args: object) -> "QDBusMessage | None":
         if not HAVE_QTDBUS or not self._bus.isConnected():

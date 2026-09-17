@@ -56,6 +56,9 @@ class Popups(QObject):
         #: And back, so a second message in one chat replaces its own popup
         #: instead of stacking another identical one.
         self._by_phone: dict[str, int] = {}
+        #: Phone ids with a send in flight, each holding a newer post that
+        #: arrived meanwhile, if any, to go out once the server's id is known.
+        self._sending: dict[str, Notification | None] = {}
         #: Tray messages waiting to be shown together.
         self._tray_queue: list[Notification] = []
         self._tray_timer = QTimer(self)
@@ -115,6 +118,12 @@ class Popups(QObject):
 
     def _show_rich(self, note: Notification) -> None:
         """Through the desktop's own server, with something to press."""
+        if note.id in self._sending:
+            # Posted again before the first send returned: wait for its id,
+            # so this one replaces the popup instead of stacking a second.
+            self._sending[note.id] = note
+            return
+        self._sending[note.id] = None
         summary = note.title or note.app or "Phone"
         body = note.text or ""
         if note.title and note.app:
@@ -123,12 +132,17 @@ class Popups(QObject):
             body = f"{body}\n{note.app}" if body else note.app
 
         def raised(given: int) -> None:
-            if not given:
+            newer = self._sending.pop(note.id, None)
+            if given == notify.REPEATED:
+                pass                    # the popup already up says the same
+            elif not given:
                 self._show_tray(note)
-                return
-            self._live[given] = note.id
-            self._by_phone[note.id] = given
-            self._trim()
+            else:
+                self._live[given] = note.id
+                self._by_phone[note.id] = given
+                self._trim()
+            if newer is not None:
+                self._show_rich(newer)
 
         self.notifier.send_async(
             summary[:120],
