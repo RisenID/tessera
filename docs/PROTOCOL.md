@@ -185,7 +185,9 @@ a virtual source (Linux) or a chosen output (Windows).
 ## The phone as a remote
 
 The phone's remote screen sends `{"t":"input","k":...}` events, nothing awaited:
-`move` (`dx`,`dy` pixels), `scroll` (`dx`,`dy`), `click` (`b`: left|middle|right),
+`move` (`dx`,`dy` in millimetres of finger travel, from the phone's DPI; the
+desktop scales them to its own screen), `scroll` (`dx`,`dy`, the same units),
+`click` (`b`: left|middle|right),
 `button` (`b`,`down`), `key` (`name`: enter, backspace, tab, escape, arrows,
 pageup/pagedown, home/end, f5, play/next/previous, volumeup/volumedown/mute) and
 `text` (`text`). The desktop injects them through the RemoteDesktop portal or

@@ -198,13 +198,14 @@ def android_sdk(serial: str) -> int:
 
 
 def wifi_ip(serial: str) -> str:
-    """The phone's current WLAN IPv4 address, or '' if it is not on Wi-Fi."""
-    ok, out = try_shell(serial, "ip -4 addr show wlan0")
+    """The phone's current IPv4 address on the network it routes through, or ''."""
+    # Whatever interface carries the default route, by whatever name this ROM gives it.
+    ok, out = try_shell(serial, "ip -4 route get 1.1.1.1")
     if ok:
-        match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", out)
+        match = re.search(r"\bsrc (\d+\.\d+\.\d+\.\d+)", out)
         if match:
             return match.group(1)
-    # Fall back to any non-loopback address, for ROMs that rename the interface.
+    # No route (no internet): any address the phone has.
     ok, out = try_shell(serial, "ip -4 -o addr show scope global")
     if ok:
         match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", out)

@@ -310,10 +310,14 @@ def usb_tether_interface_up(timeout: float = 25.0) -> str:
     """Wait for a USB tethering interface to get an address; return its name."""
     if platform.IS_WINDOWS:
         # Windows names the RNDIS adapter itself and brings it up without being
-        # asked; there is nothing to wait for beyond the address appearing.
+        # asked; there is nothing to wait for beyond an address appearing that
+        # was not there before. (Not a fixed subnet: ROMs choose their own.)
+        before = set(wifi_win.addresses())
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if any(a.startswith("192.168.42.") for a in wifi_win.addresses()):
+            fresh = [a for a in wifi_win.addresses()
+                     if a not in before and not a.startswith("169.254.")]
+            if fresh:
                 return "USB tethering"
             time.sleep(1.5)
         raise HotspotError(

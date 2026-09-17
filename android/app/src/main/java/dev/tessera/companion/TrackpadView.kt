@@ -30,6 +30,11 @@ class TrackpadView @JvmOverloads constructor(
     private val tapTimeout = ViewConfiguration.getTapTimeout().toLong()
     private val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
 
+    /** Pixels per millimetre of this screen, so travel is sent in millimetres
+     *  and the computer scales it to its own screen. */
+    private val pxPerMmX = resources.displayMetrics.xdpi / 25.4f
+    private val pxPerMmY = resources.displayMetrics.ydpi / 25.4f
+
     private var lastX = 0f
     private var lastY = 0f
     private var downX = 0f
@@ -78,8 +83,8 @@ class TrackpadView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 val x = event.getX(0)
                 val y = event.getY(0)
-                val dx = x - lastX
-                val dy = y - lastY
+                val dx = (x - lastX) / pxPerMmX
+                val dy = (y - lastY) / pxPerMmY
                 lastX = x
                 lastY = y
                 if (!moved && hypot(x - downX, y - downY) > slop) moved = true
@@ -135,9 +140,9 @@ class TrackpadView @JvmOverloads constructor(
 
     private companion object {
         const val BASE_GAIN = 1.0f
-        /** Extra gain per pixel-per-millisecond of finger speed. */
-        const val ACCELERATION = 0.6f
-        /** Pixels per millisecond past which gain stops rising (about 2.8x). */
-        const val SPEED_CAP = 3f
+        /** Extra gain per millimetre-per-millisecond of finger speed. */
+        const val ACCELERATION = 11f
+        /** Finger speed, mm/ms, past which gain stops rising (about 2.8x). */
+        const val SPEED_CAP = 0.16f
     }
 }

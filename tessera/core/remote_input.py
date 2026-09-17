@@ -11,6 +11,11 @@ from . import platform
 
 log = logging.getLogger(__name__)
 
+#: Millimetres of finger travel that cross this screen at base gain. The phone
+#: accelerates fast moves up to about 2.8x, so a flick across a typical 65 mm
+#: trackpad still spans the whole screen.
+SPAN_MM = 160.0
+
 
 class RemoteInput(QObject):
     """Turns the phone's remote-screen events into input here."""
@@ -77,14 +82,33 @@ class RemoteInput(QObject):
         for event in queued:
             self._apply(event)
 
+    def _scale(self) -> float:
+        """Pixels here per millimetre of finger travel on the phone.
+
+        Sized to this screen rather than to any particular phone or monitor:
+        SPAN_MM of finger crosses the screen at base gain, whatever its size.
+        """
+        from PySide6.QtGui import QGuiApplication
+
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return 4.0
+        width = screen.size().width()
+        if platform.REAL == "windows":
+            # SendInput moves in physical pixels; the portal in logical ones.
+            width *= screen.devicePixelRatio()
+        return width / SPAN_MM
+
     def _apply(self, event: dict) -> None:
         backend = self._backend
         kind = event.get("k")
         try:
             if kind == "move":
-                backend.move(float(event.get("dx", 0)), float(event.get("dy", 0)))
+                scale = self._scale()
+                backend.move(float(event.get("dx", 0)) * scale, float(event.get("dy", 0)) * scale)
             elif kind == "scroll":
-                backend.scroll(float(event.get("dx", 0)), float(event.get("dy", 0)))
+                scale = self._scale()
+                backend.scroll(float(event.get("dx", 0)) * scale, float(event.get("dy", 0)) * scale)
             elif kind == "click":
                 backend.click(str(event.get("b", "left")))
             elif kind == "button":
