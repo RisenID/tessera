@@ -31,6 +31,10 @@ CASES = [
      "on your card ending 1234.", "123456"),
     ("Your one-time passcode is 123456 (expires in 5 min) - Ref 987654", "123456"),
     ("Tap to copy 123456", "123456"),
+    # The keyword far ahead of the code, and a full stop after it.
+    ("Dear Customer, The OTP for Reference No 1x2y3z is 123456. Please complete your "
+     "Funds Transfer Transaction to Beneficiary Test for amount 1000.00 INR with "
+     "the OTP.-Bank of Testing", "123456"),
     # Not passcodes.
     ("Order 12345678 shipped. Track at 10:30", None),
     ("Your bill of Rs. 2345 is due on 2026-09-20", None),

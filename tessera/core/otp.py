@@ -42,6 +42,10 @@ _STRONG_AFTER = re.compile(
 #: as in "Use 12345 to verify your account".
 _ENTER_BEFORE = re.compile(r"\b(?:use|enter|type|input|submit)\s+$", re.IGNORECASE)
 
+#: "The OTP for Reference No 9b59684b69ac62 is 482913": the keyword sits well
+#: before the code, but "is" right before it still says which number is meant.
+_IS_BEFORE = re.compile(r"\bis\W{0,3}$", re.IGNORECASE)
+
 #: A run of digits, an alphanumeric block that contains at least one digit, or
 #: two groups of three ("123-456", "123 456").
 _CANDIDATE = re.compile(r"\b(?=[A-Z0-9-]*\d)([0-9]{4,8}|[A-Z0-9]{5,8}|\d{3}[ -]\d{3})\b")
@@ -102,6 +106,8 @@ def _score(token: str, text: str, start: int, end: int, base: int) -> int:
     if _STRONG_AFTER.search(after):
         score += 4
     if _ENTER_BEFORE.search(before):
+        score += 2
+    elif base > 0 and _IS_BEFORE.search(before) and not _STRONG_BEFORE.search(before):
         score += 2
 
     digits = sum(character.isdigit() for character in token)
