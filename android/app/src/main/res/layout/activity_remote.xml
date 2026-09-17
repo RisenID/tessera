@@ -61,7 +61,7 @@
         <Button android:id="@+id/mediaVolumeUp" style="@style/Widget.Tessera.Key" android:text="🔊" />
     </LinearLayout>
 
-    <dev.tessera.companion.TrackpadView
+    <dev.risenid.tessera.TrackpadView
         android:id="@+id/trackpad"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -113,7 +113,7 @@
         android:layout_marginBottom="12dp"
         android:hint="@string/remote_type_hint">
 
-        <dev.tessera.companion.RemoteEditText
+        <dev.risenid.tessera.RemoteEditText
             android:id="@+id/typeBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

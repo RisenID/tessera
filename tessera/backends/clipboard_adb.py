@@ -11,8 +11,8 @@ from ..core import platform
 
 log = logging.getLogger(__name__)
 
-PACKAGE = "dev.tessera.companion"
-HELPER = "dev.tessera.companion.shell.ClipboardHelper"
+PACKAGE = "dev.risenid.tessera"
+HELPER = "dev.risenid.tessera.shell.ClipboardHelper"
 
 
 def helper_command() -> str:

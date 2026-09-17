@@ -251,8 +251,8 @@ Background apps can't read the clipboard, so the first available route is used:
    change callbacks:
 
    ```
-   adb shell -T 'CLASSPATH=$(pm path dev.tessera.companion | head -n 1 | cut -d: -f2) \
-       exec app_process / dev.tessera.companion.shell.ClipboardHelper'
+   adb shell -T 'CLASSPATH=$(pm path dev.risenid.tessera | head -n 1 | cut -d: -f2) \
+       exec app_process / dev.risenid.tessera.shell.ClipboardHelper'
    ```
 
    JSON lines: `{"t":"clip","text"}` out; `{"t":"set","text"}`, `{"t":"get"}` in;

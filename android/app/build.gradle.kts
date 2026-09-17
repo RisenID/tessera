@@ -36,11 +36,11 @@ fun firstAlias(keystore: File, password: String): String {
 }
 
 android {
-    namespace = "dev.tessera.companion"
+    namespace = "dev.risenid.tessera"
     compileSdk = 37        // Android 17
 
     defaultConfig {
-        applicationId = "dev.tessera.companion"
+        applicationId = "dev.risenid.tessera"
         minSdk = 29        // Android 10: MediaStore and Camera2 behave consistently from here
 
         // Deliberately 36, not 37, while compiling against 37.

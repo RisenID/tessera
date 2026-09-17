@@ -558,7 +558,7 @@ class Hub(QObject):
             if serial:
                 # Android 15 hides one-time codes from the companion without this.
                 submit(adb.try_shell, serial,
-                       "appops set dev.tessera.companion RECEIVE_SENSITIVE_NOTIFICATIONS allow",
+                       "appops set dev.risenid.tessera RECEIVE_SENSITIVE_NOTIFICATIONS allow",
                        on_error=lambda message: log.debug("sensitive notifications: %s", message))
 
     def update_clipboard_route(self) -> None:

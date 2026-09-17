@@ -165,7 +165,7 @@ def helper_lines(app: QApplication) -> None:
     helper.changed.connect(seen.append)
     helper.runningChanged.connect(states.append)
 
-    helper.feed(b"Error: Could not find class 'dev.tessera.companion.shell.ClipboardHelper'")
+    helper.feed(b"Error: Could not find class 'dev.risenid.tessera.shell.ClipboardHelper'")
     check("adb's own complaints are not taken for the helper", not helper.running and not seen)
     helper.feed(b'{"t":"ready","sdk":37,"listening":true}')
     check("ready means running", helper.running and states == [True], str(states))
@@ -177,7 +177,7 @@ def helper_lines(app: QApplication) -> None:
     command = clipboard_adb.argv("192.168.1.5:5555")
     check("adb without a terminal, so nothing is echoed or mangled", "-T" in command, str(command))
     check("the helper comes out of the installed APK",
-          "pm path dev.tessera.companion" in command[-1] and "app_process" in command[-1])
+          "pm path dev.risenid.tessera" in command[-1] and "app_process" in command[-1])
 
 
 def hub_wiring(app: QApplication) -> None:

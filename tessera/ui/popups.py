@@ -27,7 +27,7 @@ ICON_WAIT_MS = 1500
 #: Notifications from these are noise on a desktop: they are about the phone
 #: talking to this computer, which the app already shows.
 QUIET_PACKAGES = frozenset({
-    "dev.tessera.companion",
+    "dev.risenid.tessera",
     "com.android.systemui",
 })
 

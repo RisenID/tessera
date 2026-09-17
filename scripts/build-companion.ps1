@@ -69,9 +69,9 @@ $out = adb -s $serial install -r $apk 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) {
     Write-Host $out -ForegroundColor Red
     if ($out -match 'UPDATE_INCOMPATIBLE') {
-        Write-Host "The installed app has a different signature. Uninstall it first (this clears`npairing and permissions): adb -s $serial uninstall dev.tessera.companion" -ForegroundColor Yellow
+        Write-Host "The installed app has a different signature. Uninstall it first (this clears`npairing and permissions): adb -s $serial uninstall dev.risenid.tessera" -ForegroundColor Yellow
     }
     exit 1
 }
-$installed = adb -s $serial shell dumpsys package dev.tessera.companion | Select-String 'versionName=(\S+)' | Select-Object -First 1
+$installed = adb -s $serial shell dumpsys package dev.risenid.tessera | Select-String 'versionName=(\S+)' | Select-Object -First 1
 Write-Host "Installed version $($installed.Matches[0].Groups[1].Value)" -ForegroundColor Green

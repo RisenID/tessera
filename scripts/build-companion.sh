@@ -69,10 +69,10 @@ if ! OUT="$(adb -s "$SERIAL" install -r "$APK" 2>&1)"; then
     printf '%s\n' "$OUT" >&2
     if grep -q UPDATE_INCOMPATIBLE <<<"$OUT"; then
         printf '\nThe installed app has a different signature. Uninstall it first (this clears\n' >&2
-        printf 'pairing and permissions): adb -s %s uninstall dev.tessera.companion\n' "$SERIAL" >&2
+        printf 'pairing and permissions): adb -s %s uninstall dev.risenid.tessera\n' "$SERIAL" >&2
     fi
     exit 1
 fi
 printf 'Installed version %s\n' \
-    "$(adb -s "$SERIAL" shell dumpsys package dev.tessera.companion |
+    "$(adb -s "$SERIAL" shell dumpsys package dev.risenid.tessera |
        sed -n 's/.*versionName=//p' | head -1 | tr -d '\r')"
