@@ -1,12 +1,12 @@
 ; Inno Setup script for Tessera.
 ;
-;   iscc packaging\windows\tessera.iss /DVersion=2.0.0
+;   iscc packaging\windows\tessera.iss /DVersion=2.1.0
 ;
 ; Per user, no elevation. The app is self-contained; the tools it drives are
 ; installed afterwards with winget (adb's licence rules out bundling).
 
 #ifndef Version
-  #define Version "2.0.0"
+  #define Version "2.1.0"
 #endif
 
 #define AppName "Tessera"

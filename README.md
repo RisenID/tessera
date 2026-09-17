@@ -26,8 +26,41 @@ Windows support and its gaps are in [docs/WINDOWS.md](docs/WINDOWS.md).
 | Webcam | Phone H.264 → ffmpeg → v4l2loopback | Companion app |
 | Hotspot | Tethering binder through Shizuku | Shizuku |
 | Screen mirroring, app windows | scrcpy | adb |
+| Links and notifications to the phone; links from the phone open here | `open_url`, `notify`; the share sheet | Companion app |
+| A photo taken with the phone from here | Camera2 still capture | Camera |
+| The phone as this computer's microphone | AudioRecord → a virtual source (a chosen output on Windows) | Microphone |
+| Calendar, next alarm, timers and alarms | CalendarContract, AlarmManager, the clock app | Calendar |
+| Photo backup as photos are taken | MediaStore observer → `media_get` | Photos |
+| A saved Wi-Fi network sent to the phone | nmcli / netsh → `ACTION_WIFI_ADD_NETWORKS` | Companion app |
+| The phone as a trackpad, keyboard and media remote | RemoteDesktop portal (Linux) / SendInput (Windows) | Companion app |
+| Typing into the phone from here | Shizuku, the accessibility service, or adb | One of those |
+| Lock when the phone walks away | Bluetooth LE beacon, watched by BlueZ / WinRT | Presence |
+| Plasma applet, tray tooltip and menu | `tessera status --json` | The app |
 
 KDE Connect is used as a fallback source until the companion app is paired.
+
+## Command line
+
+The running app answers `tessera <command>` over a local socket
+(`tessera-cli.exe` on Windows, where the main executable has no console):
+
+```
+tessera status [--json]      the phone: connection, battery, signal, ringer, media, code
+tessera notify TEXT [-t T]   a notification on the phone
+tessera sms NUMBER TEXT      a text message from the phone
+tessera send FILE...         files to the phone
+tessera open [URL]           a link on the phone (the clipboard's when omitted)
+tessera type TEXT [--enter]  into whatever has focus on the phone
+tessera photo [PATH]         a photo with the phone's camera, saved here
+tessera mic on|off           the phone as this computer's microphone
+tessera timer 5m [LABEL]     a timer on the phone; tessera alarm 07:30
+tessera wifi [SSID]          a saved network to the phone
+tessera copy TEXT            onto this computer's clipboard
+tessera ring | show | lock
+```
+
+Dolphin gets a "Send to phone" entry and links an "Open on phone" application;
+Windows gets Send to → Phone (Tessera).
 
 ## Install
 

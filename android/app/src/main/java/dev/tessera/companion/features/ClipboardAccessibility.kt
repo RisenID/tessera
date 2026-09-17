@@ -95,10 +95,13 @@ class ClipboardAccessibility : AccessibilityService() {
         return node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
-    /** The keyboard's Enter, on the focused field. */
+    /** The keyboard's Enter, on the focused field. Android 11 and later. */
     fun pressEnter(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return false
         val node = focusedEditable() ?: return false
-        return node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_IME_ENTER)
+        return node.performAction(
+            android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+        )
     }
 
     private fun focusedEditable(): android.view.accessibility.AccessibilityNodeInfo? {

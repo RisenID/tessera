@@ -162,6 +162,47 @@ Icons: `{"t":"icon_get","icon":"<id>"}` → header + PNG.
 | `{"t":"app_list"}` | Launchable apps |
 | `{"t":"app_launch","package"}` | Open an app on the phone |
 
+## From the computer to the phone
+
+| Message | Effect |
+| --- | --- |
+| `{"t":"notify","title","text"}` | Show a notification on the phone; the computer's name is the fallback title. Cap `notify` |
+| `{"t":"open_url","url"}` | Open a web, mail, phone or map link on the phone. Cap `open_url` |
+| `{"t":"type","text","enter"}` | Type into the focused field, through Shizuku or the accessibility service. Cap `type` |
+| `{"t":"wifi_add","ssid","password","security"}` | Offer a network (`open`, `wpa2`, `wpa3`) for the phone to save; Android asks first. Cap `wifi_add` |
+| `{"t":"timer_set","seconds","label"}` / `{"t":"alarm_set","hour","minute","label"}` | Through the clock app. Cap `alarms` |
+| `{"t":"alarm_next"}` | `{"time"}` in epoch ms, 0 for none |
+| `{"t":"calendar_events","days"}` | `items` of `{"id","title","begin","end","allDay","location","calendar"}`. Cap `calendar` |
+| `{"t":"capture","facing","cameraId"}` | One photo: `{"t":"photo","format":"jpeg","binary":true}` + JPEG. Cap `capture` |
+
+## The phone's microphone
+
+`{"t":"mic_start"}` → `{"t":"mic_started","codec":"pcm_s16le","rate":48000,"channels":1,"frameBytes"}`,
+then `{"t":"mic_frame","binary":true}` + 20 ms of PCM per frame; `{"t":"mic_stop"}`
+stops it and `{"t":"mic_stopped"}` says so. Cap `mic`. The desktop plays it into
+a virtual source (Linux) or a chosen output (Windows).
+
+## The phone as a remote
+
+The phone's remote screen sends `{"t":"input","k":...}` events, nothing awaited:
+`move` (`dx`,`dy` pixels), `scroll` (`dx`,`dy`), `click` (`b`: left|middle|right),
+`button` (`b`,`down`), `key` (`name`: enter, backspace, tab, escape, arrows,
+pageup/pagedown, home/end, f5, play/next/previous, volumeup/volumedown/mute) and
+`text` (`text`). The desktop injects them through the RemoteDesktop portal or
+SendInput. Cap `remote_input`.
+
+## Presence
+
+`{"t":"beacon_start"}` → `{"advertising":true,"uuid","tag"}`: the phone advertises
+a Bluetooth LE beacon with that service UUID and, in the scan response, the
+first eight characters of its device id as service data. The desktop scans for
+it and reads the RSSI. `{"t":"beacon_stop"}` ends it. Cap `beacon`.
+
+## Media library changes
+
+With the `media` topic subscribed, `{"t":"media_changed"}` arrives a few seconds
+after photos or videos are added or removed, for the desktop's backup.
+
 ## Camera
 
 `camera_start` → `{"t":"camera_started","codec":"h264","sps_pps":"<base64>"}`,

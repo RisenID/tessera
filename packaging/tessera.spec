@@ -6,7 +6,7 @@
 %{!?__python3: %global __python3 /usr/bin/python3}
 
 Name:           tessera
-Version:        2.0.0
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        Android phone companion: notifications, messages, photos, screen and webcam
 
@@ -110,6 +110,11 @@ install -Dm0644 packaging/tessera-sendto.desktop \
 install -Dm0644 packaging/%{appid}.metainfo.xml \
     %{buildroot}%{_metainfodir}/%{appid}.metainfo.xml
 
+# The Plasma applet: the phone in the system tray, driven by the tessera command.
+install -d %{buildroot}%{_datadir}/plasma/plasmoids
+cp -a packaging/plasmoid/dev.tessera.plasmoid \
+    %{buildroot}%{_datadir}/plasma/plasmoids/dev.tessera.plasmoid
+
 install -Dm0644 packaging/icons/%{appid}.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
 
@@ -156,6 +161,7 @@ print('all modules import')"
 %{_datadir}/applications/%{appid}.OpenOnPhone.desktop
 %{_datadir}/kio/servicemenus/tessera-sendto.desktop
 %{_metainfodir}/%{appid}.metainfo.xml
+%{_datadir}/plasma/plasmoids/dev.tessera.plasmoid/
 %{_datadir}/icons/hicolor/scalable/apps/%{appid}.svg
 %{_prefix}/lib/modprobe.d/tessera-v4l2loopback.conf
 %{_datadir}/wireplumber/wireplumber.conf.d/51-tessera-bluez.conf
@@ -163,6 +169,16 @@ print('all modules import')"
 %{_bindir}/tessera-ldac-decoder
 
 %changelog
+* Thu Sep 17 2026 RisenID - 2.1.0-1
+- The tessera command and a command socket: notify, sms, send, open, type, photo, mic, timer, alarm, wifi, status.
+- Links and notifications to the phone; links shared from the phone open here; Open on phone and Send to phone entries.
+- A photo taken with the phone from here; the phone as a virtual microphone.
+- Calendar and the next alarm on the overview; timers and alarms set from here.
+- New photos backed up as they are taken; a saved Wi-Fi network sent to the phone.
+- The phone as a trackpad, keyboard and media remote; typing into the phone.
+- Lock the computer when the phone walks away, by Bluetooth beacon.
+- A Plasma applet, and richer tray tooltip and menu. One popup per notification.
+
 * Mon Sep 14 2026 RisenID - 2.0.0-1
 - Version 2.
 

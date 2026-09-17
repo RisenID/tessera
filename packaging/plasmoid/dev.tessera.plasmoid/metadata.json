@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Tessera contributors"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Your phone: battery, signal, passcodes; drop files here to send them",
+        "EnabledByDefault": true,
+        "Icon": "dev.tessera.Tessera",
+        "Id": "dev.tessera.plasmoid",
+        "License": "GPL-3.0-only",
+        "Name": "Tessera",
+        "Version": "2.1.0",
+        "Website": "https://github.com/risen/tessera"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "Hardware"
+}

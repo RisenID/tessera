@@ -16,6 +16,16 @@ reason (`core/platform.py`).
 - Battery, signal, ringer, phone DND, wallpaper
 - Hotspot (`netsh`), screen mirroring and app windows (scrcpy, adb)
 - Start at login
+- `tessera-cli.exe` for the command line; Send to → Phone (Tessera) in Explorer
+- Links and notifications to the phone; a photo taken from here; calendar,
+  timers and alarms; photo backup; a saved network sent to the phone (`netsh
+  wlan show profile key=clear`)
+- The phone as a trackpad and keyboard (`SendInput`)
+- Lock when the phone walks away (`BluetoothLEAdvertisementWatcher`, `LockWorkStation`)
+- The phone's microphone, played into an output of your choice: with a virtual
+  cable such as VB-CABLE installed, pick its input as the output here and its
+  output is the microphone in other programs. Windows has no virtual
+  microphone without a driver.
 
 ## Missing
 
@@ -26,6 +36,7 @@ reason (`core/platform.py`).
 | Reply in popups, media flyout | Not written (WinRT toasts, SMTC) |
 | Desktop → phone DND | No API for Focus Assist |
 | KDE Connect | D-Bus only |
+| Plasma applet | Plasma only; the tray tooltip and menu carry the same |
 
 ## Bluetooth
 

@@ -34,6 +34,7 @@ class Presence(QObject):
         self.message = ""
         self._watcher = None
         self._reading = False
+        self.fresh_seconds = FRESH_SECONDS
         self._last_heard = 0.0
         self._last_near = 0.0
         #: Set once the phone has been near since the last lock, so a phone
@@ -120,7 +121,7 @@ class Presence(QObject):
                 self._armed = True
                 self._set("near", rssi, "")
                 return
-        heard = now - self._last_heard < FRESH_SECONDS
+        heard = now - self._last_heard < self.fresh_seconds
         away_for = now - self._last_near
         if away_for < self.config.away_seconds and self._last_near:
             # Briefly weak: not yet away.
