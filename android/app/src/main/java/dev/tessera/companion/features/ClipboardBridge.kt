@@ -51,6 +51,19 @@ object ClipboardBridge {
             .onFailure { Log.w(TAG, "could not write the clipboard", it) }.getOrDefault(false)
     }
 
+    /**
+     * Asks the clipboard service to call back on a change, through Shizuku, so
+     * nothing has to poll. False when this Android's service has no listener
+     * overload we can fill, in which case the watcher falls back to polling.
+     */
+    fun listen(onChange: () -> Unit): Boolean {
+        if (!viaShizuku()) return false
+        val service = clipboardService() ?: return false
+        return runCatching { ClipboardCalls.listen(service, CALLER, onChange, BYPASS) }
+            .onFailure { Log.i(TAG, "no clipboard listener on this Android: ${it.message}") }
+            .getOrDefault(false)
+    }
+
     private fun clipboardService(): Any? = runCatching {
         val binder: IBinder =
             ShizukuBinderWrapper(SystemServiceHelper.getSystemService(Context.CLIPBOARD_SERVICE))

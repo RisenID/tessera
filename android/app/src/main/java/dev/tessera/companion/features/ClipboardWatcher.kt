@@ -34,20 +34,32 @@ object ClipboardWatcher {
     val watching: Boolean
         get() = users > 0
 
+    /** The service calls back on a change; polling is only for an Android without that. */
+    private var listening = false
+
     @Synchronized
     fun addUser(context: Context? = null) {
         users++
         if (context != null) watchScreen(context)
-        // Polling is for Shizuku only.
-        if (executor == null && ClipboardBridge.viaShizuku()) {
+        // Both routes are for Shizuku only; the accessibility route is event-driven already.
+        if (executor == null && !listening && ClipboardBridge.viaShizuku()) {
             lastSeen = ClipboardBridge.read()
+            // A callback costs nothing between copies; a poll every two seconds
+            // kept the CPU waking all day.
+            listening = ClipboardBridge.listen {
+                Thread({ if (screenOn) poll() }, "tessera-clip-change").start()
+            }
+            if (listening) {
+                Log.i(TAG, "watching the clipboard through the service")
+                return
+            }
             executor = Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "tessera-clipboard")
             }.also {
                 it.scheduleWithFixedDelay(
                     ::poll, INTERVAL_SECONDS, INTERVAL_SECONDS, TimeUnit.SECONDS
                 )
-                Log.i(TAG, "watching the clipboard")
+                Log.i(TAG, "polling the clipboard")
             }
         }
     }

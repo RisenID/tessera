@@ -196,7 +196,11 @@ class Session(
             "auth" -> {
                 if (store.isKnown(message.optString("token"))) {
                     authenticated = true
-                    runCatching { socket.soTimeout = 0 }
+                    // The desktop pings every 30 s. A desktop that falls silent
+                    // for three of those is gone, and its listeners (signal
+                    // strength, battery, clipboard) must not keep the phone
+                    // awake for a link nobody is on.
+                    runCatching { socket.soTimeout = IDLE_MS }
                     token = message.optString("token")
                     role = message.optString("role")
                     computerName = message.optString("name")
@@ -1154,6 +1158,7 @@ class Session(
 
         /** An unauthenticated connection gets this long to finish the handshake. */
         private const val HANDSHAKE_MS = 20_000
+        private const val IDLE_MS = 100_000
 
         /** Media frames the writer may hold before new ones are dropped. */
         private const val MEDIA_QUEUE_LIMIT = 6

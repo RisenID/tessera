@@ -48,14 +48,17 @@ class HomePage(QWidget):
 
     openPage = Signal(str)      # ask the window to switch to a full page
 
-    #: Tiles are refreshed together rather than each on its own timer.
-    REFRESH_MS = 8000
+    #: How often the "x min ago" labels are redrawn from what is already here.
+    #: Nothing is asked of the phone on this timer: the call log only changes
+    #: when a call ends, and callChanged already says when.
+    REFRESH_MS = 60_000
 
     def __init__(self, hub: Hub, palette: Palette, parent: QWidget | None = None):
         super().__init__(parent)
         self.hub = hub
         self.palette_tokens = palette
         self._thumbs: dict[str, QPixmap] = {}
+        self._calls: list[dict] = []
         self._photo_items: list[dict] = []
         self._full: dict[str, bytes] = {}
         self.viewer = None
@@ -134,11 +137,13 @@ class HomePage(QWidget):
 
     def refresh_light(self) -> None:
         """Times move on even when nothing changes."""
-        self.refresh_calls()
+        if self._calls:
+            self._render_calls(self._calls)
 
     def refresh_calls(self) -> None:
         tile = self.calls_tile
         if not self.hub.companion.connected:
+            self._calls = []
             tile.clear()
             tile.add_placeholder("Connect your phone to see calls.", self.palette_tokens)
             return
@@ -147,6 +152,7 @@ class HomePage(QWidget):
         )
 
     def _render_calls(self, items: list) -> None:
+        self._calls = list(items)
         tile = self.calls_tile
         tile.clear()
         missed = sum(1 for c in items if c.get("kind") == "missed")

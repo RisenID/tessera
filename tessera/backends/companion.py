@@ -348,10 +348,16 @@ class CompanionClient(QObject):
     #: Backoff schedule for reconnection, in seconds.
     RETRY_DELAYS = (2, 5, 10, 20, 30, 60)
 
-    #: How often to prove the link is alive, and how long to
-    #: wait for the reply.
-    HEARTBEAT_MS = 15_000
+    #: How often to prove the link is alive, and how long to wait for the
+    #: reply. Every ping wakes the phone's radio; the phone drops a link that
+    #: is silent for a hundred seconds, so this must stay well under that.
+    HEARTBEAT_MS = 30_000
     HEARTBEAT_GRACE = 2
+
+    #: The subnet sweep opens a connection to every address on the network.
+    #: Worth it when the phone has just moved; not every minute for a phone
+    #: that is simply away.
+    SWEEP_EVERY = 5
 
     #: How long to wait for one address before moving to the next.
     CONNECT_TIMEOUT_MS = 6_000
@@ -471,8 +477,9 @@ class CompanionClient(QObject):
         saved_host, saved_port = self.phone.host, self.phone.port or DEFAULT_PORT
         device_id = self.phone.device_id
         # A sweep on the first try would delay a connection that was going to
-        # work anyway; from the second it is exactly what is needed.
-        sweep = self._resolutions > 1
+        # work anyway; the second is exactly when it is needed, and after that
+        # only now and then.
+        sweep = self._resolutions == 2 or self._resolutions % self.SWEEP_EVERY == 0
 
         def work() -> tuple[list[tuple[str, int]], set[tuple[str, int]]]:
             networks = local_networks()

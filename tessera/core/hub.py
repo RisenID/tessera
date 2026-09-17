@@ -89,6 +89,10 @@ class Hub(QObject):
     #: How many shared texts to keep for the Share page.
     SHARED_TEXTS = 50
 
+    #: How often adb and the Bluetooth link are looked at. Each look is a few
+    #: subprocesses, which on a laptop is the difference between an idle CPU
+    #: and one that never quite sleeps.
+    POLL_MS = 30_000
     #: How often to try bringing adb back. A failed connect costs seconds, and
     #: the phone is usually simply not listening, so this is deliberately slow.
     ADB_RETRY_SECONDS = 60.0
@@ -228,7 +232,7 @@ class Hub(QObject):
             # not working. Not immediately, because the window is still being
             # built and bluetoothctl is a subprocess.
             QTimer.singleShot(1_500, self._watch_bluetooth)
-        self._serial_timer.start(15_000)
+        self._serial_timer.start(self.POLL_MS)
 
     # -- persistence ---------------------------------------------------------
 

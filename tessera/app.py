@@ -101,11 +101,13 @@ def main(argv: list[str] | None = None) -> int:
     hub.dnd.start()
 
     # Let Ctrl+C through: without a timer, Python signal handlers never run
-    # while Qt owns the event loop.
-    signal.signal(signal.SIGINT, lambda *_: window._quit())
+    # while Qt owns the event loop. Only from a terminal: a packaged build has
+    # no Ctrl+C to let through, and the tick would keep the CPU awake for it.
     heartbeat = QTimer()
-    heartbeat.start(400)
-    heartbeat.timeout.connect(lambda: None)
+    if not getattr(sys, "frozen", False):
+        signal.signal(signal.SIGINT, lambda *_: window._quit())
+        heartbeat.start(1000)
+        heartbeat.timeout.connect(lambda: None)
 
     try:
         code = app.exec()

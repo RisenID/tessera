@@ -44,7 +44,8 @@ A reconnecting computer replaces its older connection with the same token.
 Codes last 60 seconds and burn after five wrong guesses; a wrong code closes the
 connection. The desktop should show the certificate fingerprint for comparison
 with the phone. An unauthenticated connection has 20 seconds to finish the
-handshake. `caps` lists only what the user granted.
+handshake; an authenticated one that sends nothing for 100 seconds is dropped,
+so the desktop pings every 30 seconds. `caps` lists only what the user granted.
 
 ## Requests
 

@@ -26,9 +26,10 @@ log = logging.getLogger(__name__)
 PROVIDER = "Tessera"
 PHONE_ICON = r"%SystemRoot%\System32\imageres.dll,42"
 #: How often the phone is looked at for changes, as Sefirah does, backing off
-#: to the maximum while nothing changes and nobody is browsing.
+#: to the maximum while nothing changes and nobody is browsing. Every look is
+#: an SFTP listing the phone has to wake up for, so idle means minutes.
 WATCH_SECONDS = 2.0
-WATCH_MAX_SECONDS = 30.0
+WATCH_MAX_SECONDS = 180.0
 #: How long a folder listing or file open counts as someone browsing.
 ACTIVE_SECONDS = 60.0
 RECONNECT_SECONDS = 5.0

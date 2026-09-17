@@ -36,7 +36,8 @@ class AudioPage(QWidget):
     """One page for both Bluetooth audio roles, because they share a radio."""
 
     #: The phone's state changes from the phone's side, so poll while visible.
-    REFRESH_MS = 4000
+    #: Each poll is three or four subprocesses; a button press refreshes at once.
+    REFRESH_MS = 8000
     #: Polls of two seconds each spent waiting for the phone to start playing.
     WATCH_TICKS = 150
 
