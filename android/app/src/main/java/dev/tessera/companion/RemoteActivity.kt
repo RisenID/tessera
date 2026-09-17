@@ -1,5 +1,6 @@
 package dev.tessera.companion
 
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -22,6 +23,9 @@ class RemoteActivity : AppCompatActivity() {
 
     /** The token of the computer being driven. */
     private var target = ""
+
+    /** Wi-Fi power saving batches small packets; a trackpad is nothing but. */
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         DynamicColors.applyToActivityIfAvailable(this)
@@ -96,10 +100,16 @@ class RemoteActivity : AppCompatActivity() {
         super.onStart()
         TesseraService.onSessionsChanged = { runOnUiThread { renderTargets() } }
         renderTargets()
+        // Low-latency mode only applies while the app is in front, which this is.
+        wifiLock = getSystemService(WifiManager::class.java)
+            ?.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "tessera:remote")
+            ?.also { runCatching { it.acquire() } }
     }
 
     override fun onStop() {
         TesseraService.onSessionsChanged = null
+        wifiLock?.let { if (it.isHeld) runCatching { it.release() } }
+        wifiLock = null
         super.onStop()
     }
 

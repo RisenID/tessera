@@ -41,6 +41,7 @@ class TrackpadView @JvmOverloads constructor(
     private var lastTapAt = 0L
     private var pendingMove = 0f to 0f
     private var lastSent = 0L
+    private var lastMoveAt = 0L
 
     init {
         isClickable = true
@@ -56,6 +57,7 @@ class TrackpadView @JvmOverloads constructor(
                 lastX = event.x
                 lastY = event.y
                 downAt = event.eventTime
+                lastMoveAt = event.eventTime
                 // A second tap straight after the first, held down, drags.
                 if (event.eventTime - lastTapAt < doubleTapTimeout) {
                     dragging = true
@@ -79,10 +81,16 @@ class TrackpadView @JvmOverloads constructor(
                 if (fingers >= 2) {
                     listener?.onScroll(dx, dy)
                 } else {
-                    // Coalesce to roughly the screen's rate; the link is not a wire.
-                    pendingMove = (pendingMove.first + dx * GAIN) to (pendingMove.second + dy * GAIN)
+                    // Slow moves stay precise; a flick crosses the screen. Gain
+                    // rises with finger speed, as a laptop trackpad's does.
+                    val elapsed = (event.eventTime - lastMoveAt).coerceAtLeast(1L)
+                    val speed = hypot(dx, dy) / elapsed
+                    val gain = BASE_GAIN + ACCELERATION * minOf(speed, SPEED_CAP)
+                    pendingMove = (pendingMove.first + dx * gain) to (pendingMove.second + dy * gain)
+                    // One message per touch frame; the digitizer runs past 120 Hz.
                     if (event.eventTime - lastSent >= SEND_EVERY_MS) flush()
                 }
+                lastMoveAt = event.eventTime
             }
             MotionEvent.ACTION_POINTER_UP -> {
                 // Two fingers lifted together without moving: a right click.
@@ -121,7 +129,11 @@ class TrackpadView @JvmOverloads constructor(
     }
 
     private companion object {
-        const val GAIN = 1.4f
-        const val SEND_EVERY_MS = 12L
+        const val BASE_GAIN = 1.0f
+        /** Extra gain per pixel-per-millisecond of finger speed. */
+        const val ACCELERATION = 0.6f
+        /** Pixels per millisecond past which gain stops rising (about 2.8x). */
+        const val SPEED_CAP = 3f
+        const val SEND_EVERY_MS = 4L
     }
 }
