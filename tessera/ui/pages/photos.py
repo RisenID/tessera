@@ -81,6 +81,28 @@ def _date(item: dict) -> str:
     return datetime.fromtimestamp(when / 1000).strftime("%d %b %Y") if when else "Unknown date"
 
 
+def _month(item: dict) -> str:
+    """The section a photo belongs to in the grid."""
+    when = item.get("time", 0)
+    if not when:
+        return "Undated"
+    moment = datetime.fromtimestamp(when / 1000)
+    now = datetime.now()
+    if moment.year == now.year and moment.month == now.month:
+        return "This month"
+    return moment.strftime("%B %Y")
+
+
+try:  # pragma: no cover - depends on the Qt build
+    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+    from PySide6.QtMultimediaWidgets import QVideoWidget
+
+    HAVE_VIDEO = True
+except ImportError:  # pragma: no cover
+    QAudioOutput = QMediaPlayer = QVideoWidget = None
+    HAVE_VIDEO = False
+
+
 class Thumb(Card):
     """One item in the grid, filled in once its thumbnail arrives."""
 
@@ -155,6 +177,15 @@ class PhotoViewer(QDialog):
         self.image.setMinimumSize(1, 1)
         layout.addWidget(self.image, 1)
 
+        # Videos play here too, once the whole file has arrived: the phone
+        # sends it as one frame, and refuses one too large for that.
+        self._player = None
+        self._audio = None
+        self._buffer: QBuffer | None = None
+        self.video = QVideoWidget() if HAVE_VIDEO else QLabel("Videos cannot be played by this build of Qt.")
+        self.video.setVisible(False)
+        layout.addWidget(self.video, 1)
+
         bar = QHBoxLayout()
         bar.setContentsMargins(SPACE["lg"], 0, SPACE["lg"], 0)
         self.previous_button = QPushButton("‹ Previous")
@@ -200,14 +231,43 @@ class PhotoViewer(QDialog):
         self.copy_button.setVisible(not item.get("video"))
         self.previous_button.setEnabled(self.index > 0)
         self.next_button.setEnabled(self.index < len(self.items) - 1)
+        self._stop_video()
         # The thumbnail first, then the full picture once it arrives.
         self.set_pixmap(self.page.thumbnail(item))
-        if not item.get("video"):
-            self.page.fetch_full(
-                item,
-                lambda data, key=item.get("id"): self._on_full(key, data),
-                lambda message, key=item.get("id"): self._on_failed(key, message),
+        self.page.fetch_full(
+            item,
+            lambda data, key=item.get("id"): self._on_full(key, data),
+            lambda message, key=item.get("id"): self._on_failed(key, message),
+        )
+
+    def _stop_video(self) -> None:
+        if self._player is not None:
+            self._player.stop()
+            self._player.setSourceDevice(None)
+        self._buffer = None
+        self.video.setVisible(False)
+        self.image.setVisible(True)
+
+    def _play_video(self, data: bytes) -> None:
+        if not HAVE_VIDEO:
+            self.caption.setText("This build of Qt cannot play videos.")
+            return
+        if self._player is None:
+            self._player = QMediaPlayer(self)
+            self._audio = QAudioOutput(self)
+            self._player.setAudioOutput(self._audio)
+            self._player.setVideoOutput(self.video)
+            self._player.errorOccurred.connect(
+                lambda _e, text: self.caption.setText(text or "The video could not be played.")
             )
+        buffer = QBuffer(self)
+        buffer.setData(QByteArray(data))
+        buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+        self._buffer = buffer
+        self.image.setVisible(False)
+        self.video.setVisible(True)
+        self._player.setSourceDevice(buffer)
+        self._player.play()
 
     def _show_caption(self) -> None:
         item = self.item
@@ -222,6 +282,9 @@ class PhotoViewer(QDialog):
 
     def _on_full(self, media_id: str, data: bytes) -> None:
         if media_id != self.item.get("id"):
+            return
+        if self.item.get("video"):
+            self._play_video(data)
             return
         pixmap = load_pixmap(data)
         if not pixmap.isNull():
@@ -256,9 +319,19 @@ class PhotoViewer(QDialog):
         super().resizeEvent(event)
         self._rescale()
 
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._stop_video()
+        super().closeEvent(event)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802
         key = event.key()
-        if key in (Qt.Key.Key_Right, Qt.Key.Key_Down, Qt.Key.Key_Space):
+        if key == Qt.Key.Key_Space and self._player is not None and self.video.isVisible():
+            # Space pauses a video rather than skipping past it.
+            if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._player.pause()
+            else:
+                self._player.play()
+        elif key in (Qt.Key.Key_Right, Qt.Key.Key_Down, Qt.Key.Key_Space):
             self.step(1)
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_Up):
             self.step(-1)
@@ -276,6 +349,7 @@ class PhotosPage(QWidget):
         self.hub = hub
         self.palette_tokens = palette
         self._tiles: dict[str, Thumb] = {}
+        self._headers: list[QLabel] = []
         self._items: list[dict] = []
         self._full: dict[str, bytes] = {}
         self.viewer: PhotoViewer | None = None
@@ -332,6 +406,7 @@ class PhotosPage(QWidget):
             if widget is not None:
                 widget.deleteLater()
         self._tiles.clear()
+        self._headers = []
         self._items = list(items)
 
         for item in items:
@@ -390,7 +465,7 @@ class PhotosPage(QWidget):
         save_media(self, self.hub, self._full, item, self.toast, self.palette_tokens)
 
     def _place_tiles(self) -> None:
-        """As many tiles per row as the width holds, without scrolling sideways."""
+        """As many tiles per row as the width holds, in sections by month."""
         tiles = list(self._tiles.values())
         if not tiles:
             return
@@ -403,8 +478,29 @@ class PhotosPage(QWidget):
         self._columns = columns
         for tile in tiles:
             self.grid.removeWidget(tile)
-        for index, tile in enumerate(tiles):
-            self.grid.addWidget(tile, index // columns, index % columns)
+        for header in self._headers:
+            self.grid.removeWidget(header)
+            header.deleteLater()
+        self._headers = []
+
+        row, column, section = 0, 0, None
+        for tile in tiles:
+            month = _month(tile.item)
+            if month != section:
+                if column:
+                    row += 1
+                    column = 0
+                header = QLabel(month)
+                header.setObjectName("SectionTitle")
+                self.grid.addWidget(header, row, 0, 1, columns, Qt.AlignmentFlag.AlignLeft)
+                self._headers.append(header)
+                section = month
+                row += 1
+            self.grid.addWidget(tile, row, column)
+            column += 1
+            if column == columns:
+                row += 1
+                column = 0
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

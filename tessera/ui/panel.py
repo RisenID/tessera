@@ -1265,14 +1265,13 @@ class DevicePanel(QWidget):
         for row in self._rows:
             note = row.note
             keep[(note.id, note.when, note.text, row.avatar_size)] = row
-        want_codes = self.hub.config.features.otp
         rows: list[FeedRow] = []
         for note in notifications[:FEED_LIMIT]:
             row = keep.pop((note.id, note.when, note.text, avatar), None)
             if row is not None:
                 row.when_label.setText(note.time_text)      # "just now" ages
             else:
-                match = otp.find_code(note.body, note.app) if want_codes else None
+                match = otp.find_code(note.body, note.app) if self.hub.codes_wanted(note) else None
                 row = FeedRow(note, self.palette_tokens, self.hub.icons,
                               avatar=avatar, code=match.code if match else "")
                 row.opened.connect(lambda: self.pageRequested.emit("Notifications"))

@@ -81,6 +81,13 @@ class Hub(QObject):
     adbChanged = Signal(bool)
     #: The desktop's media applet asked to see the app.
     raiseRequested = Signal()
+    #: Something about the phone worth a popup: a title and a line.
+    alert = Signal(str, str)
+    #: Text arrived from the phone's share sheet.
+    textShared = Signal(str)
+
+    #: How many shared texts to keep for the Share page.
+    SHARED_TEXTS = 50
 
     #: How often to try bringing adb back. A failed connect costs seconds, and
     #: the phone is usually simply not listening, so this is deliberately slow.
@@ -159,6 +166,14 @@ class Hub(QObject):
         self._media_known = False
         self._media: dict[str, Any] = {}
         self._phone_status: dict[str, Any] = {}
+        #: Which battery alerts have been given for the current charge or discharge.
+        self._alerted_low = False
+        self._alerted_full = False
+        #: Whether music was playing here when the last call started.
+        self._streaming_before_call = False
+        self._call_was_live = False
+        #: Text from the phone's share sheet, newest first.
+        self.shared_texts: list[tuple[float, str]] = []
         self._hotspot_joined = False
         #: True between asking the phone for audio and it starting, so the
         #: interface can say "waiting for the phone" rather than nothing.
@@ -259,6 +274,7 @@ class Hub(QObject):
         self.companion.notificationRemoved.connect(self.remove_notification)
         self.companion.dndChanged.connect(self._on_phone_dnd)
         self.companion.clipboardChanged.connect(self.clipboard.apply_remote)
+        self.companion.textShared.connect(self._on_text_shared)
         self.companion.clipboardQueried.connect(self._answer_clipboard_query)
         # Whether the adb route is needed changes with what the phone offers.
         self.companion.connectedChanged.connect(lambda _c: self.update_clipboard_route())
@@ -1317,6 +1333,35 @@ class Hub(QObject):
     def _on_phone_status(self, message: dict) -> None:
         self._phone_status = {k: v for k, v in message.items() if k != "t"}
         self.phoneStatusChanged.emit(self._phone_status)
+        battery = message.get("battery")
+        if isinstance(battery, dict):
+            self._check_battery(battery)
+
+    def _check_battery(self, battery: dict) -> None:
+        """One popup per crossing: low while discharging, full while charging."""
+        level = battery.get("level")
+        if not isinstance(level, int) or level < 0:
+            return
+        charging = bool(battery.get("charging"))
+        alerts = self.config.alerts
+        name = self.phone_name
+        if charging:
+            self._alerted_low = False
+            if alerts.battery_full and level >= alerts.battery_full and not self._alerted_full:
+                self._alerted_full = True
+                self.alert.emit(f"{name} is charged", f"The battery is at {level}%.")
+        else:
+            self._alerted_full = False
+            if alerts.battery_low and level <= alerts.battery_low and not self._alerted_low:
+                self._alerted_low = True
+                self.alert.emit(f"{name} is running low", f"The battery is at {level}%.")
+
+    def _on_text_shared(self, text: str) -> None:
+        from time import time as now
+
+        self.shared_texts.insert(0, (now(), text))
+        del self.shared_texts[self.SHARED_TEXTS:]
+        self.textShared.emit(text)
 
     # -- media -----------------------------------------------------------------
 
@@ -1375,9 +1420,18 @@ class Hub(QObject):
             return
         state = message.get("state")
         if state in ("ringing", "active"):
+            if not self._call_was_live:
+                self._streaming_before_call = self._bluetooth_streaming
+            self._call_was_live = True
             submit(self._use_call_audio, on_error=lambda m: log.debug("call audio: %s", m))
-        elif state == "idle":
-            submit(self._use_music_audio, on_error=lambda m: log.debug("call audio: %s", m))
+        elif state == "idle" and self._call_was_live:
+            self._call_was_live = False
+            if self._streaming_before_call:
+                submit(self._use_music_audio, on_error=lambda m: log.debug("call audio: %s", m))
+            else:
+                # Music was on the phone before the call; leave it there rather
+                # than coming back from the call profile with A2DP claimed.
+                self.park_bluetooth_audio()
 
     def _use_call_audio(self) -> None:
         card = bt_audio.bluetooth_card(self.config.bluetooth.address)
@@ -1445,9 +1499,25 @@ class Hub(QObject):
                 ),
             )
 
+    def notification_apps(self) -> dict[str, str]:
+        """Package -> app name, for everything seen this session."""
+        return {n.package: n.app for n in self._notifications.values() if n.package}
+
+    def _hidden(self, note: Notification) -> bool:
+        return note.package in self.config.notification_rules.hidden
+
+    def apply_notification_rules(self) -> None:
+        """Drop what a new rule hides; the rest is judged as it arrives."""
+        hidden = [i for i, n in self._notifications.items() if self._hidden(n)]
+        for note_id in hidden:
+            self._notifications.pop(note_id, None)
+        self._notifications_changed()
+
     def _ingest_many(self, items: list[Any], raw: bool = True) -> None:
         for item in items:
             note = Notification.from_companion(item) if raw else item
+            if self._hidden(note):
+                continue
             self._notifications[note.id] = note
             self._sorted = None                 # before _check_otp reads the list
             self._check_otp(note)
@@ -1460,7 +1530,7 @@ class Hub(QObject):
         self._add(Notification.from_kdeconnect(note))
 
     def _add(self, note: Notification) -> None:
-        if not self.config.features.notifications:
+        if not self.config.features.notifications or self._hidden(note):
             return
         from time import time as now
 
@@ -1508,9 +1578,16 @@ class Hub(QObject):
 
     # -- one-time passcodes --------------------------------------------------
 
+    def codes_wanted(self, note: Notification) -> bool:
+        """Whether this notification may be scanned for a passcode."""
+        return (
+            self.config.features.otp
+            and note.package not in self.config.notification_rules.no_codes
+        )
+
     def _check_otp(self, note: Notification) -> None:
         """Surface a passcode as soon as its notification arrives."""
-        if not self.config.features.otp or note.id in self._otp_seen:
+        if not self.codes_wanted(note) or note.id in self._otp_seen:
             return
         match = otp.find_code(note.body, note.app)
         if match is None:
@@ -1521,6 +1598,8 @@ class Hub(QObject):
     def recent_codes(self, limit: int = 12) -> list[tuple[Any, Notification]]:
         found = []
         for note in self.notifications:
+            if not self.codes_wanted(note):
+                continue
             match = otp.find_code(note.body, note.app)
             if match is not None:
                 found.append((match, note))

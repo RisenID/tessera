@@ -70,6 +70,8 @@
     <string name="perm_messages_why">Read and send texts from your computer.</string>
     <string name="perm_calls">Calls</string>
     <string name="perm_calls_why">See recent calls, and answer and place calls from your computer.</string>
+    <string name="perm_contacts">Contacts</string>
+    <string name="perm_contacts_why">Search your contacts and call them from your computer, and see names on calls and texts.</string>
     <string name="perm_photos">Photos</string>
     <string name="perm_photos_why">Browse your gallery and save photos across.</string>
     <string name="perm_camera">Camera</string>

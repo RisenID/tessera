@@ -24,6 +24,7 @@ import dev.tessera.companion.databinding.ViewSetupRowBinding
 import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.ClipboardWatcher
+import dev.tessera.companion.features.Contacts
 import dev.tessera.companion.features.DndController
 import dev.tessera.companion.features.MediaRepository
 import dev.tessera.companion.features.NotificationBridge
@@ -188,6 +189,14 @@ class MainActivity : AppCompatActivity() {
                 R.string.perm_calls_why,
                 R.drawable.ic_phone_link,
                 granted = { CallsRepository.canReadLog(this) && CallsRepository.canControl(this) },
+                grant = { requestRuntimePermissions() },
+            ),
+            Row(
+                binding.rowContacts,
+                R.string.perm_contacts,
+                R.string.perm_contacts_why,
+                R.drawable.ic_phone_link,
+                granted = { Contacts.canRead(this) },
                 grant = { requestRuntimePermissions() },
             ),
             Row(

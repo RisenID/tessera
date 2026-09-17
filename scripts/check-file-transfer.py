@@ -252,7 +252,23 @@ def interruptions(app: QApplication) -> None:
         app.processEvents()
         check("a dropped link fails the transfer rather than hanging",
               left.transfers[0].state == FAILED, left.transfers[0].state)
-        check("and cleans up after itself", not (inbox / "clip.bin.part").exists())
+        # Kept, not cleaned up: the next offer of the same file resumes it.
+        kept = inbox / "clip.bin.part"
+        check("and keeps what arrived, for a second attempt", kept.exists())
+        check("which the receiver remembers by name and size",
+              ("clip.bin", source.stat().st_size) in right._resumable, str(right._resumable))
+        got = kept.stat().st_size if kept.exists() else 0
+        offered: list[dict] = []
+        right.on_event({"t": "file_offer", "id": "again", "name": "clip.bin",
+                        "size": source.stat().st_size, "mime": ""}, link=right_wire)
+        offered = [m for m in right_wire.sent if m.get("t") == "file_accept" and m.get("id") == "again"]
+        check("a second offer is accepted from where it stopped",
+              bool(offered) and offered[-1].get("offset") == got,
+              f"{offered[-1] if offered else 'no accept'} vs {got}")
+        check("and continues into the same file", right.transfers and
+              right.transfers[0].done == got, str(right.transfers[0].done if right.transfers else None))
+        # Let go of the file, so the temporary folder can be removed.
+        right.cancel("again")
 
 
 def unconfirmed(app: QApplication) -> None:

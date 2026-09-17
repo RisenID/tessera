@@ -7,9 +7,12 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -19,6 +22,9 @@ from PySide6.QtWidgets import (
 from ...core.hub import Hub
 from ..theme import SPACE, Palette
 from ..widgets import Avatar, Card, EmptyState, Pill, Toast, header_row, heading
+
+#: Contacts listed under the dial box at most; the search narrows it.
+MAX_MATCHES = 8
 
 #: How each kind of call reads in the list, and the colour it earns.
 KINDS = {
@@ -116,6 +122,7 @@ class CallsPage(QWidget):
         self.hub = hub
         self.palette_tokens = palette
         self._recent: list[dict] = []
+        self._contacts: list[dict] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SPACE["xl"], SPACE["xl"], SPACE["xl"], SPACE["xl"])
@@ -161,6 +168,16 @@ class CallsPage(QWidget):
         self.hangup_button.setObjectName("Danger")
         self.hangup_button.clicked.connect(self._hang_up)
         actions.addWidget(self.hangup_button)
+
+        # Mute and loudspeaker: the phone's own audio switches, driven from here.
+        self.mute_button = QPushButton("Mute")
+        self.mute_button.setCheckable(True)
+        self.mute_button.clicked.connect(lambda on: self._audio("call_mute", on))
+        actions.addWidget(self.mute_button)
+        self.speaker_button = QPushButton("Speaker")
+        self.speaker_button.setCheckable(True)
+        self.speaker_button.clicked.connect(lambda on: self._audio("call_speaker", on))
+        actions.addWidget(self.speaker_button)
         actions.addStretch(1)
         self.live.body().addLayout(actions)
 
@@ -174,14 +191,37 @@ class CallsPage(QWidget):
         dial = Card(self)
         dial_row = QHBoxLayout()
         self.number = QLineEdit()
-        self.number.setPlaceholderText("Type a number to call")
+        self.number.setPlaceholderText("Type a name or a number")
         self.number.returnPressed.connect(self._dial_typed)
+        self.number.textChanged.connect(self._filter_contacts)
         dial_row.addWidget(self.number, 1)
+        keypad_button = QPushButton("Keypad")
+        keypad_button.setObjectName("Ghost")
+        keypad_button.setCheckable(True)
+        keypad_button.toggled.connect(lambda on: self.keypad.setVisible(on))
+        dial_row.addWidget(keypad_button)
         dial_button = QPushButton("Call")
         dial_button.setObjectName("Primary")
         dial_button.clicked.connect(self._dial_typed)
         dial_row.addWidget(dial_button)
         dial.body().addLayout(dial_row)
+
+        # Contacts that match what was typed; a click dials them.
+        self.matches = QListWidget()
+        self.matches.setMaximumHeight(180)
+        self.matches.setVisible(False)
+        self.matches.itemClicked.connect(self._dial_match)
+        dial.add(self.matches)
+
+        self.keypad = self._build_keypad()
+        self.keypad.setVisible(False)
+        dial.add(self.keypad)
+
+        self.contacts_note = QLabel()
+        self.contacts_note.setObjectName("Muted")
+        self.contacts_note.setWordWrap(True)
+        self.contacts_note.setVisible(False)
+        dial.add(self.contacts_note)
         outer.addWidget(dial)
 
         # -- history ----------------------------------------------------------
@@ -209,16 +249,96 @@ class CallsPage(QWidget):
         self.toast = Toast(self)
         hub.callChanged.connect(self._on_call)
         hub.connectionChanged.connect(lambda _c: self.load())
+        hub.companion.capabilitiesChanged.connect(lambda _c: self.load_contacts())
         self._on_call(hub.call)
         self.load()
 
+    # -- contacts --------------------------------------------------------------
+
+    def _build_keypad(self) -> QWidget:
+        pad = QWidget()
+        grid = QGridLayout(pad)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(SPACE["xs"])
+        for index, key in enumerate("123456789*0#"):
+            button = QPushButton(key)
+            button.setFixedSize(56, 40)
+            button.clicked.connect(lambda _c=False, k=key: self.number.insert(k))
+            grid.addWidget(button, index // 3, index % 3)
+        grid.setColumnStretch(3, 1)
+        return pad
+
+    def load_contacts(self) -> None:
+        if not self.hub.companion.connected or not self.hub.companion.supports("contacts"):
+            self._contacts = []
+            self.contacts_note.setVisible(
+                self.hub.companion.connected and bool(self.hub.companion.capabilities)
+            )
+            self.contacts_note.setText(
+                "Allow Contacts in the companion app to search and call people by name."
+            )
+            return
+        self.contacts_note.setVisible(False)
+        self.hub.companion.request(
+            {"t": "contacts_list"}, lambda reply: self._on_contacts(reply.get("items", []))
+        )
+
+    def _on_contacts(self, items: list) -> None:
+        self._contacts = [c for c in items if isinstance(c, dict) and c.get("number")]
+        self._filter_contacts(self.number.text())
+
+    def _filter_contacts(self, text: str) -> None:
+        needle = text.strip().lower()
+        digits = "".join(ch for ch in needle if ch.isdigit())
+        self.matches.clear()
+        if not needle or not self._contacts:
+            self.matches.setVisible(False)
+            return
+        shown = 0
+        for contact in self._contacts:
+            name = str(contact.get("name", ""))
+            number = str(contact.get("number", ""))
+            if needle in name.lower() or (digits and digits in "".join(filter(str.isdigit, number))):
+                kind = str(contact.get("type", ""))
+                item = QListWidgetItem(f"{name}  ·  {number}" + (f"  ({kind})" if kind else ""))
+                item.setData(Qt.ItemDataRole.UserRole, number)
+                self.matches.addItem(item)
+                shown += 1
+                if shown >= MAX_MATCHES:
+                    break
+        self.matches.setVisible(shown > 0)
+
+    def _dial_match(self, item: QListWidgetItem) -> None:
+        number = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if number:
+            self._dial(number)
+            self.number.clear()
+
     # -- live call -----------------------------------------------------------
+
+    def _audio(self, command: str, on: bool) -> None:
+        if not self.hub.companion.supports("call_audio"):
+            self.toast.show_message("The companion app is too old for this", self.palette_tokens, "warning")
+            return
+        self.hub.companion.request({"t": command, "on": bool(on)}, self._on_audio)
+
+    def _on_audio(self, reply: dict) -> None:
+        if reply.get("t") == "error":
+            self.toast.show_message(reply.get("message", "")[:120], self.palette_tokens, "danger")
+        for button, key in ((self.mute_button, "muted"), (self.speaker_button, "speaker")):
+            if key in reply:
+                button.blockSignals(True)
+                button.setChecked(bool(reply[key]))
+                button.blockSignals(False)
 
     def _on_call(self, call: dict) -> None:
         state = call.get("state", "idle")
         name = call.get("name") or "Unknown caller"
         controllable = bool(call.get("canControl", True))
 
+        audio = state == "active" and self.hub.companion.supports("call_audio")
+        self.mute_button.setVisible(audio)
+        self.speaker_button.setVisible(audio)
         if state == "ringing":
             self.state_pill.set_state("Ringing", "accent")
             self.live_name.setText(name)
@@ -235,6 +355,8 @@ class CallsPage(QWidget):
             self.answer_button.setVisible(False)
             self.hangup_button.setText("Hang up")
             self.hangup_button.setVisible(True)
+            if audio:
+                self.hub.companion.request({"t": "call_audio"}, self._on_audio)
         else:
             self.state_pill.set_state("No call", "muted")
             self.live_name.setText("No call in progress")
@@ -299,6 +421,7 @@ class CallsPage(QWidget):
     # -- history -------------------------------------------------------------
 
     def load(self) -> None:
+        self.load_contacts()
         if not self.hub.companion.connected:
             self._render([])
             return

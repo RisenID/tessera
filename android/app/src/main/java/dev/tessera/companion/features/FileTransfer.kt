@@ -174,6 +174,18 @@ object FileTransfer {
             return stream != null
         }
 
+        /** Past what the desktop already has. False when the source is shorter than that. */
+        fun skip(bytes: Long): Boolean {
+            val source = stream ?: return false
+            var left = bytes
+            while (left > 0) {
+                val skipped = runCatching { source.skip(left) }.getOrDefault(-1L)
+                if (skipped <= 0) return false
+                left -= skipped
+            }
+            return true
+        }
+
         /** The next chunk, or null at the end. */
         fun next(): ByteArray? {
             if (cancelled.get()) return null

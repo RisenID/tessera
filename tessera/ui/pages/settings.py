@@ -8,8 +8,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
+    QGridLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -52,6 +54,11 @@ FEATURE_SWITCHES: tuple[tuple[str, str, str], ...] = (
      "The fallback where there is no Bluetooth: a copy of the phone's mix, "
      "which cannot carry a call"),
 )
+
+
+def _grouped(fingerprint: str) -> str:
+    """In fours, the way the phone shows it."""
+    return " ".join(fingerprint[i:i + 4] for i in range(0, len(fingerprint), 4))
 
 
 class SettingsPage(QWidget):
@@ -159,6 +166,46 @@ class SettingsPage(QWidget):
         startup_note.setWordWrap(True)
         startup.add(startup_note)
         outer.addWidget(startup)
+
+        # -- alerts and shortcuts ---------------------------------------------
+        alerts = Card(self)
+        alerts_title = QLabel("Alerts and shortcuts")
+        alerts_title.setObjectName("SectionTitle")
+        alerts.add(alerts_title)
+
+        self.battery_low = QSpinBox()
+        self.battery_low.setRange(0, 50)
+        self.battery_low.setSpecialValueText("Off")
+        self.battery_low.setSuffix(" %")
+        self.battery_low.setValue(hub.config.alerts.battery_low)
+        alerts.add(self._labelled("Popup when the battery falls to", self.battery_low))
+
+        self.battery_full = QSpinBox()
+        self.battery_full.setRange(0, 100)
+        self.battery_full.setSpecialValueText("Off")
+        self.battery_full.setSuffix(" %")
+        self.battery_full.setValue(hub.config.alerts.battery_full)
+        alerts.add(self._labelled("Popup when charged to", self.battery_full))
+
+        self.hotkey_audio = QLineEdit(hub.config.hotkeys.phone_audio)
+        self.hotkey_audio.setPlaceholderText("e.g. Ctrl+Alt+P; blank for none")
+        alerts.add(self._labelled("Play phone audio here", self.hotkey_audio))
+        self.hotkey_ring = QLineEdit(hub.config.hotkeys.ring_phone)
+        self.hotkey_ring.setPlaceholderText("e.g. Ctrl+Alt+R; blank for none")
+        alerts.add(self._labelled("Ring the phone", self.hotkey_ring))
+
+        hotkey_note = QLabel(
+            "System-wide shortcuts, working from any window. Windows binds "
+            "them itself; on Linux they need a desktop that offers the "
+            "GlobalShortcuts portal, which is not wired up yet."
+            if not platform.IS_WINDOWS else
+            "System-wide shortcuts, working from any window. A combination "
+            "another program already holds is refused; the log says which."
+        )
+        hotkey_note.setObjectName("Muted")
+        hotkey_note.setWordWrap(True)
+        alerts.add(hotkey_note)
+        outer.addWidget(alerts)
 
         # -- the device panel ------------------------------------------------
         rail = Card(self)
@@ -268,6 +315,7 @@ class SettingsPage(QWidget):
                 features.add(note)
 
         outer.addWidget(features)
+        outer.addWidget(self._build_rules_card())
 
         clip_title = QLabel("Clipboard")
         clip_title.setObjectName("SectionTitle")
@@ -405,6 +453,7 @@ class SettingsPage(QWidget):
         # The phone re-sends its capability list after the grant is made.
         hub.companion.capabilitiesChanged.connect(lambda _c: self._refresh_grant())
         hub.companion.errorOccurred.connect(self._show_error)
+        hub.companion.fingerprintOffered.connect(self._confirm_fingerprint)
         self._refresh()
         self.discover()
 
@@ -417,6 +466,89 @@ class SettingsPage(QWidget):
         self._wire_controls()
         self._loading = False
 
+    # -- notifications by app --------------------------------------------------
+
+    def _build_rules_card(self) -> Card:
+        card = Card(self)
+        title = QLabel("Notifications by app")
+        title.setObjectName("SectionTitle")
+        card.add(title)
+        note = QLabel(
+            "Apps appear here as their notifications arrive. Untick Popups to "
+            "keep an app quiet, Listed to keep it out of the feed, Codes to stop "
+            "it being read for passcodes."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        self.rules_host = QWidget()
+        self.rules_grid = QGridLayout(self.rules_host)
+        self.rules_grid.setContentsMargins(0, 0, 0, 0)
+        self.rules_grid.setHorizontalSpacing(SPACE["md"])
+        self.rules_grid.setColumnStretch(0, 1)
+        card.add(self.rules_host)
+        self._rule_rows: dict[str, tuple[QCheckBox, QCheckBox, QCheckBox]] = {}
+
+        add_row = QHBoxLayout()
+        self.rule_package = QLineEdit()
+        self.rule_package.setPlaceholderText("Package name, e.g. com.whatsapp")
+        add_row.addWidget(self.rule_package, 1)
+        add_button = QPushButton("Add")
+        add_button.clicked.connect(self._add_rule_row)
+        add_row.addWidget(add_button)
+        card.add(self._bar(add_row))
+
+        # New apps show up as they notify, a moment after the burst.
+        self._rules_timer = QTimer(self)
+        self._rules_timer.setSingleShot(True)
+        self._rules_timer.setInterval(1000)
+        self._rules_timer.timeout.connect(self._refresh_rules)
+        self.hub.notificationsChanged.connect(self._rules_timer.start)
+        self._refresh_rules()
+        return card
+
+    def _refresh_rules(self) -> None:
+        rules = self.hub.config.notification_rules
+        names = self.hub.notification_apps()
+        packages = set(names) | set(rules.quiet) | set(rules.hidden) | set(rules.no_codes)
+        for package in sorted(packages - set(self._rule_rows), key=lambda p: names.get(p, p).lower()):
+            self._add_rule(package, names.get(package, ""))
+
+    def _add_rule_row(self) -> None:
+        package = self.rule_package.text().strip()
+        if package and package not in self._rule_rows:
+            self._add_rule(package, "")
+            self.rule_package.clear()
+
+    def _add_rule(self, package: str, name: str) -> None:
+        rules = self.hub.config.notification_rules
+        row = self.rules_grid.rowCount()
+        if row == 0 or not self._rule_rows:
+            for column, heading_text in enumerate(("App", "Popups", "Listed", "Codes")):
+                header = QLabel(heading_text)
+                header.setStyleSheet("font-weight: 600;")
+                self.rules_grid.addWidget(header, 0, column)
+            row = 1
+        label = QLabel(name or package)
+        label.setToolTip(package)
+        self.rules_grid.addWidget(label, row, 0)
+        boxes = (QCheckBox(), QCheckBox(), QCheckBox())
+        for column, (box, off) in enumerate(zip(
+            boxes, (rules.quiet, rules.hidden, rules.no_codes)
+        ), start=1):
+            box.setChecked(package not in off)
+            box.toggled.connect(self._touch)
+            self.rules_grid.addWidget(box, row, column)
+        self._rule_rows[package] = boxes
+
+    def _commit_rules(self) -> None:
+        rules = self.hub.config.notification_rules
+        rules.quiet = [p for p, (popups, _l, _c) in self._rule_rows.items() if not popups.isChecked()]
+        rules.hidden = [p for p, (_p, listed, _c) in self._rule_rows.items() if not listed.isChecked()]
+        rules.no_codes = [p for p, (_p, _l, codes) in self._rule_rows.items() if not codes.isChecked()]
+        self.hub.apply_notification_rules()
+
     # -- applying ------------------------------------------------------------
 
     def _wire_controls(self) -> None:
@@ -428,11 +560,12 @@ class SettingsPage(QWidget):
         ):
             box.toggled.connect(self._touch)
         for spin in (self.max_size, self.mirror_fps, self.panel_width,
-                     self.panel_width_full):
+                     self.panel_width_full, self.battery_low, self.battery_full):
             spin.valueChanged.connect(self._touch)
         for combo in (self.clipboard_mode, self.codec_choice, self.audio_route):
             combo.currentIndexChanged.connect(self._touch)
-        self.window_size.textEdited.connect(self._touch)
+        for edit in (self.window_size, self.hotkey_audio, self.hotkey_ring):
+            edit.textEdited.connect(self._touch)
 
     def _touch(self, *_args) -> None:
         if not self._loading:
@@ -684,6 +817,23 @@ class SettingsPage(QWidget):
         self._pairing = True
         self.hub.companion.connect_to_phone(host, port, code)
 
+    def _confirm_fingerprint(self, fingerprint: str) -> None:
+        """Pairing pauses here until the user has looked at the phone."""
+        grouped = _grouped(fingerprint)
+        self.pair_status.setText(f"Waiting for you to check the fingerprint: {grouped}")
+        answer = QMessageBox.question(
+            self,
+            "Is this your phone?",
+            "The phone shows a certificate fingerprint on its main screen. "
+            f"Does it read:\n\n{grouped}\n\nIf it does not, something else on "
+            "the network answered, and the pairing code must not be sent to it.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        self.hub.companion.confirm_pairing(answer == QMessageBox.StandardButton.Yes)
+        if answer != QMessageBox.StandardButton.Yes:
+            self._pairing = False
+
     def _forget(self) -> None:
         self.hub.forget_phone()
         self._refresh()
@@ -720,6 +870,11 @@ class SettingsPage(QWidget):
         self.hub.config.phone_audio.route = (
             self.audio_route.currentData() or "bluetooth"
         )
+        self.hub.config.alerts.battery_low = self.battery_low.value()
+        self.hub.config.alerts.battery_full = self.battery_full.value()
+        self.hub.config.hotkeys.phone_audio = self.hotkey_audio.text().strip()
+        self.hub.config.hotkeys.ring_phone = self.hotkey_ring.text().strip()
+        self._commit_rules()
 
         codec = self.codec_choice.currentData()
         self.hub.config.bluetooth.codec = codec
@@ -763,11 +918,8 @@ class SettingsPage(QWidget):
             name = phone.name or "the phone"
             self.link_pill.set_state(phone.name or "Connected", "success")
             if self._pairing:
-                # The code proves this computer to the phone; the fingerprint
-                # proves the phone to this computer.
-                grouped = " ".join(phone.fingerprint[i:i + 4] for i in range(0, len(phone.fingerprint), 4))
                 self.pair_status.setText(
-                    f"Paired with {name}. Check the phone shows this certificate fingerprint: {grouped}"
+                    f"Paired with {name}. Certificate fingerprint {_grouped(phone.fingerprint)}."
                 )
                 self._pairing = False
             elif not self.pair_status.text().startswith(f"Paired with {name}."):

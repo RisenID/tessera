@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import platform
+from ..core.hotkeys import Hotkeys
 from ..core.hub import Hub
 from .pages.apps import AppsPage
 from .pages.audio import AudioPage
@@ -135,6 +136,10 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
         content_layout.addWidget(self._build_strip())
 
+        #: Shortcuts that work from any window; registered once the window is up.
+        self.hotkeys = Hotkeys(hub.config.hotkeys, self)
+        self.hotkeys.triggered.connect(self._on_hotkey)
+
         # Pages are built on first visit: each one costs widgets and a round
         # of requests to the phone, and most are never opened in a session.
         self.stack = QStackedWidget()
@@ -191,6 +196,13 @@ class MainWindow(QMainWindow):
         hub.statusChanged.connect(self._set_status)
         hub.errorOccurred.connect(self._set_status)
         hub.fileReceived.connect(self._on_file_received)
+        self.hotkeys.apply()
+
+    def _on_hotkey(self, action: str) -> None:
+        if action == "phone_audio":
+            self._from_panel("Audio")
+        elif action == "ring_phone":
+            self.hub.ring_phone(self._set_status)
 
     def _on_file_received(self, transfer) -> None:
         """Say that a file arrived, where a file arriving is easy to miss."""
@@ -341,6 +353,7 @@ class MainWindow(QMainWindow):
         placeholder.deleteLater()
         self.stack.insertWidget(index, page)
         if isinstance(page, SettingsPage):
+            page.featuresChanged.connect(self.hotkeys.apply)
             page.featuresChanged.connect(self._apply_feature_visibility)
             page.featuresChanged.connect(self.panel.apply_tiles)
             # Switching Bluetooth audio off takes its button with it.
@@ -551,6 +564,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         """Closing hides to the tray; quitting really quits."""
         if self._quitting or not self.tray.isVisible():
+            self.hotkeys.clear()
             self.hub.stop()
             event.accept()
             # Quitting on the last window is disabled so that closing the

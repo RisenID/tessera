@@ -264,6 +264,8 @@ class FileTransfers(QObject):
         self._sending = ""
         #: When each transfer's progress was last announced.
         self._progress_at: dict[str, float] = {}
+        #: Half-received files kept for a second attempt: (name, size) -> .part path.
+        self._resumable: dict[tuple[str, int], Path] = {}
 
         for link in self._links:
             link.fileEvent.connect(lambda message, l=link: self.on_event(message, l))
@@ -479,13 +481,22 @@ class FileTransfers(QObject):
             return
 
         directory = self.directory()
+        offset = 0
         try:
             directory.mkdir(parents=True, exist_ok=True)
-            destination = unique_path(directory, name)
-            # Not with_suffix: a name ending in a dot, or with no extension at
-            # all, needs the same "<whatever it is>.part" either way, and this
-            # is the spelling the completion step undoes.
-            handle = _Writer(partial_path(destination).open("wb"))
+            # An earlier attempt at this same file, cut off part way: carry on
+            # from where it stopped rather than starting a new copy.
+            resumable = self._resumable.pop((name, size), None)
+            if resumable is not None and resumable.exists() and not resumable.with_suffix("").exists():
+                destination = Path(str(resumable)[: -len(".part")])
+                offset = resumable.stat().st_size
+                handle = _Writer(resumable.open("ab"))
+            else:
+                destination = unique_path(directory, name)
+                # Not with_suffix: a name ending in a dot, or with no extension at
+                # all, needs the same "<whatever it is>.part" either way, and this
+                # is the spelling the completion step undoes.
+                handle = _Writer(partial_path(destination).open("wb"))
         except OSError as exc:
             link.send({
                 "t": "file_reject", "id": transfer_id,
@@ -496,13 +507,17 @@ class FileTransfers(QObject):
 
         transfer = Transfer(
             id=transfer_id, name=destination.name, size=size,
-            direction=RECEIVING, state=RUNNING, path=destination,
+            direction=RECEIVING, state=RUNNING, path=destination, done=offset,
             mime=str(message.get("mime") or ""), link=link,
         )
         self._transfers[transfer_id] = transfer
         self._incoming[transfer_id] = handle
         self.changed.emit(transfer)
-        link.send({"t": "file_accept", "id": transfer_id})
+        accept: dict = {"t": "file_accept", "id": transfer_id}
+        if offset:
+            accept["offset"] = offset
+            log.info("resuming %s at %d bytes", transfer.name, offset)
+        link.send(accept)
 
     def on_chunk(self, header: dict, payload: bytes) -> None:
         transfer_id = str(header.get("id") or "")
@@ -582,6 +597,15 @@ class FileTransfers(QObject):
         transfer = self._transfers.get(str(message.get("id") or ""))
         if transfer is None or transfer.direction != SENDING:
             return
+        # The phone kept part of an earlier attempt: start from there.
+        offset = int(message.get("offset") or 0)
+        handle = self._outgoing.get(transfer.id)
+        if 0 < offset <= transfer.size and handle is not None:
+            try:
+                handle.seek(offset)                         # type: ignore[union-attr]
+                transfer.done = offset
+            except OSError:
+                pass
         transfer.state = RUNNING
         transfer.started = time.monotonic()
         self.changed.emit(transfer)
@@ -642,6 +666,19 @@ class FileTransfers(QObject):
             self._discard_incoming(transfer.id)
         self.changed.emit(transfer)
 
+    def _keep_for_resume(self, transfer: Transfer) -> None:
+        """A dropped link, not a refusal: keep the .part so the next offer resumes."""
+        handle = self._incoming.pop(transfer.id, None)
+        if handle is not None:
+            try:
+                handle.close()                              # type: ignore[union-attr]
+            except OSError:
+                pass
+        if transfer.path is None or transfer.size <= 0 or transfer.done <= 0:
+            self._discard_incoming(transfer.id)
+            return
+        self._resumable[(transfer.name, transfer.size)] = partial_path(transfer.path)
+
     def _discard_incoming(self, transfer_id: str) -> None:
         """Throw away a half-written file rather than leaving a stub behind."""
         handle = self._incoming.pop(transfer_id, None)
@@ -676,7 +713,7 @@ class FileTransfers(QObject):
             if transfer.direction == SENDING:
                 self._close_send(transfer.id)
             else:
-                self._discard_incoming(transfer.id)
+                self._keep_for_resume(transfer)
             self.changed.emit(transfer)
         if self._sending and self._sending not in {
             t.id for t in self._transfers.values() if t.active

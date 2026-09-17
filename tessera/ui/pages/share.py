@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -92,6 +94,29 @@ class DropArea(QWidget):
         if paths:
             event.acceptProposedAction()
             self._on_files(paths)
+
+
+class _NoteRow(Card):
+    """One piece of shared text, with a copy button."""
+
+    def __init__(self, when: float, text: str, palette: Palette, on_copy, parent=None):
+        super().__init__(parent, flat=True, padding=SPACE["md"])
+        row = QHBoxLayout()
+        column = QVBoxLayout()
+        column.setSpacing(2)
+        body = QLabel(text if len(text) <= 400 else text[:400] + "…")
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        column.addWidget(body)
+        stamp = QLabel(datetime.fromtimestamp(when).strftime("%d %b, %H:%M"))
+        stamp.setStyleSheet(f"color: {palette.muted}; font-size: 11px;")
+        column.addWidget(stamp)
+        row.addLayout(column, 1)
+        copy = QPushButton("Copy")
+        copy.setObjectName("Copy")
+        copy.clicked.connect(lambda: on_copy(text))
+        row.addWidget(copy, 0, Qt.AlignmentFlag.AlignTop)
+        self.body().addLayout(row)
 
 
 class TransferRow(Card):
@@ -240,6 +265,7 @@ class SharePage(QWidget):
 
         self.storage_card = self._build_storage_card(palette)
         outer.addWidget(self.storage_card)
+        outer.addWidget(self._build_notes_card(palette))
 
         history = Card(self)
         history_row = QHBoxLayout()
@@ -269,6 +295,59 @@ class SharePage(QWidget):
         self._refresh_notes()
         self._refresh_storage()
         self.rebuild()
+
+    # -- text from the share sheet ---------------------------------------------
+
+    def _build_notes_card(self, palette: Palette) -> Card:
+        card = Card(self)
+        row = QHBoxLayout()
+        title = QLabel("Text from the phone")
+        title.setObjectName("SectionTitle")
+        row.addWidget(title)
+        row.addStretch(1)
+        clear = QPushButton("Clear")
+        clear.setObjectName("Ghost")
+        clear.clicked.connect(self._clear_notes)
+        row.addWidget(clear)
+        card.body().addLayout(row)
+
+        note = QLabel(
+            "Anything shared to Tessera from the phone lands on the clipboard "
+            "and stays here until cleared."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        self.notes = QVBoxLayout()
+        self.notes.setSpacing(SPACE["sm"])
+        card.body().addLayout(self.notes)
+        self.notes_empty = QLabel("Nothing shared yet.")
+        self.notes_empty.setObjectName("Muted")
+        card.add(self.notes_empty)
+
+        self.hub.textShared.connect(lambda _t: self._render_notes())
+        self._render_notes()
+        return card
+
+    def _render_notes(self) -> None:
+        while self.notes.count():
+            item = self.notes.takeAt(0)
+            widget = item.widget() if item else None
+            if widget is not None:
+                widget.deleteLater()
+        texts = self.hub.shared_texts
+        self.notes_empty.setVisible(not texts)
+        for when, text in texts[:20]:
+            self.notes.addWidget(_NoteRow(when, text, self.palette_tokens, self._copy_note))
+
+    def _copy_note(self, text: str) -> None:
+        QGuiApplication.clipboard().setText(text)
+        self.toast.show_message("Copied", self.palette_tokens, "success", 1200)
+
+    def _clear_notes(self) -> None:
+        self.hub.shared_texts.clear()
+        self._render_notes()
 
     # -- the phone's storage ---------------------------------------------------
 

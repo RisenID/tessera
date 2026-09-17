@@ -76,6 +76,17 @@ class Popups(QObject):
 
         hub.notificationArrived.connect(self.show)
         hub.notificationsChanged.connect(self._prune)
+        hub.alert.connect(self.alert)
+
+    def alert(self, title: str, body: str) -> None:
+        """A popup about the phone itself, with nothing to press."""
+        if self.notifier.available:
+            self.notifier.send_async(title[:120], body[:400], repliable=False, clearable=False)
+        elif self.tray.isVisible():
+            try:
+                self.tray.showMessage(title[:120], body[:400], self.tray.icon(), DURATION_MS)
+            except Exception as exc:      # a tray that went away mid-call
+                log.debug("could not show an alert: %s", exc)
 
     # -- what to show --------------------------------------------------------
 
@@ -84,7 +95,7 @@ class Popups(QObject):
         config = self.hub.config
         if not config.features.notification_popups or not config.features.notifications:
             return False
-        if note.package in QUIET_PACKAGES:
+        if note.package in QUIET_PACKAGES or note.package in config.notification_rules.quiet:
             return False
         # The phone is silenced, and the sync says its state applies here.
         if config.dnd.mode in ("phone_to_desktop", "two_way"):

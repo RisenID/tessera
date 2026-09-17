@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds.Phone
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.util.Log
@@ -122,6 +123,41 @@ object SmsRepository {
 object Contacts {
 
     private val cache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun canRead(context: Context): Boolean =
+        context.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+    /** Every phone number in the address book, by name, for dialling from the desktop. */
+    fun list(context: Context, limit: Int = 2000): JSONArray {
+        val result = JSONArray()
+        if (!canRead(context)) return result
+        val projection = arrayOf(
+            Phone.DISPLAY_NAME_PRIMARY, Phone.NUMBER, Phone.TYPE, Phone.LABEL, Phone.IS_PRIMARY,
+        )
+        val seen = HashSet<String>()
+        runCatching {
+            context.contentResolver.query(
+                Phone.CONTENT_URI, projection, null, null, "${Phone.DISPLAY_NAME_PRIMARY} ASC",
+            )
+        }.onFailure { Log.w("TesseraContacts", "contacts query failed", it) }.getOrNull()?.use { cursor ->
+            while (cursor.moveToNext() && result.length() < limit) {
+                val name = cursor.getString(0).orEmpty()
+                val number = cursor.getString(1).orEmpty()
+                if (name.isBlank() || number.isBlank()) continue
+                // One entry per number, however many accounts hold the contact.
+                if (!seen.add("$name|${number.filter(Char::isDigit)}")) continue
+                val label = Phone.getTypeLabel(context.resources, cursor.getInt(2), cursor.getString(3))
+                result.put(
+                    JSONObject()
+                        .put("name", name)
+                        .put("number", number)
+                        .put("type", label.toString())
+                        .put("primary", cursor.getInt(4) != 0)
+                )
+            }
+        }
+        return result
+    }
 
     fun nameFor(context: Context, number: String): String {
         if (number.isBlank()) return ""

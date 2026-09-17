@@ -9,6 +9,7 @@ import dev.tessera.companion.Store
 import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
+import dev.tessera.companion.features.Contacts
 import dev.tessera.companion.features.FileTransfer
 import dev.tessera.companion.features.StorageServer
 import dev.tessera.companion.features.Wallpaper
@@ -261,6 +262,9 @@ class Session(
         if (StorageServer.grantable() && !StorageServer.allowed()) add("storage_grant")
         if (CallsRepository.canReadLog(context)) add("calls")
         if (CallsRepository.canControl(context)) add("call_control")
+        // Mute and loudspeaker during a call, through AudioManager.
+        add("call_audio")
+        if (Contacts.canRead(context)) add("contacts")
         // Only claim "hotspot" if the phone will actually take the command.
         if (Hotspot.mode() == Hotspot.Mode.PRIVILEGED) add("hotspot") else add("hotspot_panel")
         add("net_addresses")
@@ -626,6 +630,18 @@ class Session(
 
             "call_state" -> reply(id, CallMonitor.snapshot(context))
 
+            "call_mute" -> CallsRepository.setMuted(context, message.optBoolean("on"))?.let { fail(id, it) }
+                ?: reply(id, CallsRepository.audioState(context))
+
+            "call_speaker" -> CallsRepository.setSpeaker(context, message.optBoolean("on"))?.let { fail(id, it) }
+                ?: reply(id, CallsRepository.audioState(context))
+
+            "call_audio" -> reply(id, CallsRepository.audioState(context))
+
+            "contacts_list" -> reply(
+                id, JSONObject().put("items", Contacts.list(context, message.optInt("limit", 2000)))
+            )
+
             "ringer_set" -> {
                 if (!PhoneStatus.setRinger(context, message.optString("mode"))) {
                     fail(
@@ -906,7 +922,8 @@ class Session(
     /** Text shared from the phone, put on the desktop's clipboard. */
     fun offerText(text: String) {
         if (!open.get() || !authenticated || text.isEmpty()) return
-        send(JSONObject().put("t", "clipboard").put("text", text))
+        // "shared": from the share sheet, not the clipboard; the desktop keeps it.
+        send(JSONObject().put("t", "clipboard").put("text", text).put("shared", true))
     }
 
     @Synchronized
@@ -933,10 +950,16 @@ class Session(
     private fun startOutgoing(message: JSONObject) {
         val transfer = outgoing ?: return
         if (message.optString("id") != transfer.id) return
+        // The desktop already holds this much from an earlier attempt.
+        val offset = message.optLong("offset", 0L)
 
         thread(name = "tessera-file") {
             var failed = false
-            while (open.get()) {
+            if (offset > 0 && !transfer.skip(offset)) {
+                Log.w(TAG, "could not resume ${transfer.name} at $offset")
+                failed = true
+            }
+            while (open.get() && !failed) {
                 val chunk = try {
                     transfer.next()
                 } catch (e: Exception) {

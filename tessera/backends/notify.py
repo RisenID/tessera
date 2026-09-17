@@ -257,3 +257,16 @@ def available() -> bool:
         return False
     bus = session()
     return bool(bus.isConnected())
+
+
+# -- Windows -----------------------------------------------------------------
+#
+# No notification server on the session bus; Action Center toasts carry the
+# same reply box and buttons, so the same class name stands in.
+from ..core import platform as _platform                              # noqa: E402
+
+if _platform.IS_WINDOWS:
+    from .notify_win import WindowsNotifier as Notifier                # noqa: F811
+
+    def available() -> bool:                                          # noqa: F811
+        return Notifier().available

@@ -86,8 +86,10 @@ def main() -> int:
     check("right arrow moves to the next photo", viewer.index == 1, str(viewer.index))
     check("which is fetched too", any(m.get("id") == "2" and m.get("thumb") is False for m in asked))
     viewer.step(1)
-    check("a video is not downloaded to view",
-          not any(m.get("id") == "3" and m.get("thumb") is False for m in asked))
+    # Videos play in the viewer now, so the whole file is asked for like a photo.
+    check("a video is fetched to play",
+          any(m.get("id") == "3" and m.get("thumb") is False for m in asked))
+    check("and the copy button is put away for it", viewer.copy_button.isHidden())
     viewer.step(1)
     check("it stops at the last item", viewer.index == 2)
     viewer.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))

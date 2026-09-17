@@ -83,6 +83,10 @@ either -> other   {"t":"file_cancel","id","message"}
 ```
 
 - Only `file_saved` completes a transfer.
+- `file_accept` may carry `offset`: the receiver kept that much of an earlier
+  attempt at the same name and size, and the sender starts from there.
+- Text from the phone's share sheet arrives as `clipboard` with `"shared": true`,
+  and the desktop keeps it on the Share page as well as pasting it.
 - Neither side holds the whole file in memory; the sender pauses at a
   high-water mark.
 - The receiver keeps only the base name and writes to a temporary file until done.
@@ -206,6 +210,9 @@ after unlock. Cap `clipboard` covers routes 1 and 2.
 | `{"t":"call_end"}` | desktop → phone | Hang up or decline |
 | `{"t":"call_dial","number"}` | desktop → phone | Dial (opens dialer without `CALL_PHONE`) |
 | `{"t":"calls_recent","limit"}` | desktop → phone | Call log |
+| `{"t":"call_mute","on"}` / `{"t":"call_speaker","on"}` | desktop → phone | Microphone and loudspeaker during a call; reply `{"muted","speaker"}`. Cap `call_audio` |
+| `{"t":"call_audio"}` | desktop → phone | The same state, read |
+| `{"t":"contacts_list","limit"}` | desktop → phone | `items` of `{"name","number","type","primary"}`. Cap `contacts` |
 
 Caller identity comes from the dialer's notification, since telephony
 callbacks no longer include the number. Caps: `calls`, `call_control`.

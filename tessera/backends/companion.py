@@ -307,6 +307,9 @@ class CompanionClient(QObject):
     connectedChanged = Signal(bool)
     capabilitiesChanged = Signal(list)
     pairingRequired = Signal()
+    #: A first contact presented this certificate; pairing waits on
+    #: confirm_pairing() so the user can check it against the phone's screen.
+    fingerprintOffered = Signal(str)
     paired = Signal(object)                 # PairedPhone
     errorOccurred = Signal(str)
     statusChanged = Signal(str)
@@ -315,6 +318,8 @@ class CompanionClient(QObject):
     notificationRemoved = Signal(str)
     dndChanged = Signal(str)
     clipboardChanged = Signal(str)
+    #: Text from the phone's share sheet, as well as landing on the clipboard.
+    textShared = Signal(str)
     #: The phone asks for this computer's clipboard; the argument is the request id.
     clipboardQueried = Signal(int)
     callChanged = Signal(dict)
@@ -370,6 +375,8 @@ class CompanionClient(QObject):
         self._capabilities: list[str] = []
         self._authenticated = False
         self._pair_code = ""
+        #: The certificate shown at pairing, until the user says it matches.
+        self._offered = ""
         self._retries = 0
         self._want_connection = False
 
@@ -528,6 +535,9 @@ class CompanionClient(QObject):
         # chain checks cannot apply; the fingerprint pinned at pairing is the
         # trust anchor instead.
         socket.setPeerVerifyMode(QSslSocket.PeerVerifyMode.QueryPeer)
+        if self._pair_code and not self.phone.fingerprint:
+            # Hold the handshake while the user compares fingerprints.
+            socket.setPauseMode(QAbstractSocket.PauseMode.PauseOnSslErrors)
         socket.sslErrors.connect(self._on_ssl_errors)
         socket.encrypted.connect(self._on_encrypted)
         # Nagle's algorithm holds a small write back until the previous one is
@@ -559,6 +569,7 @@ class CompanionClient(QObject):
         self._connect_timer.stop()
         self._pending.clear()
         self._pending_binary = None
+        self._offered = ""
         if self._socket is not None:
             self._socket.blockSignals(True)
             self._socket.abort()
@@ -593,11 +604,14 @@ class CompanionClient(QObject):
         fingerprint = _fingerprint(certificate)
 
         if not self.phone.fingerprint:
-            # First contact: trust on first use, then pin. The pairing code the
-            # user reads off the phone is what authenticates this exchange.
+            # First contact. The code proves this computer to the phone; the
+            # fingerprint, read off the phone's screen, proves the phone to
+            # this computer -- before the code is sent to whoever answered.
             if self._pair_code:
-                self.phone.fingerprint = fingerprint
-                socket.ignoreSslErrors()
+                self._offered = fingerprint
+                self._connect_timer.stop()          # the user is reading
+                self.statusChanged.emit("Check the fingerprint against the phone.")
+                self.fingerprintOffered.emit(fingerprint)
                 return
             self.errorOccurred.emit("This phone is not paired yet.")
             self.pairingRequired.emit()
@@ -621,6 +635,27 @@ class CompanionClient(QObject):
             "again to accept the new certificate. If you did not reinstall it, "
             "something on the network may be impersonating your phone."
         )
+
+    def confirm_pairing(self, matches: bool) -> None:
+        """The user compared the fingerprint with the phone's: carry on, or not."""
+        socket, offered = self._socket, self._offered
+        self._offered = ""
+        if socket is None or not offered:
+            return
+        if not matches:
+            self._pair_code = ""
+            self._want_connection = False
+            self._teardown(silent=True)
+            self.errorOccurred.emit(
+                "Pairing stopped: the fingerprint did not match the phone's, so "
+                "something else on the network may have answered. Try again on a "
+                "network you trust."
+            )
+            return
+        self.phone.fingerprint = offered
+        socket.ignoreSslErrors()
+        self._connect_timer.start(self.CONNECT_TIMEOUT_MS)
+        socket.resume()
 
     def _on_connect_timeout(self) -> None:
         """Give up on this address and move to the next candidate."""
@@ -803,7 +838,10 @@ class CompanionClient(QObject):
         self.notificationRemoved.emit(str(message.get("id", "")))
 
     def _recv_clipboard(self, message: dict[str, Any]) -> None:
-        self.clipboardChanged.emit(str(message.get("text", "")))
+        text = str(message.get("text", ""))
+        self.clipboardChanged.emit(text)
+        if message.get("shared") and text:
+            self.textShared.emit(text)
 
     def _recv_clipboard_query(self, message: dict[str, Any]) -> None:
         self.clipboardQueried.emit(int(message.get("req", 0)))

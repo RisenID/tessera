@@ -65,6 +65,8 @@ analysis = Analysis(
         "winrt.windows.storage",
         "winrt.windows.storage.provider",
         "winrt.windows.storage.streams",
+        "winrt.windows.ui.notifications",
+        "winrt.windows.data.xml.dom",
         "winrt.windows.security.cryptography",
         "paramiko",
     ],

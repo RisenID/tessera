@@ -101,6 +101,36 @@ class FeatureConfig:
 
 
 @dataclass
+class NotificationRules:
+    """Per-app exceptions, by package name. An app not listed gets everything."""
+
+    #: No desktop popup; still listed.
+    quiet: list[str] = field(default_factory=list)
+    #: Kept out of the feed and the page altogether.
+    hidden: list[str] = field(default_factory=list)
+    #: Never scanned for one-time passcodes.
+    no_codes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AlertsConfig:
+    """Desktop popups about the phone itself."""
+
+    #: A popup when the battery falls to this, once per discharge. 0 is off.
+    battery_low: int = 15
+    #: A popup when charging reaches this, once per charge. 0 is off.
+    battery_full: int = 0
+
+
+@dataclass
+class HotkeysConfig:
+    """System-wide shortcuts. Empty means none. Windows and the portal on Linux."""
+
+    phone_audio: str = "Ctrl+Alt+P"
+    ring_phone: str = "Ctrl+Alt+R"
+
+
+@dataclass
 class PhoneAudioConfig:
     """Playing the phone's audio here, over the companion link."""
 
@@ -222,6 +252,9 @@ class Config:
     mirror: MirrorConfig = field(default_factory=MirrorConfig)
     clipboard: ClipboardConfig = field(default_factory=ClipboardConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+    notification_rules: NotificationRules = field(default_factory=NotificationRules)
+    alerts: AlertsConfig = field(default_factory=AlertsConfig)
+    hotkeys: HotkeysConfig = field(default_factory=HotkeysConfig)
     bluetooth: BluetoothConfig = field(default_factory=BluetoothConfig)
     webcam: WebcamConfig = field(default_factory=WebcamConfig)
     phone_audio: PhoneAudioConfig = field(default_factory=PhoneAudioConfig)

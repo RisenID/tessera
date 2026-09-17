@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.provider.CallLog
@@ -128,6 +129,59 @@ object CallsRepository {
             Log.w(TAG, "end call failed", it)
             it.message ?: "The call could not be ended."
         }
+    }
+
+    /**
+     * The microphone, during a call. Not an InCallService: this is the
+     * platform-wide mute, which is what the dialer's own button flips too.
+     */
+    fun setMuted(context: Context, on: Boolean): String? {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: return "Audio is not available on this device."
+        return runCatching {
+            audio.isMicrophoneMute = on
+            if (audio.isMicrophoneMute == on) null else "The phone kept its microphone as it was."
+        }.getOrElse { it.message ?: "The microphone could not be changed." }
+    }
+
+    /** The loudspeaker, during a call. */
+    @Suppress("DEPRECATION")
+    fun setSpeaker(context: Context, on: Boolean): String? {
+        val audio = context.getSystemService(AudioManager::class.java)
+            ?: return "Audio is not available on this device."
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val devices = audio.availableCommunicationDevices
+                val wanted = devices.firstOrNull {
+                    it.type == if (on) android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    else android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                }
+                if (wanted == null) {
+                    if (on) return "This phone has no loudspeaker route to switch to."
+                    audio.clearCommunicationDevice()
+                } else if (!audio.setCommunicationDevice(wanted)) {
+                    return "The phone refused to move the call's audio."
+                }
+            } else {
+                audio.isSpeakerphoneOn = on
+            }
+            null
+        }.getOrElse { it.message ?: "The speaker could not be changed." }
+    }
+
+    /** What the call's audio is doing now, for the desktop's buttons. */
+    fun audioState(context: Context): JSONObject {
+        val audio = context.getSystemService(AudioManager::class.java)
+        @Suppress("DEPRECATION")
+        val speaker = when {
+            audio == null -> false
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                audio.communicationDevice?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            else -> audio.isSpeakerphoneOn
+        }
+        return JSONObject()
+            .put("muted", audio?.isMicrophoneMute ?: false)
+            .put("speaker", speaker)
     }
 
     /**

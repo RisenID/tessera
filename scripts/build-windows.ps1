@@ -63,6 +63,7 @@ Write-Host "Installing build dependencies" -ForegroundColor DarkGray
     "winrt-Windows.ApplicationModel.Calls>=3.0" `
     "winrt-Windows.Storage>=3.0" "winrt-Windows.Storage.Provider>=3.0" `
     "winrt-Windows.Storage.Streams>=3.0" "winrt-Windows.Security.Cryptography>=3.0" `
+    "winrt-Windows.UI.Notifications>=3.0" "winrt-Windows.Data.Xml.Dom>=3.0" `
     "paramiko>=3.2" --quiet
 
 # -- the virtual camera ------------------------------------------------------
