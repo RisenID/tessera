@@ -191,6 +191,13 @@ pageup/pagedown, home/end, f5, play/next/previous, volumeup/volumedown/mute) and
 `text` (`text`). The desktop injects them through the RemoteDesktop portal or
 SendInput. Cap `remote_input`.
 
+The phone reports the keyboard's own edits as they happen -- characters
+composed or corrected in place become the backspaces and characters that turn
+the old word into the new one -- so the desktop receives one clean edit stream
+rather than the whole field on every change. On Wayland the desktop paces
+keysyms a few milliseconds apart, because KWin drops a release that races the
+next key's press (a key sticks, or reads as another).
+
 ## Presence
 
 `{"t":"beacon_start"}` → `{"advertising":true,"uuid","tag"}`: the phone advertises

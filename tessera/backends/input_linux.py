@@ -6,6 +6,7 @@ has no way to send, and Qt's event loop on Linux already runs GLib's.
 
 from __future__ import annotations
 
+import collections
 import logging
 import secrets
 from collections.abc import Callable
@@ -35,6 +36,13 @@ DEVICE_KEYBOARD, DEVICE_POINTER = 1, 2
 #: Keep the permission until the user revokes it, so the dialog is seen once.
 PERSIST_UNTIL_REVOKED = 2
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
+
+#: Milliseconds between keyboard events. KWin injects a keysym by borrowing a
+#: keycode and remapping it; back-to-back press/release pairs race, and the
+#: release can land on the next key's slot, so a key sticks (and autorepeats --
+#: space, most of all) or reads as another. A short, even pace lets each one
+#: settle. 5 ms is 100 keystrokes a second, well past any typing.
+KEY_GAP_MS = 5
 
 #: X keysyms for the names the phone sends.
 KEYSYMS = {
@@ -94,6 +102,9 @@ class PortalInput(QObject):
         self.on_token: Callable[[str], None] | None = None
         self._steps: list[Callable[[dict], None]] = []
         self._subscriptions: list[int] = []
+        #: Keyboard press/release pairs waiting their turn, paced by _drain_keys.
+        self._keys: collections.deque[tuple[int, int]] = collections.deque()
+        self._key_pump = 0
 
     def available(self) -> bool:
         return available()
@@ -198,6 +209,10 @@ class PortalInput(QObject):
         self.ready.emit(False, message)
 
     def stop(self) -> None:
+        self._keys.clear()
+        if self._key_pump:
+            GLib.source_remove(self._key_pump)
+            self._key_pump = 0
         path, self._session_path = self._session_path, ""
         if not path or self._connection is None:
             return
@@ -236,13 +251,30 @@ class PortalInput(QObject):
 
     def key(self, name: str) -> None:
         code = KEYSYMS.get(name.lower())
-        if code is None:
-            return
-        self._notify("NotifyKeyboardKeysym", "(oa{sv}iu)", int(code), 1)
-        self._notify("NotifyKeyboardKeysym", "(oa{sv}iu)", int(code), 0)
+        if code is not None:
+            self._tap(code)
 
     def text(self, text: str) -> None:
         for char in text:
-            code = keysym(char)
-            self._notify("NotifyKeyboardKeysym", "(oa{sv}iu)", int(code), 1)
-            self._notify("NotifyKeyboardKeysym", "(oa{sv}iu)", int(code), 0)
+            self._tap(keysym(char))
+
+    def _tap(self, code: int) -> None:
+        """Queue one keystroke; the drain paces press and release apart."""
+        self._keys.append((int(code), 1))
+        self._keys.append((int(code), 0))
+        if not self._key_pump and self._session_path:
+            # Send the first at once, then pace the rest.
+            self._drain_keys()
+            if self._keys:
+                self._key_pump = GLib.timeout_add(KEY_GAP_MS, self._drain_keys)
+
+    def _drain_keys(self) -> bool:
+        if not self._keys or not self._session_path:
+            self._key_pump = 0
+            return False
+        code, state = self._keys.popleft()
+        self._notify("NotifyKeyboardKeysym", "(oa{sv}iu)", int(code), int(state))
+        if self._keys:
+            return True
+        self._key_pump = 0
+        return False

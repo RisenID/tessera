@@ -113,11 +113,11 @@
         android:layout_marginBottom="12dp"
         android:hint="@string/remote_type_hint">
 
-        <com.google.android.material.textfield.TextInputEditText
+        <dev.tessera.companion.RemoteEditText
             android:id="@+id/typeBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:imeOptions="actionSend"
+            android:imeOptions="actionSend|flagNoExtractUi"
             android:inputType="text|textNoSuggestions"
             android:maxLines="1" />
     </com.google.android.material.textfield.TextInputLayout>

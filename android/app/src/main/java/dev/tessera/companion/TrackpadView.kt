@@ -115,7 +115,8 @@ class TrackpadView @JvmOverloads constructor(
         val (dx, dy) = pendingMove
         if (abs(dx) < 0.01f && abs(dy) < 0.01f) return
         pendingMove = 0f to 0f
-        lastSent = System.currentTimeMillis()
+        // The same clock as event.eventTime; wall time never compared.
+        lastSent = android.os.SystemClock.uptimeMillis()
         listener?.onMove(dx, dy)
     }
 

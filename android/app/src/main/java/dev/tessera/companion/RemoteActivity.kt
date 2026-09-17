@@ -1,8 +1,6 @@
 package dev.tessera.companion
 
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -22,8 +20,6 @@ class RemoteActivity : AppCompatActivity() {
     private lateinit var binding: ActivityRemoteBinding
     private lateinit var store: Store
 
-    /** What the text box held last, so only what was added is sent. */
-    private var lastText = ""
 
     /** The token of the computer being driven. */
     private var target = ""
@@ -80,26 +76,15 @@ class RemoteActivity : AppCompatActivity() {
         )
         for ((button, action) in keys) button.setOnClickListener { action() }
 
-        binding.typeBox.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) {
-                val now = s?.toString().orEmpty()
-                when {
-                    now.length > lastText.length && now.startsWith(lastText) ->
-                        send("text", "text" to now.substring(lastText.length))
-                    now.length < lastText.length && lastText.startsWith(now) ->
-                        repeat(lastText.length - now.length) { key("backspace") }
-                    now != lastText -> send("text", "text" to now)
-                }
-                lastText = now
-            }
-        })
+        // The keyboard's own edits, as they happen; the box only mirrors them.
+        binding.typeBox.onText = { text -> send("text", "text" to text) }
+        binding.typeBox.onBackspace = { count -> repeat(count) { key("backspace") } }
+        binding.typeBox.onEnter = { key("enter") }
         binding.typeBox.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_SEND || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
                 key("enter")
                 binding.typeBox.setText("")
-                lastText = ""
+                binding.typeBox.reset()
                 true
             } else false
         }
