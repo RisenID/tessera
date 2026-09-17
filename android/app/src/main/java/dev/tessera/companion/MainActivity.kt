@@ -22,6 +22,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dev.tessera.companion.databinding.ViewComputerRowBinding
 import dev.tessera.companion.databinding.ViewSetupRowBinding
 import dev.tessera.companion.features.Agenda
+import dev.tessera.companion.features.Beacon
 import dev.tessera.companion.features.CallsRepository
 import dev.tessera.companion.features.ClipboardBridge
 import dev.tessera.companion.features.ClipboardWatcher
@@ -265,6 +266,14 @@ class MainActivity : AppCompatActivity() {
                 granted = { ClipboardBridge.available() },
                 grant = { open(Settings.ACTION_ACCESSIBILITY_SETTINGS) },
             ),
+            Row(
+                binding.rowPresence,
+                R.string.perm_presence,
+                R.string.perm_presence_why,
+                R.drawable.ic_phone_link,
+                granted = { Beacon.allowed(this) },
+                grant = { requestRuntimePermissions() },
+            ),
         )
 
         for (row in rows) {
@@ -296,6 +305,7 @@ class MainActivity : AppCompatActivity() {
             add(Manifest.permission.CALL_PHONE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 add(Manifest.permission.BLUETOOTH_CONNECT)
+                add(Manifest.permission.BLUETOOTH_ADVERTISE)
             }
             add(Manifest.permission.CAMERA)
             // Playback capture needs it; the microphone is never opened.

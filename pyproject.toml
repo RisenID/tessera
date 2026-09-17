@@ -31,6 +31,9 @@ dependencies = [
     "winrt-Windows.Foundation>=3.0; sys_platform == 'win32'",
     "winrt-Windows.Foundation.Collections>=3.0; sys_platform == 'win32'",
     "winrt-Windows.Devices.Enumeration>=3.0; sys_platform == 'win32'",
+    # The phone's presence beacon: lock when it walks away.
+    "winrt-Windows.Devices.Bluetooth>=3.0; sys_platform == 'win32'",
+    "winrt-Windows.Devices.Bluetooth.Advertisement>=3.0; sys_platform == 'win32'",
     "winrt-Windows.Media.Audio>=3.0; sys_platform == 'win32'",
     "winrt-Windows.ApplicationModel.Calls>=3.0; sys_platform == 'win32'",
     # The phone's storage in File Explorer, through the Cloud Files API and SFTP.

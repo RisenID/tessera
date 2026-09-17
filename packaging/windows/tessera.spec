@@ -59,6 +59,8 @@ analysis = Analysis(
         "winrt.windows.foundation",
         "winrt.windows.foundation.collections",
         "winrt.windows.devices.enumeration",
+        "winrt.windows.devices.bluetooth",
+        "winrt.windows.devices.bluetooth.advertisement",
         "winrt.windows.media.audio",
         "winrt.windows.applicationmodel.calls",
         # The phone's storage in File Explorer.

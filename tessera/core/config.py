@@ -228,6 +228,18 @@ class CaptureConfig:
 
 
 @dataclass
+class PresenceConfig:
+    """Locking this computer when the phone's Bluetooth beacon fades."""
+
+    #: Signal below this, in dBm, counts as away. Closer to 0 is stricter.
+    threshold_dbm: int = -80
+    #: How long the phone must stay away before the screen locks.
+    away_seconds: int = 45
+    #: Whether leaving locks the screen, or is only shown.
+    lock: bool = True
+
+
+@dataclass
 class RemoteInputConfig:
     """The phone as a trackpad and keyboard."""
 
@@ -311,6 +323,7 @@ class Config:
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
     remote_input: RemoteInputConfig = field(default_factory=RemoteInputConfig)
+    presence: PresenceConfig = field(default_factory=PresenceConfig)
     #: The phone as this computer's microphone: volume, buffer and, on
     #: Windows, which output (a virtual cable) it is played into.
     mic: PhoneAudioConfig = field(

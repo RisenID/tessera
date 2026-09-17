@@ -10,6 +10,7 @@ import dev.tessera.companion.features.Agenda
 import dev.tessera.companion.features.AppNames
 import dev.tessera.companion.features.AppsRepository
 import dev.tessera.companion.features.AudioStreamer
+import dev.tessera.companion.features.Beacon
 import dev.tessera.companion.features.Contacts
 import dev.tessera.companion.features.FileTransfer
 import dev.tessera.companion.features.StorageServer
@@ -74,6 +75,14 @@ class Session(
     private var camera: CameraStreamer? = null
     private var audio: AudioStreamer? = null
     private var mic: MicStreamer? = null
+    /** Whether this desktop asked for the presence beacon. */
+    private var beaconing = false
+
+    private fun stopBeacon() {
+        if (!beaconing) return
+        beaconing = false
+        Beacon.stop()
+    }
 
     /** Files arriving from the desktop, by transfer id. */
     private val incoming = java.util.concurrent.ConcurrentHashMap<String, FileTransfer.Incoming>()
@@ -303,6 +312,8 @@ class Session(
         if (TextInput.available()) add("type")
         // The phone as a trackpad and keyboard for the computer.
         add("remote_input")
+        // A Bluetooth beacon the computer can watch, to lock when the phone leaves.
+        if (Beacon.allowed(context) && Beacon.supported(context)) add("beacon")
     }
 
     // -- commands ------------------------------------------------------------
@@ -718,6 +729,22 @@ class Session(
                 id, JSONObject().put("items", Agenda.events(context, message.optInt("days", 2)))
             )
             "alarm_next" -> reply(id, Agenda.nextAlarm(context))
+
+            // The computer wants to know how far away this phone is.
+            "beacon_start" -> {
+                val problem = Beacon.start(context, store.deviceId)
+                if (problem == null) {
+                    beaconing = true
+                    reply(id, JSONObject().put("advertising", true).put("uuid", Beacon.SERVICE.toString())
+                        .put("tag", store.deviceId.take(8)))
+                } else {
+                    fail(id, problem)
+                }
+            }
+            "beacon_stop" -> {
+                stopBeacon()
+                reply(id, JSONObject().put("advertising", false))
+            }
 
             "type" -> {
                 val text = message.optString("text")
@@ -1282,6 +1309,7 @@ class Session(
         stopCamera()
         stopAudio()
         stopMic()
+        stopBeacon()
         writer.shutdownNow()
         runCatching { socket.close() }
         Log.i(TAG, "session closed")

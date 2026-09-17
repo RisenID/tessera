@@ -238,6 +238,14 @@ class Hub(QObject):
 
         self.remote_input = RemoteInput(self, self)
         self.remote_input.message.connect(self.statusChanged)
+        #: Locking when the phone walks away.
+        from .presence import Presence
+
+        self.presence = Presence(self, config.presence, self)
+
+    @property
+    def presence_state(self) -> str:
+        return self.presence.state if self.presence.state != "off" else ""
 
         # adb is only needed for scrcpy now, so resolve it lazily and quietly.
         self._serial_timer = QTimer(self)
@@ -359,6 +367,8 @@ class Hub(QObject):
             topics.append("media")
         self.companion.wanted_topics = topics
         self.companion.resubscribe()
+        if hasattr(self, "presence"):
+            self.presence.apply()
 
         if not features.clipboard:
             self.clipboard.set_mode("off")
@@ -396,6 +406,7 @@ class Hub(QObject):
         self.stop_camera()
         self.stop_phone_mic()
         self.remote_input.stop()
+        self.presence.stop()
         self.dnd.stop()
         self.clipboard_adb.stop()
         self.companion.disconnect_from_phone()

@@ -383,6 +383,7 @@ class SettingsPage(QWidget):
         self.route_card.add(self._bar(grant_row))
         outer.addWidget(self.route_card)
         outer.addWidget(self._build_backup_card())
+        outer.addWidget(self._build_presence_card())
 
         # Bluetooth audio and the LDAC decoder are PipeWire and BlueZ
         # machinery, so the whole card belongs to the platforms that have them.
@@ -539,6 +540,67 @@ class SettingsPage(QWidget):
         self.hub.config.save()
         self.backup_folder.setText(chosen)
         self.backup_state.setText(self.hub.backup.summary())
+
+    # -- presence --------------------------------------------------------------
+
+    def _build_presence_card(self) -> Card:
+        card = Card(self)
+        title = QLabel("Lock when the phone leaves")
+        title.setObjectName("SectionTitle")
+        card.add(title)
+        note = QLabel(
+            "The phone advertises a small Bluetooth beacon while connected; when "
+            "its signal fades or stops for a while, this computer locks its "
+            "screen. Grant Presence in the phone app first. Unlocking is still "
+            "yours to do."
+        )
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        card.add(note)
+
+        cfg = self.hub.config.presence
+        self.presence_box = QCheckBox("Lock this computer when the phone walks away")
+        self.presence_box.setChecked(self.hub.config.features.presence)
+        self.presence_box.toggled.connect(self._toggle_presence)
+        card.add(self.presence_box)
+
+        self.presence_threshold = QSpinBox()
+        self.presence_threshold.setRange(-95, -40)
+        self.presence_threshold.setSuffix(" dBm")
+        self.presence_threshold.setValue(cfg.threshold_dbm)
+        self.presence_threshold.setToolTip("Closer to 0 locks sooner; -80 is a few metres.")
+        card.add(self._labelled("Away below", self.presence_threshold))
+
+        self.presence_seconds = QSpinBox()
+        self.presence_seconds.setRange(10, 600)
+        self.presence_seconds.setSuffix(" s")
+        self.presence_seconds.setValue(cfg.away_seconds)
+        card.add(self._labelled("After", self.presence_seconds))
+
+        self.presence_state = QLabel(self.hub.presence.describe())
+        self.presence_state.setObjectName("Muted")
+        self.presence_state.setWordWrap(True)
+        card.add(self.presence_state)
+        self.hub.presence.changed.connect(
+            lambda _s, _r: self.presence_state.setText(self.hub.presence.describe()))
+        for spin in (self.presence_threshold, self.presence_seconds):
+            spin.valueChanged.connect(self._presence_tuned)
+        return card
+
+    def _toggle_presence(self, on: bool) -> None:
+        if self._loading:
+            return
+        self.hub.config.features.presence = bool(on)
+        self.hub.config.save()
+        self.hub.presence.apply()
+        self.presence_state.setText(self.hub.presence.describe())
+
+    def _presence_tuned(self, _value: int) -> None:
+        if self._loading:
+            return
+        self.hub.config.presence.threshold_dbm = self.presence_threshold.value()
+        self.hub.config.presence.away_seconds = self.presence_seconds.value()
+        self._touch()
 
     # -- notifications by app --------------------------------------------------
 

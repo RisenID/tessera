@@ -58,6 +58,10 @@
 
     <!-- The Bluetooth codec, shown on the desktop. -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- The presence beacon: the computer locks when this phone walks away. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
