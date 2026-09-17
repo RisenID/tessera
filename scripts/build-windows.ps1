@@ -60,6 +60,7 @@ Write-Host "Installing build dependencies" -ForegroundColor DarkGray
     "winrt-runtime>=3.0" "winrt-Windows.Foundation>=3.0" `
     "winrt-Windows.Foundation.Collections>=3.0" `
     "winrt-Windows.Devices.Enumeration>=3.0" "winrt-Windows.Media.Audio>=3.0" `
+    "winrt-Windows.Devices.Bluetooth>=3.0" "winrt-Windows.Devices.Bluetooth.Advertisement>=3.0" `
     "winrt-Windows.ApplicationModel.Calls>=3.0" `
     "winrt-Windows.Storage>=3.0" "winrt-Windows.Storage.Provider>=3.0" `
     "winrt-Windows.Storage.Streams>=3.0" "winrt-Windows.Security.Cryptography>=3.0" `
