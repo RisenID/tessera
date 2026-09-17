@@ -112,6 +112,9 @@ def settle(app: QApplication, rounds: int = 60) -> None:
         sleep(0.01)
 
 
+_HUBS: list = []
+
+
 def make_hub(**overrides):
     config = Config()
     for key, value in overrides.items():
@@ -122,7 +125,20 @@ def make_hub(**overrides):
     hub_module.Hub._apply_codec_preference = lambda self: None
     hub_module.Hub.BLUETOOTH_SETTLE_SECONDS = 0.04
     hub_module.Hub.RESUME_DELAY_MS = 10
-    return hub_module.Hub(config), config
+    # Every scenario shares one fake radio, so a previous hub's timers must not
+    # keep watching it: they would count against the scenario running now.
+    for previous in _HUBS:
+        for owner, name in ((previous, "_serial_timer"), (previous, "_bluetooth_guard_timer"),
+                            (getattr(previous, "backup", None), "_period"),
+                            (getattr(previous, "backup", None), "_settle"),
+                            (getattr(previous, "presence", None), "_timer")):
+            timer = getattr(owner, name, None)
+            if timer is not None:
+                timer.stop()
+    _HUBS.clear()
+    hub = hub_module.Hub(config)
+    _HUBS.append(hub)
+    return hub, config
 
 
 def fake_phone_link(hub, playing: bool) -> list[dict]:

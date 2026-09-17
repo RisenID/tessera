@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import weakref
 import os
 from pathlib import Path
 from time import time
@@ -29,9 +30,17 @@ class PhotoBackup(QObject):
 
     changed = Signal()
 
+    @property
+    def hub(self):
+        hub = self._hub()
+        if hub is None:
+            raise RuntimeError("the hub is gone")
+        return hub
+
     def __init__(self, hub, config: BackupConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.hub = hub
+        # Weak: the hub owns this object, and a cycle would keep a dropped hub alive.
+        self._hub = weakref.ref(hub)
         self.config = config
         self.state = "idle"             # idle | listing | copying
         self.copied = 0                 # this session

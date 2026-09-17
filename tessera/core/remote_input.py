@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 
 from PySide6.QtCore import QObject, Signal
 
@@ -17,9 +18,17 @@ class RemoteInput(QObject):
     #: Something the user should know: the permission was refused, or is being asked for.
     message = Signal(str)
 
+    @property
+    def hub(self):
+        hub = self._hub()
+        if hub is None:
+            raise RuntimeError("the hub is gone")
+        return hub
+
     def __init__(self, hub, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.hub = hub
+        # Weak: the hub owns this object, and a cycle would keep a dropped hub alive.
+        self._hub = weakref.ref(hub)
         self._backend = None
         self._queued: list[dict] = []
         self._asked = False

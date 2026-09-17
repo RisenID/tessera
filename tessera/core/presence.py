@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from time import monotonic
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -25,9 +26,17 @@ class Presence(QObject):
     #: state ("off", "waiting", "near", "far", "gone"), and the last RSSI (0 when none).
     changed = Signal(str, int)
 
+    @property
+    def hub(self):
+        hub = self._hub()
+        if hub is None:
+            raise RuntimeError("the hub is gone")
+        return hub
+
     def __init__(self, hub, config: PresenceConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.hub = hub
+        # Weak: the hub owns this object, and a cycle would keep a dropped hub alive.
+        self._hub = weakref.ref(hub)
         self.config = config
         self.state = "off"
         self.rssi = 0
